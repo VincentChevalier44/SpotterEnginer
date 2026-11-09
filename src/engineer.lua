@@ -14,7 +14,7 @@ local POSITION_TTL,POSITION_COOLDOWN=15,40
 function M.new()
  return {strategist=Strategist.new(),coach=Coach.new(),sectorOf={},lap=-1,coldFor=0,hotFor=0,warm=false,brakeHotFor=0,bias=0,
   biasFor=0,trans=0,rain=0,rainSaid={},gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
-  mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
+  mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
   brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={}}
 end
 -- Changement de séance : tout repart de zéro (clés à nil comprises), sauf les données de la voiture (src/port.lua).
@@ -180,18 +180,21 @@ local function fuel(e,ctx,lapDone)
  e.fuelSign=sign
 end
 -- Pneus : chauffe (cœur sous l'optimum), surchauffe (cœur ou surface au-dessus), usure anormale d'un pneu.
+local TYRE_NAMES={'avant gauche','avant droit','arrière gauche','arrière droit'}
 local function tyres(e,ctx,dt)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
+ -- Passage par les stands retenu pour l'usure anormale (pneus peut-être changés).
+ if me.pitlane then e.wearPit=true end
  if not cfg.tyres or me.pitlane or me.kmh<60 then return end
  local cold,hot,ok=0,0,0
- local maxKm,sumKm=0,0
+ local maxKm=0
  for k=1,4 do
   local w=F.me.tyres[k]
   local surface=(w.inner+w.mid+w.outer)/3
   if w.core<w.opt-cfg.tyreCold then cold=cold+1 end
   if w.core>w.opt+cfg.tyreHot or surface>w.opt+cfg.tyreHot*1.6 then hot=hot+1 end
   if math.abs(w.core-w.opt)<cfg.tyreCold*0.6 then ok=ok+1 end
-  maxKm=math.max(maxKm,w.vkm); sumKm=sumKm+w.vkm
+  maxKm=math.max(maxKm,w.vkm)
  end
  -- Une fois par état : froid jusqu'à ce qu'ils chauffent, chaud jusqu'à 60 s sans surchauffe.
  e.coldFor=cold>=2 and e.coldFor+dt or 0
@@ -208,7 +211,7 @@ local function tyres(e,ctx,dt)
  -- Usure anormale : un pneu nettement plus usé que l'autre du même essieu (l'avant et l'arrière s'usent normalement
  -- différemment), méplat, cloques, grains, crevaison. Dite une fois par train de pneus ; un écart d'usure sur un essieu,
  -- une seule fois par séance pour le même essieu et le même côté (un circuit qui use un côté plus que l'autre le
- -- referait à chaque train de pneus). Un défaut du pneu (méplat, cloques, grains, crevaison) est toujours dit.
+ -- referait à chaque train de pneus). Un défaut du pneu (méplat, cloques, grains, crevaison), tenu 1 s, est toujours dit.
  local t=F.me.tyres
  local function off(a,b,axle)
   local x,y=t[a].vkm,t[b].vkm
@@ -216,12 +219,28 @@ local function tyres(e,ctx,dt)
   return nil
  end
  local side=off(1,2,'F') or off(3,4,'R')
- local defect=false
- for k=1,4 do local w=t[k]; if w.flat>0.2 or w.blister>0.35 or w.grain>0.35 or w.blown then defect=true end end
- if maxKm<0.5 then e.wearSaid=false end
- if (defect or side and not e.wearSides[side]) and not e.wearSaid then
+ local defect,why=nil,nil
+ for k=1,4 do
+  local w=t[k]
+  local d=w.blown and 'crevaison' or w.flat>0.2 and 'méplat' or w.blister>0.35 and 'cloques' or w.grain>0.35 and 'grains' or nil
+  if d and not defect then defect,why=k,d end
+ end
+ e.defectFor=defect and e.defectFor+dt or 0
+ -- Train neuf : km virtuels qui reculent (pneus changés, retour au garage). Ils n'avancent qu'avec le multiplicateur
+ -- d'usure (faible ou nul : ils restent près de 0), « peu de km » ne dit donc pas un train neuf (cela réarmait l'annonce
+ -- à chaque image, redite dès la fin de repeatGap). Après un arrêt, un défaut reparti réarme aussi (pneus changés).
+ if maxKm<e.wearKm-0.05 then e.wearSaid=false end
+ e.wearKm=maxKm
+ if e.wearPit then e.wearPit=false; if not defect then e.wearSaid=false end end
+ local worn=defect and e.defectFor>=1
+ if (worn or side and not e.wearSides[side]) and not e.wearSaid then
   e.wearSaid=true; if side then e.wearSides[side]=true end
   say(ctx,'wear',3,{'abnormalWear'},{ttl=10})
+  if ctx.journal then
+   local w=worn and t[defect]
+   ctx.journal(w and string.format('usure anormale : %s, pneu %s (méplat %.2f, cloques %.2f, grains %.2f, %.1f km virtuels)',why,TYRE_NAMES[defect],w.flat,w.blister,w.grain,w.vkm)
+    or string.format("usure anormale : écart sur l'essieu %s (km virtuels %.1f / %.1f / %.1f / %.1f)",side,t[1].vkm,t[2].vkm,t[3].vkm,t[4].vkm))
+  end
  end
 end
 M.tyres=tyres

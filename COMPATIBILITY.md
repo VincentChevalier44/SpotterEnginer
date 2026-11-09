@@ -6,9 +6,10 @@ SpotterEnginer is not a standalone app: it works only on top of [AdvancedIA](htt
 
 | SpotterEnginer | AdvancedIA required | Bridge version |
 |---|---|---|
+| 1.1.1 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 | 1.1.0 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 
-The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0).
+The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0 and 1.1.1).
 
 **Calls that depend on the AdvancedIA version** (bridge v1 throughout; older versions simply never send them):
 

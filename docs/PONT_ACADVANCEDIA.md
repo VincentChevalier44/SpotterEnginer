@@ -139,7 +139,7 @@ changes).
 | `restartPlace` | race: red flag in the pits, then pit lane exit on the relaunch lap | player's place (1..N) / car to follow (AC index, -1: the SC) | said ("Restart position: 7"), name written |
 | `restartRetake` | car classified behind the player is ahead of him, at each new target | car to pass (AC index) / player's place | said at most every 15 s, name written |
 | `aiDq` | an AI is disqualified | | said |
-| `fastCar` (1.51) | practice and qualifying: player on an out-lap or cool-down lap, AI on a flying lap 3 s or less behind; at most once per AI every 30 s | AI (AC index) / gap (s, one decimal) | said by the spotter ("Car on a flying lap behind, let it through."), name and gap written; the spotter's faster traffic call then stays quiet for that car |
+| `fastCar` (1.51) | practice and qualifying: player on an out-lap or cool-down lap, AI on a flying lap 3 s or less behind; at most once per AI every 30 s | AI (AC index) / gap (s, one decimal) | said by the spotter ("Car on a flying lap behind, let it through."), name and measured gap written, only if the car is seen really closing in (time gap shrinking by 0.1 s per second or more, 3 s or less behind) within 6 s; otherwise only a journal line. The spotter's faster traffic call stays quiet for that car meanwhile and after the call |
 
 The other kinds are written on the radio of the Spotter overlay (setting **AdvancedIA announcements on the radio**),
 without a voice: their state is already said from the fields (flags, neutralisations, restarts). A new announcement

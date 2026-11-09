@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.1.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.1.1. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -76,7 +76,7 @@ Install AdvancedIA first (see its [README](https://github.com/VincentChevalier44
 ### With Content Manager
 
 1. Close Assetto Corsa.
-2. Download `SpotterEnginer-1.1.0.zip` (or the latest one) from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
+2. Download `SpotterEnginer-1.1.1.zip` (or the latest one) from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
 3. Drag the zip onto the Content Manager window and confirm the installation, or extract it straight into the `assettocorsa` root folder.
 
 The package already has the right structure (`apps/lua/SpotterEnginer/…`). It holds only what the game loads (entry point, manifest, icon, `src/`, `sounds/`, `vox/`, `fonts/`) plus the user notes (`README.md`, `CHANGELOG.md`, `COMPATIBILITY.md`, `LICENSE`).
@@ -144,7 +144,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.1). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -314,7 +314,7 @@ Like SuperHUD, each of CSP's 4 app desktops keeps its own overlays.
 | Car left, car right, three wide, still there, clear | Car positions. A car counts as alongside from 1.3 m of lateral offset (not a car in your tow), after 0.25 s of overlap (not a brush); "clear" after 0.6 s of free lane, only if the side call was heard, and without cutting the engineer off. The side is checked against CSP's lateral track position; left and right are swapped automatically after repeated disagreement |
 | Gaps ahead and behind in one message, every N laps, with *"You're closing."* or *"He's closing on you."*; under 10 s, "9.3 seconds" as a single clip; above, to the second | Timing at checkpoints |
 | Backmarker ahead, faster traffic behind | Timing |
-| Practice and qualifying: *"Car on a flying lap behind, let it through."* (name and gap written), while you are on an out-lap or a cool-down lap | AdvancedIA 1.51 (`fastCar` announcement), setting **Faster traffic behind** |
+| Practice and qualifying: *"Car on a flying lap behind, let it through."* (name and measured gap written), while you are on an out-lap or a cool-down lap, only once the car is seen really closing in | AdvancedIA 1.51 (`fastCar` announcement), checked by Timing; setting **Faster traffic behind** |
 | Pit exit clear, or traffic when rejoining | Exit point learnt on every car |
 | Stopped car ahead, AI mistake ahead | AdvancedIA's accidents and mistakes, plus speed |
 | Track limits | AC's cut counter (AdvancedIA does not track them for the player) |
@@ -437,7 +437,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 - **No repetition**: the same engineer message is not said again within 180 s, more than a lap. The spotter is never concerned: a second slow car or a second backmarker is always called.
 - **Once per state**: fuel short (said again only when half a lap more is missing), cold or hot tyres, hot brakes, bias, push or defend: said when the situation appears, not on every lap it lasts.
   - **Cold tyres**: said again only after a minute at temperature (tyres hovering around the threshold do not restart the call).
-  - **Abnormal wear**: a tyre defect (flat spot, blisters, graining, puncture) once per set of tyres; a wear gap between the two tyres of an axle only once per session for the same side, since a track that wears one side more than the other would cause it again on every set.
+  - **Abnormal wear**: a tyre defect (flat spot, blisters, graining, puncture) lasting a second, once per set of tyres (a new set is seen when the virtual km go back, or after a pit stop the defect did not survive); a wear gap between the two tyres of an axle only once per session for the same side, since a track that wears one side more than the other would cause it again on every set.
   - **"Change compound"** (F1 rules): said once, when you cross the pit lane entry and head for your box, on any lap, while the mandatory stop is due. The reminders AdvancedIA gives at every approach to the entry are neither said nor written (its panel shows them). Only the start notice, *"Your pit strategy has the same compound…"*, is said in advance, to leave time to change the pit strategy: only once, at half of the first lap (the start stays quiet), and never if the strategy was fixed in between.
   - **A call cut off** by a more urgent one (side by side, flag): resumed only once, from the start; cut off again, it is dropped.
 - **Never delayed**: side by side, flags, neutralisations, penalties, box, and the gaps: said within 3 s of the line, otherwise not at all (a gap read late is wrong).
@@ -585,7 +585,8 @@ Buttons **Recenter** and **Reset**. A desktop never set up shows no overlay.
 | Rain expected | Estimated from CSP's weather transition towards rain. |
 | Effect of temperatures on wear | Measured through the real wear, plus an adjustable projection (**Wear vs track**, applied to the track and to half of the air). |
 | Left and right | If an installation showed them swapped: setting **Swap left and right**. |
-| Abnormal wear | A gap of more than 30 % between the virtual km of the two tyres of an axle (AC data). A track that wears one side more than the other can trigger it: said only once per session for the same side. |
+| Abnormal wear | A gap of more than 30 % between the virtual km of the two tyres of an axle (AC data). A track that wears one side more than the other can trigger it: said only once per session for the same side. The journal names the tyre and the defect behind each call. |
+| Faster traffic behind | In practice and qualifying, a car is "arriving" when the time gap measured at the same place on the track (not metres or km/h, which change at every braking zone) shrinks by at least 0.1 s per second over 3 s (or 0.3 s per second over 1 s), and the gap would be gone within 15 s. Called under 2 s; the flying-lap call under 3 s, within 6 s of AdvancedIA's announcement, otherwise only written in the journal. When you are down to walking pace (spin, off), a car less than 150 m behind and at least 40 km/h faster is called at once. In a race, a car about to lap you is called under 2 s, as before. |
 
 ## What to check in your first session
 

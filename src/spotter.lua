@@ -47,7 +47,7 @@ local PIT_NOTICE={pitCompound={'pitCompound',3,18},pitPlanSame={'pitPlanSame',3,
  pitNotCounted={'pitNotCounted',3,30},pitValidated={'pitValidated',4,30},
  restartPlace={'restartPlace',3,20},restartRetake={'restartRetake',2,8,nil,15}}
 function M.new()
- return {prev=nil,cur=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},
+ return {prev=nil,cur=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
   stopped={},mistakes={},rivalState={},exitSpline=nil,exitSamples=0,inLane={},cuts=0,lapValid=true,
   stint=false,leftBox=false,autoFlip=false,sideAgree=0,sideDisagree=0,sideAtL=-1e9,sideAtR=-1e9,wasL=false,wasR=false,neutralEndAt=-1e9,greenPending=false,lastLapSaid=false,deltaQueuedAt=nil,proxCfg=nil,proxMe=nil,
   zoneAt=-1e9,zoneGreenAt=-1e9,deltaAbove=nil,penaltyAt=-1e9,blackAt=-1e9,compound=false,wasLane=false,laneCompound=false,planPending=false,planSaid=false}
@@ -87,8 +87,23 @@ local function plannedLap(ctx)
  return nil
 end
 M.plannedLap=plannedLap
--- Deux annonces « tour lancé derrière » (IA différentes) espacées d'au moins FAST_CAR_GAP s.
-local FAST_CAR_GAP=8
+-- Voiture qui arrive derrière : jugée sur l'écart en temps au même endroit de la piste (Timing.trackGap), que les
+-- freinages et les virages ne font pas varier, et non sur les mètres ou les km/h (une voiture qui freine après le
+-- joueur « allait plus vite » à chaque virage sans jamais le rattraper : annonces sans personne derrière, constaté le
+-- 09/11/2026). Écart relevé toutes les every s pour les voitures à moins de range m derrière, gardé keep s, à toute
+-- vitesse hors des stands. Elle arrive si elle gagne au moins rate s par s sur window s, ou fast s par s sur short s
+-- (joueur qui a beaucoup ralenti), et rattrape l'écart en catch s au plus.
+local CLOSE={every=0.25,short=1,window=3,keep=4,range=600,rate=0.1,fast=0.3,catch=15}
+-- Trafic plus rapide : dit à moins de FASTER_GAP s.
+local FASTER_GAP=2
+-- Joueur au pas hors course (tête-à-queue, sortie de piste) : l'écart en temps ne voit une voiture arriver qu'une fois
+-- qu'elle atteint l'endroit où il a ralenti, trop tard. Sous kmh km/h, une voiture à moins de range m derrière qui va
+-- au moins faster km/h plus vite est annoncée sur les vitesses du moment (jamais si lent en roulant : pas de confusion
+-- avec un freinage).
+local CRAWL={kmh=30,faster=40,range=150}
+-- Tour lancé d'AdvancedIA : dit seulement si la voiture arrive vraiment (CLOSE, à moins de FAST_CAR_MAX s) dans les
+-- FAST_CAR_CONFIRM s qui suivent l'annonce ; deux annonces (IA différentes) espacées d'au moins FAST_CAR_GAP s.
+local FAST_CAR_GAP,FAST_CAR_CONFIRM,FAST_CAR_MAX=8,6,3
 local function name(ctx,i) local c=ctx.F.cars[i]; return c and c.valid and c.name or ('#'..tostring((i or -1)+1)) end
 -- Ligne de radio d'une annonce d'AdvancedIA : « titre · texte », sans le titre quand le texte commence déjà par lui
 -- (« Stratégie des stands : même composé prévu (SS) »), ou le titre seul.
@@ -378,15 +393,11 @@ local function race(s,ctx)
  if notice and cfg.raceControl and not hintQuiet then noticeSaid=pitNotice(ctx,cur,notice) end
  -- Essais et qualifications (AdvancedIA 1.51, 'fastCar') : une IA en tour lancé arrive derrière le joueur en tour de
  -- sortie ou de refroidissement (value : indice d'AC, extra : écart en s) ; AdvancedIA la signale au plus une fois par
- -- IA toutes les 30 s. Dite « laisse-la passer » ; le trafic plus rapide du spotter se tait ensuite pour cette voiture.
+ -- IA toutes les 30 s. Mise en attente de confirmation (fastCar, plus bas), jamais écrite telle quelle.
  if cfg.fasterBehind and not ctx.F.isRace and cur.messageId~=p.messageId and cur.messageKind=='fastCar' then
   local i=math.floor((tonumber(cur.messageValue) or -1)+0.5)
-  local gap=tonumber(cur.messageExtra)
-  local detail=gap and gap>0 and string.format('(%s · %s s)',name(ctx,i),U.fixed(gap,1,Say.mark(ctx.say))) or '('..name(ctx,i)..')'
-  if say(ctx,'fastCar',3,{'fastCar',{text=detail}},{ttl=4,cooldown=FAST_CAR_GAP}) then
-   noticeSaid=true
-   if i>=0 then s.faster[i]=ctx.now end
-  end
+  if i>=0 and i~=ctx.F.player then s.fastPending[i]=ctx.now end
+  noticeSaid=true
  end
  -- Annonces d'AdvancedIA : écrites sur la radio (déjà montrées par son overlay), sans voix ni bip.
  if cfg.aaiMessages and cur.messageId~=p.messageId and cur.messageTitle~='' and not noticeSaid and not hintQuiet then
@@ -517,6 +528,42 @@ function M.lapDown(me,c,mine,tc,behind)
  if behind then return cp>mp and mine.progress-tc.progress>=0.5 end
  return cp<mp and tc.progress-mine.progress>=0.5
 end
+-- Écart en temps de la voiture i derrière le joueur, relevé (CLOSE.every) et gardé (CLOSE.keep) ; oublié sans écart.
+local function sampleGap(s,ctx,i)
+ local g=Timing.trackGap(ctx.timing,ctx.F.player,i,ctx.now)
+ local h=s.closing[i]
+ if not g then s.closing[i]=nil; return end
+ if not h or (#h>0 and ctx.now<h[#h].t) then h={}; s.closing[i]=h end
+ if #h==0 or ctx.now-h[#h].t>=CLOSE.every then h[#h+1]={t=ctx.now,g=g} end
+ while #h>1 and ctx.now-h[1].t>CLOSE.keep do table.remove(h,1) end
+end
+-- Dernier écart relevé (s), rythme de rapprochement (s gagnées par s ; nil sur moins de CLOSE.short s) et durée de la
+-- mesure (s).
+function M.closing(s,i)
+ local h=s.closing[i]
+ if not h or #h==0 then return nil,nil,0 end
+ local a,b=h[1],h[#h]
+ local span=b.t-a.t
+ if span<CLOSE.short then return b.g,nil,span end
+ return b.g,(a.g-b.g)/span,span
+end
+-- Voiture i qui arrive derrière à moins de maxGap s : vrai, écart, rythme.
+local function arriving(s,i,maxGap)
+ local g,rate,span=M.closing(s,i)
+ local closing=rate and (rate>=CLOSE.fast or span>=CLOSE.window and rate>=CLOSE.rate)
+ return (g and closing and g<=maxGap and g/rate<=CLOSE.catch) or false,g,rate
+end
+-- Écarts relevés de toutes les voitures derrière le joueur, à toute vitesse ; oubliés quand il est aux stands.
+local function sampleAll(s,ctx)
+ local F=ctx.F; local me=F.cars[F.player]
+ if not me or not me.valid or me.pitlane then for k in pairs(s.closing) do s.closing[k]=nil end; return end
+ local length=math.max(MIN_TRACK,F.trackLength)
+ for i=0,F.count-1 do
+  local c=F.cars[i]
+  local ahead=i~=F.player and c and c.valid and not c.pitlane and U.wrap(c.spline-me.spline)*length
+  if ahead and ahead<0 and ahead>-CLOSE.range then sampleGap(s,ctx,i) else s.closing[i]=nil end
+ end
+end
 -- Trafic : retardataires devant, trafic plus rapide derrière, voiture arrêtée ou en difficulté devant.
 local function traffic(s,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local t=ctx.timing
@@ -534,15 +581,17 @@ local function traffic(s,ctx)
     local g=Timing.trackGap(t,i,F.player,ctx.now)
     if g and g<2.5 and ctx.now-(s.backmarkers[i] or -1e9)>90 then s.backmarkers[i]=ctx.now; say(ctx,'backmarker',3,{'backmarker'},{ttl=5}) end
    end
-   -- Trafic plus rapide derrière : hors course, voiture derrière à moins de 2 s qui va nettement plus vite ; en course,
-   -- voiture qui prend un tour, seulement si AdvancedIA ne montre pas déjà le drapeau bleu.
-   if cfg.fasterBehind and ahead<0 and ahead>-150 then
-    local lapping=F.isRace and M.lapDown(me,c,mine,tc,false)
-    local blue=d and (d.panelDecided=='blue' or d.panelDecided=='nativeBlue')
-    if (not F.isRace and c.kmh>me.kmh+15 or lapping and not blue) and ctx.now-(s.faster[i] or -1e9)>60 then
-     local g=Timing.trackGap(t,F.player,i,ctx.now)
-     if g and g<2 then s.faster[i]=ctx.now; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4}) end
-    end
+   -- Trafic plus rapide derrière, à moins de FASTER_GAP s : hors course, voiture qui arrive vraiment (CLOSE ; un tour
+   -- lancé d'AdvancedIA en attente est dit à sa place) ; en course, voiture qui prend un tour (plus rapide par nature,
+   -- souvent de quelques % seulement), seulement si AdvancedIA ne montre pas déjà le drapeau bleu.
+   if cfg.fasterBehind and ahead<0 and not s.fastPending[i] and ctx.now-(s.faster[i] or -1e9)>60 then
+    local call
+    if F.isRace then
+     local blue=d and (d.panelDecided=='blue' or d.panelDecided=='nativeBlue')
+     local g=not blue and M.lapDown(me,c,mine,tc,false) and Timing.trackGap(t,F.player,i,ctx.now)
+     call=g and g<FASTER_GAP
+    else call=arriving(s,i,FASTER_GAP) end
+    if call then s.faster[i]=ctx.now; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4}) end
    end
    if cfg.hazards and ahead>40 and ahead<600 then
     -- Voiture arrêtée devant : accident vu par AdvancedIA (en piste, immobile), ou vitesse très faible hors stands.
@@ -558,6 +607,43 @@ local function traffic(s,ctx)
     end
    elseif cfg.hazards then
     local lc=Link.car(ctx.link,i); if lc then s.mistakes[i]=lc.mistakeId end
+   end
+  end
+ end
+end
+-- Trafic plus rapide quand le joueur est au pas (CRAWL), hors course ; la voiture annoncée ne l'est plus comme tour lancé.
+local function crawl(s,ctx)
+ local F=ctx.F; local me=F.cars[F.player]
+ if F.isRace or not ctx.cfg.fasterBehind or not me or not me.valid or me.pitlane or me.kmh>=CRAWL.kmh then return end
+ local length=math.max(MIN_TRACK,F.trackLength)
+ for i=0,F.count-1 do
+  local c=F.cars[i]
+  if i~=F.player and c.valid and not c.pitlane and c.kmh>=me.kmh+CRAWL.faster and ctx.now-(s.faster[i] or -1e9)>60 then
+   local ahead=U.wrap(c.spline-me.spline)*length
+   if ahead<0 and ahead>-CRAWL.range then
+    s.faster[i]=ctx.now; s.fastPending[i]=nil; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4})
+   end
+  end
+ end
+end
+-- Tour lancé d'AdvancedIA en attente : dit (« laisse-la passer », nom et écart mesuré) dès que la voiture arrive
+-- vraiment ; sinon oublié au bout de FAST_CAR_CONFIRM s, écrit au journal seulement. Une voiture déjà annoncée par le
+-- trafic plus rapide n'est pas redite ; dite, le trafic plus rapide se tait ensuite pour elle.
+local function fastCar(s,ctx)
+ for i,at in pairs(s.fastPending) do
+  local c=ctx.F.cars[i]
+  local ok,g,rate=arriving(s,i,FAST_CAR_MAX)
+  if ok and c and c.valid then
+   if ctx.now-(s.faster[i] or -1e9)>60 then
+    local detail=string.format('(%s · %s s)',name(ctx,i),U.fixed(g,1,Say.mark(ctx.say)))
+    if say(ctx,'fastCar',3,{'fastCar',{text=detail}},{ttl=4,cooldown=FAST_CAR_GAP}) then s.faster[i]=ctx.now end
+   end
+   s.fastPending[i]=nil
+  elseif ctx.now-at>FAST_CAR_CONFIRM or ctx.now<at then
+   s.fastPending[i]=nil
+   if ctx.journal then
+    ctx.journal(string.format('tour lancé non confirmé : %s (écart %s, rapprochement %s)',name(ctx,i),
+     g and string.format('%.1f s',g) or 'inconnu',rate and string.format('%.2f s/s',rate) or 'non mesuré'))
    end
   end
  end
@@ -639,7 +725,10 @@ function M.step(s,ctx)
  if not ctx.cfg.spotterOn then return end
  if ctx.cfg.sideBySide then side(s,ctx) else sideIdle(s) end
  if ctx.cfg.gaps then gaps(s,ctx) end
+ sampleAll(s,ctx)
  traffic(s,ctx)
+ crawl(s,ctx)
+ fastCar(s,ctx)
  pitExit(s,ctx)
  rivals(s,ctx)
  limits(s,ctx)

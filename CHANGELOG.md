@@ -2,6 +2,19 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.1.1 — 9 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.
+
+### Fixed: "Abnormal tyre wear" repeated every three minutes
+- When tyre wear is low or off, the virtual kilometres of the tyres stay near zero; the engineer took that for a fresh set at every frame, so a flat spot (or blisters, graining, a puncture) was called again as soon as the radio's repeat delay ran out. The call is now made once per set of tyres.
+- A new set is recognised when the virtual kilometres go back (tyre change, back to the pits), or after a pit stop from which the defect is gone. A defect has to last one second to be called.
+- The journal (`Documents/Assetto Corsa/logs/SpotterEnginer.log`) now says which tyre and which defect caused the call, with its values.
+
+### Fixed: traffic calls with nobody catching up
+- *"Faster traffic approaching from behind, hold your line."* compared speeds at one instant: a car up to 150 m behind that was simply braking later than you was "15 km/h faster" at every corner. A car is now called only when it really closes in: the time gap measured at the same place on the track shrinks by at least 0.1 s per second over 3 s (or 0.3 s per second over 1 s), and the gap would be gone within 15 s (called under 2 s). When you are down to walking pace (spin, off), a car less than 150 m behind and at least 40 km/h faster is called at once. Races are unchanged: a car about to lap you is called under 2 s.
+- *"Car on a flying lap behind, let it through."* (AdvancedIA's announcement) is said only if SpotterEnginer sees that car closing in the same way within 6 s, 3 s or less behind, and it now gives the measured gap. Otherwise nothing is said and the journal notes "tour lancé non confirmé" with the gap and closing rate. AdvancedIA was announcing cars that were only 5 to 9 km/h faster, more than a minute away.
+
 ## 1.1.0 — 9 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1). The "car on a flying lap behind" call needs AdvancedIA Beta 1.51.

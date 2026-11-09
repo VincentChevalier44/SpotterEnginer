@@ -330,6 +330,35 @@ function T.tyre_calls_do_not_repeat()
  temps(85); run(10); temps(cold); run(25); check(count('Pneus froids')==1,'around the threshold: not repeated')
  temps(85); run(70); temps(cold); run(25); check(count('Pneus froids')==2,'after a minute at temperature: said again')
 end
+-- Usure anormale sans km virtuels (multiplicateur d'usure faible ou nul : ils restent à 0, cas réel du 2026-11-09) :
+-- un méplat est dit une fois, jamais réarmé à chaque image ; un défaut d'une image n'est rien. Après un arrêt d'où le
+-- défaut est reparti (pneus changés), un nouveau méplat est dit ; le train neuf vu aussi par les km qui reculent.
+function T.wear_said_once_without_virtual_km()
+ local Engineer=require('src/engineer'); local Voice=require('src/voice'); local Say=require('src/say')
+ local port={play=function() return {} end,playing=function() return false end,stop=function() end}
+ local v=Voice.new(port); v.repeatGap=0
+ local sayer=Say.new(v,{},'vox','FR',nil)
+ local function tyre() return {core=85,inner=85,mid=85,outer=85,opt=85,vkm=0,flat=0,blister=0,grain=0,blown=false} end
+ local me={pitlane=false,kmh=150,laps=3}
+ local F={player=0,cars={[0]=me},me={tyres={tyre(),tyre(),tyre(),tyre()}}}
+ local lines={}
+ local ctx={F=F,cfg=Config.defaults(),say=sayer,real=0,journal=function(text) lines[#lines+1]=text end}
+ local eng=Engineer.new()
+ local function count() local c=0; for _,l in ipairs(v.log) do if l.text and l.text:find('Usure anormale',1,true) then c=c+1 end end return c end
+ local function run(seconds) for _=1,math.floor(seconds*10) do ctx.real=ctx.real+0.1; Engineer.tyres(eng,ctx,0.1); Voice.step(v,ctx.real) end end
+ F.me.tyres[2].grain=0.9; run(0.1); F.me.tyres[2].grain=0; run(5); check(count()==0,'one-frame defect: nothing')
+ F.me.tyres[1].flat=0.5; run(120); check(count()==1,'flat spot with no virtual km: said once, got '..count())
+ check(#lines==1 and lines[1]:find('méplat',1,true) and lines[1]:find('avant gauche',1,true),'journal: tyre and defect, got '..tostring(lines[1]))
+ -- Arrêt : pneus changés (le méplat est parti) ; les km virtuels restent à 0.
+ me.pitlane=true; run(1); me.pitlane=false; F.me.tyres[1].flat=0; run(5)
+ F.me.tyres[3].flat=0.5; run(10); check(count()==2,'new flat spot after a stop: said')
+ run(60); check(count()==2,'new flat spot: once')
+ -- Arrêt sans changer de pneus : le méplat est toujours là, rien.
+ me.pitlane=true; run(1); me.pitlane=false; run(30); check(count()==2,'stop with the same flat spot: nothing')
+ -- Km virtuels qui reculent (train neuf, retour au garage) : le même défaut, sur ce train, est redit.
+ for k=1,4 do F.me.tyres[k].vkm=4 end; run(1); for k=1,4 do F.me.tyres[k].vkm=0 end; run(5)
+ check(count()==3,'new set seen by the virtual km: said')
+end
 -- Réglages version 3 : volume général 170 % et son de la voiture à 85 % par défaut ; les anciens défauts enregistrés
 -- (100 %, 40 %) passent aux nouveaux, un choix fait à la main est gardé.
 function T.config_migration_volume_defaults()

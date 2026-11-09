@@ -821,26 +821,116 @@ function T.last_lap_carries_position()
  r3.e.panel.decided='white'; r3.step(2)
  q=queued(r3.voice,'panel:white'); check(q and q.text=='Dernier tour !','setting off: last lap only: '..tostring(q and q.text))
 end
--- Essais et qualifications (AdvancedIA 1.51, 'fastCar') : « voiture en tour lancé derrière, laisse-la passer », le nom et
--- l'écart écrits ; une seule ligne sur la radio (pas la note d'AdvancedIA en plus) ; rien en course ni réglage coupé.
+-- Roulage simulé (20 images par s) : vitesse qui varie dans les virages (8 par tour, de 25 à 75 m/s), la même pour
+-- toutes les voitures au même endroit, multipliée par le rythme de chacune ; chronométrage tenu comme dans l'app.
+-- place(i, progression en tours, rythme), run(s).
+local function track(r)
+ local F=r.ctx.F
+ local pos,pace={},{}
+ local now=r.ctx.now
+ local function speed(x) return 50*(1+0.5*math.sin(2*math.pi*8*x)) end
+ local sim={}
+ function sim.place(i,progress,k) pos[i]=progress; pace[i]=k or 1 end
+ function sim.pace(i,k) pace[i]=k end
+ function sim.run(seconds)
+  for _=1,math.floor(seconds*20+0.5) do
+   now=now+0.05
+   for i,p in pairs(pos) do
+    local v=speed(p%1)*pace[i]
+    pos[i]=p+v*0.05/F.trackLength
+    local c=F.cars[i]; c.spline=pos[i]%1; c.laps=math.floor(pos[i]); c.kmh=v*3.6
+    Timing.update(r.ctx.timing,i,c.spline,c.laps,now,true,false)
+   end
+   r.step(now)
+  end
+ end
+ return sim
+end
+local function count(voice,key) local n=0; for _,q in ipairs(voice.queue) do if q.key==key then n=n+1 end end return n end
+-- Trafic plus rapide derrière (essais) : une voiture au même rythme, moins de 2 s derrière, va tour à tour plus vite et moins
+-- vite que le joueur (elle freine après lui) : jamais annoncée (elle l'était à chaque virage). Une voiture 25 % plus
+-- rapide est annoncée une fois, à moins de 2 s.
+function T.faster_behind_needs_real_closing()
+ local r=rig(); r.ctx.F.isRace=false; r.ctx.cfg.hazards=false; r.ctx.cfg.backmarkers=false
+ local sim=track(r)
+ sim.place(1,3.5); sim.place(2,3.5-0.01875); sim.place(0,3.0)
+ local quicker=false
+ local function watch(seconds) for _=1,seconds do sim.run(1); local c2=r.ctx.F.cars[2]; if c2.kmh>r.ctx.F.cars[1].kmh+15 then quicker=true end end end
+ watch(90)
+ check(quicker,'the car behind was faster than the player at times (old call)')
+ check(count(r.voice,'fasterBehind')==0,'same pace: never called, got '..count(r.voice,'fasterBehind'))
+ local g,rate=Spotter.closing(r.s,2)
+ check(g and g>1 and g<2 and rate and math.abs(rate)<0.03,'gap under 2 s, no closing: '..tostring(g)..' '..tostring(rate))
+ sim.place(2,r.ctx.F.cars[1].laps+r.ctx.F.cars[1].spline-0.04,1.25)
+ sim.run(25)
+ check(count(r.voice,'fasterBehind')==1,'faster car: called once, got '..count(r.voice,'fasterBehind'))
+end
+-- Tête-à-queue (essais) : le joueur tombe au pas (sous 30 km/h), une voiture au rythme normal moins de 2 s derrière :
+-- annoncée tout de suite, sur les vitesses du moment (l'écart en temps ne la verrait arriver qu'une fois à l'endroit
+-- du ralentissement), bien avant d'être sur lui ; une seule fois.
+function T.faster_behind_after_a_spin()
+ local r=rig(); r.ctx.F.isRace=false; r.ctx.cfg.hazards=false; r.ctx.cfg.backmarkers=false
+ local F=r.ctx.F
+ local sim=track(r)
+ sim.place(1,3.5); sim.place(2,3.5-0.01875); sim.place(0,3.0)
+ sim.run(20)
+ check(count(r.voice,'fasterBehind')==0,'same pace: nothing')
+ sim.pace(1,0.1)
+ local after,metres=nil,nil
+ for k=1,40 do
+  sim.run(0.1)
+  if not after and count(r.voice,'fasterBehind')>0 then after=k*0.1; metres=((F.cars[1].spline-F.cars[2].spline)%1)*F.trackLength end
+ end
+ check(after and after<=1.5,'called soon after slowing down, after '..tostring(after)..' s')
+ check(metres and metres>40,'called well before the car arrives: '..tostring(metres)..' m')
+ sim.pace(1,0.4); sim.run(10)
+ check(count(r.voice,'fasterBehind')==1,'said once, got '..count(r.voice,'fasterBehind'))
+end
+-- Course : voiture qui prend un tour, 4 % plus rapide seulement, moins de 2 s derrière : annoncée (règle de course
+-- inchangée, pas de mesure de rapprochement exigée).
+function T.faster_behind_lapping_car_in_race()
+ local r=rig(); r.ctx.cfg.hazards=false; r.ctx.cfg.backmarkers=false
+ local F=r.ctx.F
+ F.cars[2].position=1; F.cars[0].position=3
+ local sim=track(r)
+ sim.place(1,3.5); sim.place(2,4.5-0.016,1.04); sim.place(0,3.0)
+ sim.run(5)
+ check(count(r.voice,'fasterBehind')==1,'lapping car called, got '..count(r.voice,'fasterBehind'))
+end
+-- Essais et qualifications (AdvancedIA 1.51, 'fastCar') : « voiture en tour lancé derrière, laisse-la passer », dit
+-- seulement si la voiture arrive vraiment dans les 6 s, avec le nom et l'écart mesuré ; sinon rien (journal seulement).
+-- Une seule ligne sur la radio (pas la note d'AdvancedIA en plus), pas de trafic plus rapide en plus pour cette voiture ;
+-- rien en course ni réglage coupé.
 function T.fast_car_in_practice()
  local Catalog=require('src/catalog')
  local r=rig()
  local files={}; for _,c in pairs(Catalog.clips) do files['FR/'..c.FR]=true end
- r.ctx.say.files=files; r.ctx.F.isRace=false
- r.step(1)
+ r.ctx.say.files=files; r.ctx.F.isRace=false; r.ctx.cfg.hazards=false
+ local lines={}; r.ctx.journal=function(l) lines[#lines+1]=l end
+ local function logged(text) for _,l in ipairs(lines) do if l:find(text,1,true) then return true end end return false end
+ local sim=track(r)
+ sim.place(1,3.5); sim.place(2,3.5-0.01875); sim.place(0,3.0)
+ sim.run(10)
  local inc=r.e.incidents
- inc.messageId=1; inc.messageKind='fastCar'; inc.messageValue=2; inc.messageExtra=2.4
- r.e.ownTitle='Tour lancé'; r.e.ownText='P2 arrive en tour lancé : laissez passer'; r.step(2)
+ local function announce(n) inc.messageId=n; inc.messageKind='fastCar'; inc.messageValue=2; inc.messageExtra=1.4
+  r.e.ownTitle='Tour lancé'; r.e.ownText='P2 arrive en tour lancé : laissez passer' end
+ -- Même rythme, moins de 2 s derrière : rien de dit.
+ announce(1); sim.run(8)
+ check(count(r.voice,'fastCar')==0,'not closing: silent')
+ check(logged('tour lancé non confirmé : P2'),'not closing: in the journal')
+ -- Voiture 25 % plus rapide, 3,3 s derrière, déjà mesurée : dite avec l'écart mesuré.
+ sim.place(2,r.ctx.F.cars[1].laps+r.ctx.F.cars[1].spline-0.04,1.25); sim.run(4)
+ announce(2); sim.run(2)
  local q=queued(r.voice,'fastCar')
- check(q and q.clips and q.text:find('laisse-la passer',1,true) and q.text:find('P2',1,true) and q.text:find('2,4 s',1,true),'fast car said: '..tostring(q and q.text))
+ check(q and q.clips and q.text:find('laisse-la passer',1,true) and q.text:find('P2',1,true) and q.text:find(' s)',1,true),'fast car said: '..tostring(q and q.text))
  local notes=0; for _,l in ipairs(r.voice.log) do if l.kind=='aai' then notes=notes+1 end end
  check(notes==0,'no extra AdvancedIA line: '..notes)
  check(r.s.faster[2],'own faster-car call quiet for that car')
+ sim.run(10); check(count(r.voice,'fasterBehind')==0,'no faster traffic call on top')
  r.voice.queue={}
- r.ctx.cfg.fasterBehind=false; inc.messageId=2; r.step(3)
+ r.ctx.cfg.fasterBehind=false; announce(3); sim.run(1)
  check(not queued(r.voice,'fastCar'),'setting off: silent')
- r.ctx.cfg.fasterBehind=true; r.ctx.F.isRace=true; inc.messageId=3; r.step(4)
+ r.ctx.cfg.fasterBehind=true; r.ctx.F.isRace=true; announce(4); sim.run(1)
  check(not queued(r.voice,'fastCar'),'race: silent')
 end
 -- Fenêtre d'arrêt : un appel du plan de l'ingénieur, coupé avec le réglage « Fenêtre et box » (les rappels
