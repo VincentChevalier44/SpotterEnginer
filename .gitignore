@@ -1,0 +1,11 @@
+# Python bytecode (tests and tools)
+__pycache__/
+*.pyc
+# Release packages are built outside the app folder (tools/package.py) and uploaded to GitHub Releases
+dist/
+*.zip
+*.sha256
+# Leftovers of an interrupted write
+*.tmp
+*.new
+*.bak

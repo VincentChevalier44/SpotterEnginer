@@ -1,0 +1,357 @@
+-- Ingénieur : rythme et consignes, carburant, pneus, freins, dégâts, conditions, pilotage ; la stratégie d'arrêt est
+-- dans src/strategist.lua. Module pur : tout passe par ctx (image F, liaison, radio, réglages, chronométrage).
+local U=require('src/util')
+local Say=require('src/say')
+local Timing=require('src/timing')
+local Coach=require('src/coach')
+local Strategist=require('src/strategist')
+local Position=require('src/position')
+local Voice=require('src/voice')
+local M={}
+local GAP,PACE=Position.GAP,Position.PACE
+-- Annonce de position : validité dans la file, délai minimal entre deux (s).
+local POSITION_TTL,POSITION_COOLDOWN=15,40
+function M.new()
+ return {strategist=Strategist.new(),coach=Coach.new(),sectorOf={},lap=-1,coldFor=0,hotFor=0,warm=false,brakeHotFor=0,bias=0,
+  biasFor=0,trans=0,rain=0,rainSaid={},gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
+  mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
+  brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={}}
+end
+-- Changement de séance : tout repart de zéro (clés à nil comprises), sauf les données de la voiture (src/port.lua).
+function M.reset(e)
+ local car=e.strategist.car
+ U.refill(e,M.new())
+ e.strategist.car=car
+end
+local function say(ctx,key,prio,parts,opts) return Say.say(ctx.say,'engineer',key,prio,parts,ctx.real,opts) end
+-- Position à la ligne (« Tu es P5 »), quand elle a changé depuis la dernière entendue : une seule transmission par
+-- ligne, fusionnée avec la consigne (attaque, défends, garde ta position…) ou suivie d'un conseil tiré de la course
+-- (voiture devant rattrapable avant l'arrivée, pneus à ménager). Jamais avant la fin du tour 2 (départ), dans la voie
+-- des stands, sous neutralisation, course finie, ni au dernier tour quand le spotter la dit avec « Dernier tour ! ».
+-- Une annonce mise en file mais jamais entendue (périmée, retirée) n'est pas comptée : redite à la ligne suivante.
+local function positionDue(e,ctx,me)
+ local F=ctx.F; local d=ctx.link.d; local v=ctx.say.voice
+ if e.posQueuedAt and v then
+  local heard=v.started.position
+  if heard and heard>=e.posQueuedAt then e.posQueuedAt=nil
+  elseif not Voice.pending(v,'position') and not (v.current and v.current.key=='position') then e.posSaid=e.posBefore; e.posQueuedAt=nil end
+ end
+ if not ctx.cfg.positionCalls or me.laps<2 or me.pitlane or Position.finished(d) then return false end
+ if d and (d.neutral or d.red) then return false end
+ local pos=tonumber(me.position) or 0
+ if pos<=0 or pos==e.posSaid then return false end
+ return not (Position.lastLap(F,me,d,e.strategist.plan) and Position.spotterSaysLastLap(ctx.cfg))
+end
+-- Annonce de position : position, « Bien joué » si une voiture a été dépassée en piste depuis la ligne précédente,
+-- puis la consigne. État nouveau : jamais écarté comme une redite (src/voice.lua, fresh).
+local function positionCall(e,ctx,me,prio,parts,gained)
+ local pos=me.position
+ local out={{pos=pos}}
+ if gained then out[#out+1]='posGained' end
+ for k=1,#(parts or {}) do out[#out+1]=parts[k] end
+ local ok=say(ctx,'position',math.min(prio or 4,4),out,{ttl=POSITION_TTL,cooldown=POSITION_COOLDOWN,fresh=true})
+ if ok then e.posBefore=e.posSaid; e.posSaid=pos; e.posQueuedAt=ctx.real end
+ return ok
+end
+-- Rythme et consignes, à la fin de chaque tour du joueur.
+local function pace(e,ctx,lapDone)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local t=e.strategist
+ if not lapDone or not F.isRace then return end
+ local due=positionDue(e,ctx,me)
+ -- Dépassement en piste depuis la ligne précédente ; puis voitures devant et arrêts remis à zéro pour le tour suivant.
+ local gained=Position.overtook(F,me,e.aheadAtLine,e.pitted)
+ Position.aheadOf(F,me,e.aheadAtLine)
+ for k in pairs(e.pitted) do e.pitted[k]=nil end
+ local d=ctx.link.d
+ if me.laps<2 or e.lastLapPit or me.pitlane or d and (d.neutral or d.red) then
+  -- Tour de sortie des stands : la position seule (« tu ressors P8 »), sans consigne ni « bien joué ».
+  if due then positionCall(e,ctx,me,4,nil,false) end
+  return
+ end
+ local last=me.lastMs/1000
+ local plan=t.plan
+ -- Delta sur le temps cible du modèle (tour précédent) ; pas la ligne où la position est dite (une transmission).
+ if cfg.pace and not due and t.targetPrev and last>0 and me.laps%cfg.paceEvery==0 then
+  local delta=last-t.targetPrev
+  if math.abs(delta)>=0.3 and math.abs(delta)<5 then
+   say(ctx,'target',5,{'targetDelta',delta>0 and 'plus' or 'minus',{n=math.abs(delta),dec=1,unit='s'}},{ttl=15})
+  elseif math.abs(delta)<0.3 then say(ctx,'target',5,{'goodPace'},{ttl=10,cooldown=240}) end
+ end
+ -- Temps cible du modèle seulement quand le plan est prêt (premiers tours : estimations).
+ t.targetPrev=plan and plan.ok and t.ready and plan.target or nil
+ -- Une consigne par ligne au plus : dite seule, ou avec la position quand celle-ci a changé (la clé de la consigne
+ -- garde son délai ; position refusée : la consigne seule).
+ local spoke=false
+ local function call(key,prio,parts,opts)
+  if spoke then return false end
+  local ok
+  if due then
+   due=false
+   local v=ctx.say.voice
+   if v and (opts.cooldown or 0)>0 and v.last[key] and ctx.real-v.last[key]<opts.cooldown then ok=positionCall(e,ctx,me,prio,nil,gained)
+   else
+    ok=positionCall(e,ctx,me,prio,parts,gained)
+    if ok and v then v.last[key]=ctx.real end
+    if not ok then ok=say(ctx,key,prio,parts,opts) end
+   end
+  else ok=say(ctx,key,prio,parts,opts) end
+  spoke=ok
+  return ok
+ end
+ local ahead,behind=Position.neighbours(F,me)
+ local mine=Timing.pace(ctx.timing,F.player,PACE.laps)
+ local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now) or nil
+ local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now) or nil
+ local pa=ahead and Timing.pace(ctx.timing,ahead,PACE.laps) or nil
+ local pb=behind and Timing.pace(ctx.timing,behind,PACE.laps) or nil
+ if cfg.pushHold then
+  -- Attaque / conservation : écarts devant et derrière, rythme comparé. Consignes dites en entrant dans la
+  -- situation (pas à chaque tour d'une bagarre) ; situation liée à la voiture devant (une autre voiture, ou un écart
+  -- hors de portée : situation nouvelle).
+  if ahead~=e.attackCar or not ga or ga>=GAP.chase then e.attackState=nil; e.attackCar=ahead end
+  local hybrid=F.me.kers or F.me.p2p>0 or F.me.drsPresent
+  if ga and ga<GAP.attack then
+   if e.attackState~='close' then e.attackState='close'; call('attack',3,{hybrid and 'overtake' or 'push'},{ttl=10,cooldown=180}) end
+  elseif ga and ga<GAP.chase and mine and pa and pa-mine>PACE.chase then
+   if e.attackState~='chase' then
+    e.attackState='chase'
+    local per=string.format('(%s s%s)',U.gap(-(pa-mine),1,Say.mark(ctx.say)),Say.note(ctx.say,'perLap'))
+    call('attack',4,{'push',{text=per}},{ttl=10,cooldown=240})
+   end
+  elseif cfg.pace and me.laps%cfg.paceEvery==0 and mine and pa and ga and ga<GAP.compare then
+   -- Comparaison du rythme avec la voiture chassée.
+   local diff=pa-mine
+   if diff>PACE.compare then call('paceCmp',5,{'closing',{text=string.format('(%s s%s)',U.fixed(diff,1,Say.mark(ctx.say)),Say.note(ctx.say,'perLap'))}},{ttl=12,cooldown=300})
+   elseif diff<-PACE.compare then call('paceCmp',5,{'losingTime',{n=-diff,dec=1,unit='s'},{text=Say.note(ctx.say,'perLap')}},{ttl=12,cooldown=300}) end
+  end
+  if gb and gb<GAP.defend and pb and mine and mine-pb>PACE.defend then call('defend',4,{'hesClosing','defend'},{ttl=10,cooldown=300})
+  elseif ga and gb and ga>GAP.hold and gb>GAP.hold then call('hold',5,{'hold'},{ttl=10,cooldown=600}) end
+ end
+ if due then
+  -- Pas de consigne cette ligne : la position, avec un conseil seulement s'il est justifié. Voiture devant
+  -- rattrapable avant l'arrivée (écart rattrapé au rythme actuel dans les tours restants) ; sinon pneus à ménager
+  -- (surchauffe ou usure anormale constatée, une fois par relais) quand personne ne menace derrière.
+  local left=Position.lapsLeft(F,me,plan)
+  local gain=mine and pa and pa-mine or 0
+  local advice=nil
+  if ga and (ga<GAP.attack or ga<GAP.chase and gain>PACE.reach and (not left or ga/gain<=left)) then advice='posReach'
+  elseif (e.hotSaid or e.wearSaid) and not e.posTyresSaid and (not gb or gb>GAP.tyres) then advice='posTyres' end
+  if positionCall(e,ctx,me,4,advice and {advice} or nil,gained) and advice=='posTyres' then e.posTyresSaid=true end
+ end
+end
+-- Carburant : laps de carburant comparés au besoin (jusqu'à l'arrêt prévu ou l'arrivée), à chaque tour.
+local function fuel(e,ctx,lapDone)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local t=e.strategist
+ if not cfg.fuel or not lapDone or not F.isRace or me.laps<1 or e.lastLapPit or me.pitlane then return end
+ local d0=ctx.link.d
+ if d0 and (d0.neutral or d0.red) then return end
+ local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
+ if not fpl or fpl<=0 then return end
+ local plan=t.plan
+ local total=plan and plan.total or F.laps
+ if not total or total<=0 then return end
+ -- Tour d'arrêt du plan seulement s'il est prêt (premiers tours : estimations, voir Strategist.ready).
+ local target=t.ready and plan and plan.ok and plan.optimal and (plan.optimal-me.laps) or (total-me.laps)
+ if target<=0 then return end
+ local have=(F.me.fuel-(cfg.fuelMargin or 0))/fpl
+ -- Premiers tours (mesures insuffisantes) : aucune consigne, sauf un manque immédiat (moins de deux tours).
+ if not Strategist.dataReady(t) and not t.ready and have>=2 then return end
+ local delta=have-target
+ -- Hystérésis : en manque sous -0,2 tour, sorti du manque seulement à +0,3 (pas d'alternance en suivant la consigne,
+ -- et jamais « plus 0,0 tour »).
+ local sign=delta<-0.2 and -1 or delta>=1 and 1 or 0
+ if e.fuelSign==-1 and sign==0 and delta<0.3 then sign=-1 end
+ if sign==-1 then
+  -- Manque : dit en y entrant, puis seulement s'il s'aggrave d'un demi-tour (jamais à chaque tour).
+  if e.fuelSign~=-1 or not e.fuelShortSaid or delta<e.fuelShortSaid-0.5 then
+   e.fuelShortSaid=delta
+   say(ctx,'fuel',3,{'liftCoast','fuelTarget','minus',{n=-delta,dec=1},'laps'},{ttl=15})
+  end
+  if F.me.fuelMaps>1 and e.fuelSign~=-1 then e.mapSaved=true; say(ctx,'map',4,{'mapSave'},{ttl=15,cooldown=300}) end
+ elseif e.fuelSign==-1 and sign>=0 then
+  e.fuelShortSaid=nil
+  say(ctx,'fuel',4,{'fuelTarget','plus',{n=math.max(0,delta),dec=1},'laps'},{ttl=15})
+ elseif me.laps%5==0 then
+  say(ctx,'fuel',5,{'fuelTarget',delta>=0 and 'plus' or 'minus',{n=math.abs(delta),dec=1},'laps'},{ttl=15})
+ end
+ if total-me.laps<=3 and delta>=0 and not e.fuelOkSaid and not (plan and plan.optimal) then e.fuelOkSaid=true; say(ctx,'fuelOk',4,{'fuelOk'},{ttl=15}) end
+ -- Après une consigne d'économie, marge revenue à un tour au moins : map attaque (une fois).
+ if e.mapSaved and F.me.fuelMaps>1 and delta>=1 then e.mapSaved=false; say(ctx,'map',4,{'mapPush'},{ttl=15}) end
+ e.fuelSign=sign
+end
+-- Pneus : chauffe (cœur sous l'optimum), surchauffe (cœur ou surface au-dessus), usure anormale d'un pneu.
+local function tyres(e,ctx,dt)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
+ if not cfg.tyres or me.pitlane or me.kmh<60 then return end
+ local cold,hot,ok=0,0,0
+ local maxKm,sumKm=0,0
+ for k=1,4 do
+  local w=F.me.tyres[k]
+  local surface=(w.inner+w.mid+w.outer)/3
+  if w.core<w.opt-cfg.tyreCold then cold=cold+1 end
+  if w.core>w.opt+cfg.tyreHot or surface>w.opt+cfg.tyreHot*1.6 then hot=hot+1 end
+  if math.abs(w.core-w.opt)<cfg.tyreCold*0.6 then ok=ok+1 end
+  maxKm=math.max(maxKm,w.vkm); sumKm=sumKm+w.vkm
+ end
+ -- Une fois par état : froid jusqu'à ce qu'ils chauffent, chaud jusqu'à 60 s sans surchauffe.
+ e.coldFor=cold>=2 and e.coldFor+dt or 0
+ if cold>=2 then e.wasCold=true end
+ e.hotFor=hot>=1 and e.hotFor+dt or 0
+ if e.coldFor>20 and me.laps>=1 and not e.coldSaid then e.coldSaid=true; e.warm=false; say(ctx,'tyreTemp',4,{'tyresCold'},{ttl=10}) end
+ if e.hotFor>15 and not e.hotSaid then e.hotSaid=true; say(ctx,'tyreTemp',3,{'tyresHot'},{ttl=10}) end
+ if hot==0 then e.coolFor=e.coolFor+dt; if e.coolFor>60 then e.hotSaid=false end else e.coolFor=0 end
+ -- « Pneus froids » réarmé après 60 s à température (pas à chaque passage au seuil : des pneus qui oscillent autour
+ -- le feraient redire toutes les 30 s).
+ if ok==4 then e.okFor=e.okFor+dt; if e.okFor>60 then e.coldSaid=false end else e.okFor=0 end
+ -- « Pneus à température » : seulement après une phase froide (départ, sortie des stands), une fois par relais.
+ if ok==4 and not e.warm then e.warm=true; if e.wasCold and not e.stintTyresOk then e.stintTyresOk=true; e.wasCold=false; say(ctx,'tyreTemp',5,{'tyresOk'},{ttl=8}) end end
+ -- Usure anormale : un pneu nettement plus usé que l'autre du même essieu (l'avant et l'arrière s'usent normalement
+ -- différemment), méplat, cloques, grains, crevaison. Dite une fois par train de pneus ; un écart d'usure sur un essieu,
+ -- une seule fois par séance pour le même essieu et le même côté (un circuit qui use un côté plus que l'autre le
+ -- referait à chaque train de pneus). Un défaut du pneu (méplat, cloques, grains, crevaison) est toujours dit.
+ local t=F.me.tyres
+ local function off(a,b,axle)
+  local x,y=t[a].vkm,t[b].vkm
+  if math.max(x,y)>1 and math.min(x,y)>0 and math.max(x,y)>math.min(x,y)*1.3 then return axle..(x>y and 'L' or 'R') end
+  return nil
+ end
+ local side=off(1,2,'F') or off(3,4,'R')
+ local defect=false
+ for k=1,4 do local w=t[k]; if w.flat>0.2 or w.blister>0.35 or w.grain>0.35 or w.blown then defect=true end end
+ if maxKm<0.5 then e.wearSaid=false end
+ if (defect or side and not e.wearSides[side]) and not e.wearSaid then
+  e.wearSaid=true; if side then e.wearSides[side]=true end
+  say(ctx,'wear',3,{'abnormalWear'},{ttl=10})
+ end
+end
+M.tyres=tyres
+M.pace=pace
+-- Freins : surchauffe et déséquilibre avant / arrière (répartition à corriger si la voiture la règle au volant).
+local function brakes(e,ctx,dt)
+ local F=ctx.F; local cfg=ctx.cfg; local b=F.me.brakes
+ if not cfg.brakes or (b[1]<=0 and b[3]<=0) then return end
+ local front=(b[1]+b[2])*0.5; local rear=(b[3]+b[4])*0.5
+ local hottest=math.max(b[1],b[2],b[3],b[4])
+ -- Une fois par épisode : redit seulement après 30 s nettement sous le seuil.
+ e.brakeHotFor=hottest>cfg.brakeHot and e.brakeHotFor+dt or 0
+ if e.brakeHotFor>5 and not e.brakeSaid then e.brakeSaid=true; say(ctx,'brakes',3,{'brakesHot'},{ttl=10}) end
+ if hottest<cfg.brakeHot-50 then e.brakeCoolFor=e.brakeCoolFor+dt; if e.brakeCoolFor>30 then e.brakeSaid=false end else e.brakeCoolFor=0 end
+ if not F.me.hasBias then return end
+ local diff=front-rear
+ local want=diff>cfg.biasDiff and 1 or diff<-cfg.biasDiff and -1 or 0
+ e.biasFor=want~=0 and want==e.bias and e.biasFor+dt or 0; e.bias=want
+ -- Une fois par sens de déséquilibre ; réarmé après 60 s d'équilibre (une image équilibrée ne suffit pas).
+ if e.biasFor>20 and e.biasSaid~=want then e.biasSaid=want; say(ctx,'bias',4,{want>0 and 'biasRear' or 'biasFront'},{ttl=12}) end
+ if want==0 then e.biasCalm=e.biasCalm+dt; if e.biasCalm>60 then e.biasSaid=0 end else e.biasCalm=0 end
+end
+-- Dégâts : choc enregistré par AC sur une zone de la carrosserie (aéro).
+local function damage(e,ctx)
+ local F=ctx.F; local cfg=ctx.cfg; local dmg=F.me.damage
+ local sum=0; for k=1,5 do sum=sum+dmg[k] end
+ if e.damage and cfg.damage and sum-e.damage>=20 then say(ctx,'damage',2,{'aeroDamage'},{ttl=10,cooldown=30}) end
+ e.damage=sum
+end
+-- Conditions : pluie à venir (transition de la météo vers un temps de pluie), pluie qui s'intensifie, adhérence.
+local function weather(e,ctx)
+ local F=ctx.F; local cfg=ctx.cfg
+ if not cfg.weather then return end
+ local now=ctx.now
+ if F.rainComing then
+  if not e.transAt then e.transAt=now; e.trans=F.transition end
+  local span=now-e.transAt
+  if span>=60 then
+   local rate=(F.transition-e.trans)/span
+   e.transAt=now; e.trans=F.transition
+   if rate>0 then
+    local minutes=math.floor((0.5-F.transition)/rate/60+0.5)
+    for _,mark in ipairs({15,10,5,2}) do
+     if minutes<=mark and minutes>=1 and not e.rainSaid[mark] then
+      e.rainSaid[mark]=true
+      say(ctx,'rainIn',3,minutes==1 and {'rainIn','oneMinute'} or {'rainIn',{n=minutes},'minutes'},{ttl=30})
+      break
+     end
+    end
+   end
+  end
+ else e.transAt=nil; e.rainSaid={} end
+ if not e.rainAt or now-e.rainAt>=120 then
+  if e.rainAt and F.rain-e.rain>0.08 and F.rain>0.05 then say(ctx,'rain',3,{'rain'},{ttl=15,cooldown=300}) end
+  e.rainAt=now; e.rain=F.rain
+ end
+ -- Adhérence de la piste (roadGrip, et humidité) : variation sur 5 minutes.
+ local grip=F.grip*(1-0.5*F.wetness)
+ e.grip=U.ewma(e.grip,grip,0.05)
+ if not e.gripRef then e.gripRef=e.grip; e.gripAt=now end
+ if now-e.gripAt>=300 then
+  local delta=e.grip-e.gripRef
+  if delta<=-0.01 then say(ctx,'grip',4,{'gripDown'},{ttl=20,cooldown=900})
+  elseif delta>=0.01 then say(ctx,'grip',5,{'gripUp'},{ttl=20,cooldown=900}) end
+  e.gripRef=e.grip; e.gripAt=now
+ end
+end
+-- Vent au freinage : composante du vent dans l'axe de la voiture au début d'un gros freinage.
+local function wind(e,ctx)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
+ if not cfg.wind or F.windKmh<cfg.windMin or me.kmh<140 or F.me.brake<0.6 then return end
+ local along=F.windX*me.lookX+F.windZ*me.lookZ
+ if math.abs(along)<cfg.windMin then return end
+ local seg=math.floor(me.spline*Coach.segments)
+ local last=e.windSeg[seg]
+ if last and me.laps-last<5 then return end
+ e.windSeg[seg]=me.laps
+ say(ctx,'wind',5,{along>0 and 'tailwind' or 'headwind'},{ttl=4,cooldown=60})
+end
+-- Conseil de pilotage : clip du conseil, puis le secteur officiel du circuit dit (« au secteur deux », appris en roulant :
+-- compteur de secteur d'AC vu sur chaque tronçon du coach) ; le nom du virage (CSP) et le temps perdu sont écrits. Sans
+-- secteur connu : le conseil seul, jamais « au secteur » sans le numéro.
+function M.coachCall(e,ctx,advice)
+ local sector=ctx.sectorName and ctx.sectorName((advice.segment+0.5)/Coach.segments) or ''
+ local official=e.sectorOf[advice.segment]
+ local detail={}
+ if sector~='' then detail[#detail+1]=sector end
+ if not official and sector=='' then detail[#detail+1]=string.format('%d/%d',advice.segment+1,Coach.segments) end
+ if advice.kind=='losingTime' and advice.loss then detail[#detail+1]=string.format('%s s',U.fixed(advice.loss,2,Say.mark(ctx.say))) end
+ local parts={advice.kind}
+ local text=Say.text(ctx.say,{advice.kind})
+ if official then
+  parts[2]='atSector'; parts[3]={n=official+1}
+  text=text..(advice.kind=='losingTime' and ' ' or ' · ')..Say.text(ctx.say,{'atSector',{n=official+1}})
+ end
+ if #detail>0 then text=text..' ('..table.concat(detail,', ')..')' end
+ return say(ctx,'coach',5,parts,{ttl=20,text=text})
+end
+local function driving(e,ctx,lapDone)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
+ Coach.update(e.coach,me.spline,me.kmh,F.me.brake,ctx.now,F.trackLength)
+ -- Secteur officiel (compteur d'AC, 0 = premier) de chaque tronçon du coach, appris en roulant.
+ if not me.pitlane and type(F.me.sector)=='number' and F.me.sector>=0 and F.me.sector<10 then
+  local seg=math.floor(((me.spline or 0)%1)*Coach.segments)
+  if seg>=0 and seg<Coach.segments then e.sectorOf[seg]=math.floor(F.me.sector) end
+ end
+ if not lapDone then return end
+ local d=ctx.link.d
+ local rec=e.strategist.data.records[#e.strategist.data.records]
+ local clean=rec and rec.clean or false
+ local advice=Coach.lap(e.coach,clean and not (d and d.neutral),cfg.drivingLoss)
+ if advice and cfg.driving then M.coachCall(e,ctx,advice) end
+end
+function M.step(e,ctx,dt)
+ local F=ctx.F; local me=F.cars[F.player]
+ if not me or not me.valid then return end
+ local lapDone=me.laps~=e.lap and e.lap>=0
+ -- Tour qui vient de finir passé par la voie des stands (tour d'entrée ou de sortie) : ni rythme ni carburant jugés.
+ if me.laps~=e.lap then e.lastLapPit=e.inPitLap; e.inPitLap=me.pitlane; e.lap=me.laps end
+ if me.pitlane then e.inPitLap=true; e.stintTyresOk=false; e.warm=false; e.posTyresSaid=false end
+ -- Voitures passées par la voie des stands depuis la ligne du joueur (« Bien joué » : dépassements en piste seulement).
+ for i=0,F.count-1 do if F.cars[i].pitlane then e.pitted[i]=true end end
+ Strategist.step(e.strategist,ctx)
+ pace(e,ctx,lapDone)
+ fuel(e,ctx,lapDone)
+ tyres(e,ctx,dt)
+ brakes(e,ctx,dt)
+ damage(e,ctx)
+ weather(e,ctx)
+ wind(e,ctx)
+ driving(e,ctx,lapDone)
+end
+return M
