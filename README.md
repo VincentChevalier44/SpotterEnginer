@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.1.1. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.2.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -76,7 +76,7 @@ Install AdvancedIA first (see its [README](https://github.com/VincentChevalier44
 ### With Content Manager
 
 1. Close Assetto Corsa.
-2. Download `SpotterEnginer-1.1.1.zip` (or the latest one) from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
+2. Download `SpotterEnginer-1.2.0.zip` (or the latest one) from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
 3. Drag the zip onto the Content Manager window and confirm the installation, or extract it straight into the `assettocorsa` root folder.
 
 The package already has the right structure (`apps/lua/SpotterEnginer/…`). It holds only what the game loads (entry point, manifest, icon, `src/`, `sounds/`, `vox/`, `fonts/`) plus the user notes (`README.md`, `CHANGELOG.md`, `COMPATIBILITY.md`, `LICENSE`).
@@ -103,11 +103,17 @@ The repository download also contains the test bench, the tools and the document
 
 ### From the app
 
-New in 1.1.0. The **UPDATE** block sits at the bottom of the **Home** tab.
+New in 1.1.0. Since 1.2.0, as in AdvancedIA:
+- the **header** shows the installed version; when a newer one is published, the version turns blue and a small **Update · x** button appears next to it (active when stopped, greyed while driving);
+- if AdvancedIA must be updated first, the header shows an **AdvancedIA first** warning instead, and a click opens the **Diagnostics** tab;
+- during the download and installation, the header shows the current step;
+- the full **UPDATE** block (state, release notes, **Check now**, **Roll back**, **Check for updates at launch**) sits at the top of the **Diagnostics** tab.
 
-**Checking.** About ten seconds after the app loads, once per launch, the app makes one request to GitHub (`api.github.com`) to read the latest published release of this repository. Untick **Check for updates at launch** (UPDATE block) to never contact GitHub. **Check now** asks again, at most once a minute.
+**From 1.1.0 or 1.1.1, install 1.2.0 by hand once** (see [Updating by hand](#updating-by-hand)): in those versions the **Update** button of the block stayed greyed even when stopped. From 1.2.0 on, the in-app update works.
 
-When a newer version exists, the block shows the installed version, the available one with its publication date and the first lines of its release notes, plus **Release notes** (opens the release on GitHub) and **Update**.
+**Checking.** About ten seconds after the app loads, once per launch, the app makes one request to GitHub (`api.github.com`) to read the latest published release of this repository. Untick **Check for updates at launch** (UPDATE block, Diagnostics tab) to never contact GitHub. **Check now** asks again, at most once a minute.
+
+When a newer version exists, the header button installs it in one click, and the block shows the installed version, the available one with its publication date and the first lines of its release notes, plus **Release notes** (opens the release on GitHub) and **Update**.
 
 **Installing.** One click on **Update**, **only when stopped**: at your pit box at a standstill (not driving in the pit lane), or with the game paused. While you drive the button is greyed and the block reads *Available when stopped: pit box or pause*. Then the app:
 
@@ -129,6 +135,13 @@ Until the copy starts, **Cancel** stops everything and the app folder is never t
 
 **Work folder.** Everything is prepared in CSP's state folder, `Documents/Assetto Corsa/cfg/extension/state/SpotterEnginer-update`, never in the app folder (CSP reloads the app as soon as one of its files changes). It holds `next/` (the extracted package), `current/` (the files about to be replaced), `backup/` (the previous version) and small state files (`installing.txt`, `updated.txt`, `boot.txt`, `failed.txt`). Once a new version has started properly, the leftovers are tidied away; `backup/` is kept.
 
+**Pit plan for AdvancedIA (new in 1.2.0, contract v1).** SpotterEnginer also publishes its pit plan (`ac.store` key `SpotterEnginer.pitplan`): `v=1;lap=<N>;compound=-;state=planned|boxnow|done|none;window=<a>-<b>;boxcalls=0|1;stamp=<s>`, 160 characters at most. From AdvancedIA Beta 1.59, its pit overlay follows this plan: a short notice when the window opens, then *box this lap* only on the planned lap.
+- `lap`: the lap in progress when entering the pits (the lap of the engineer's "box", fixed once "box next lap" is said).
+- `compound`: always `-`, since the strategy model does not choose a compound; AdvancedIA's own rules stay the reference for tyres.
+- `state`: `planned` once the plan is ready (never on the estimates of the first laps); `boxnow` on the planned lap from 10 % of the lap, or when a stop under neutralisation is called; `done` after the pit lane, until a next stop is planned; `none` without a ready plan, outside races, or with the engineer or strategy off.
+- `window`: the engineer's pit window; `boxcalls`: whether the "box" calls are said on the radio.
+- `stamp`: simulation time in whole seconds; AdvancedIA treats the plan as frozen when it stops moving for 6 s (paused: neither clock moves) and starts over when it goes back.
+
 **For AdvancedIA's home page.** SpotterEnginer publishes its update state in the game's shared memory (`ac.store` key `SpotterEnginer.update`, contract v1): `v=1;installed=…;latest=…;state=available|uptodate|checking|error|incompatible[;needs=…]`. `needs` gives the AdvancedIA version the package requires.
 
 Do not update the app in the middle of a race by hand either: CSP reloads it, and the states in progress are announced again.
@@ -144,7 +157,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.1). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.2.0). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -246,15 +259,15 @@ The window is organised like AdvancedIA's:
 | Tab | Sections with a switch | Sections always on |
 |---|---|---|
 | Spotter | Flags and neutralisations, Delta to keep, DRS, Penalties, Side by side, Traffic, Pit exit, Gaps | — |
-| Engineer | Pace and calls, Fuel, Driving advice, Tyres, Brakes, Damage, Weather and grip, Wind into braking | — |
+| Engineer | Pace and calls, End-of-race debrief, Fuel, Driving advice, Tyres, Brakes, Damage, Weather and grip, Wind into braking | — |
 | Strategy | Strategy calls | Current plan, Wear and pace, Stop and rejoin |
 | Radio & voice | Car sound during radio | Volumes, Voice and language, Message pacing, Radio log |
 | Overlays | Common settings, Keyboard shortcuts, Spotter overlay, Engineer overlay, Strategy overlay | AC app desktops |
 
 The sections that are always on have nothing to switch off: they set a calculation (the plan is always computed, the Strategy overlay needs it), volumes or the language, or they show a state. Switching **Strategy calls** off silences the "box", the undercut, the overcut and the car ahead pitting, but the Strategy overlay keeps the plan and the duels.
 
-- **Home**: the link, the **Spotter**, **Engineer**, **Strategy** and **Overlays** tiles (each one switches its role on or off), the voice clips found, the volumes with the **Test the voice** buttons, and the **UPDATE** block.
-- **Diagnostics**: state, bridge, errors, strategy model, desktop, settings, and **Reset all settings (overlays: this desktop)**, confirmed by a second click; the overlays of the other desktops are kept.
+- **Home**: the link, the **Spotter**, **Engineer**, **Strategy** and **Overlays** tiles (each one switches its role on or off), the voice clips found, the volumes with the **Test the voice** buttons.
+- **Diagnostics**: the **UPDATE** block, then state, bridge, errors, strategy model, desktop, settings, and **Reset all settings (overlays: this desktop)**, confirmed by a second click; the overlays of the other desktops are kept.
 
 ### Overlays
 
@@ -279,11 +292,19 @@ Same settings as in SuperHUD and AdvancedIA.
 - **Make backgrounds transparent** or **Restore backgrounds**;
 - number of lines and duration of the radio messages.
 
-**Placing an overlay:** unlock it, drag it, pull its bottom-right corner for the size, then right-click to lock it. Unlocked, it stays visible even without AdvancedIA; locked, it only shows when AdvancedIA is connected.
+**In-game editing (new in 1.2.0, no pause menu or pits needed):**
+- while driving, move the mouse: a small **OVERLAYS** button shows for 3 seconds at the top centre of the screen (drag it elsewhere if you like; its position is kept);
+- click it: the edit panel opens under the button and every overlay shown is unlocked for the edit;
+- drag an overlay to move it, pull its bottom-right corner for the size; the overlay you touch is picked in the panel (thicker frame, name at the bottom);
+- in the panel: show or hide each overlay of this desktop, then for the picked one its size, background (**Solid**, **Ghost**, **Transparent**), background and content opacity, decorative band, header and **Recenter**;
+- **Done** (or **Ctrl+Alt+K**) closes the panel and locks every overlay. The edit itself is never saved as "unlocked": after a crash, everything is locked.
+- Setting **In-game edit button** (section **In-game editing**, tab **Overlays**) hides the button; **Ctrl+Alt+K** still opens the panel.
+
+**Placing an overlay from the settings window:** unlock it, drag it, pull its bottom-right corner for the size, then right-click to lock it. Unlocked, it stays visible even without AdvancedIA; locked, it only shows when AdvancedIA is connected.
 
 **Keyboard shortcuts** (a setting; they avoid SuperHUD's H and G keys):
 - **Ctrl+Alt+J**: show or hide the overlays of the current desktop;
-- **Ctrl+Alt+K**: lock or unlock all (current desktop);
+- **Ctrl+Alt+K**: open or close in-game editing (closing locks every overlay);
 - **Ctrl+Alt+M**: mute or unmute the radio for the session.
 
 ### AC app desktops
@@ -351,6 +372,13 @@ The 32 kinds of AdvancedIA announcement and the 40 states of its panel were revi
 - **Damage**: a hit recorded on the bodywork.
 - **Conditions**: rain expected in N minutes, rain getting heavier, grip dropping or rising.
 - **Wind into braking**: tailwind or headwind at the start of a big braking zone.
+- **End-of-race debrief** (new in 1.2.0, section **End-of-race debrief**): as soon as you cross the finish line of a race (even while AdvancedIA pauses its bridge for the finish) the spotter says *"Chequered flag, race over! You're P2."* Five seconds later the engineer sums it up in one transmission:
+  - places gained or lost since the start (*"3 places gained since the start."*), or *"Same place as on the grid."*;
+  - overtakes on track (*"7 overtakes on track."*), counted by SpotterEnginer: a car passed for position, never a backmarker being lapped, never a place gained in the pits;
+  - *"And the fastest lap of the race!"* when it is yours;
+  - a verdict: win, podium, top 5, top 10, good comeback (3 places or more gained), tough race (3 places or more lost), keep improving, not classified, disqualified.
+
+  Written on the radio only: start and finish places, your best lap, how many times you were passed. The place is AdvancedIA's corrected classification (time penalties included) when there is one. If the Spotter role or the **Flags and neutralisations** section is off, the engineer starts with *"Race over. You're P2."*
 - **Driving**: over 40 mini sectors, a repeated loss over three clean laps. Depending on the case: braking too early, corner speed too low, or time lost in a given sector (with the track's sector name when there is one).
 
 ### Strategy overlay and calls
@@ -445,7 +473,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 141 calls, 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 804 files in all. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 160 calls, 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 842 files in all. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).
@@ -512,6 +540,7 @@ Role switch **Engineer on** (pace, fuel, tyres, strategy). Groups **Race**, **Ca
 | Section | Settings (default) |
 |---|---|
 | Pace and calls (on) | Pace every … laps (3) [1–10], Push / hold (on), Position and advice (on) |
+| End-of-race debrief (on) | — |
 | Fuel (on) | Fuel margin (L) (1.0) [0–5], Fuel effect (s/L) (0.03) [0.005–0.08] |
 | Driving advice (on) | Reported loss (s) (0.15) [0.05–0.6], per mini sector over 3 laps |
 | Tyres (on) | Cold tyres below optimum (°C) (15) [5–40], Overheating above (°C) (12) [4–40] |
@@ -555,6 +584,7 @@ Group **All overlays**:
 | Section | Settings (default) |
 |---|---|
 | AC app desktops (always on) | Current desktop and overlays shown on each; **Copy this desktop to the others**, **Clear this desktop** |
+| In-game editing (switch **In-game edit button**, on) | Button position X and Y (px) (AUTO: top centre); **Open in-game editing**, **Put the button back at the top centre** |
 | Common settings (switch **Overlays shown**, on) | Click-through (on), Hide in replays (on), Hide in the pit lane (off), Radio lines (4) [1–8], Message duration (s) (10) [3–30]; **Lock all** / **Unlock all**, **Make backgrounds transparent** / **Restore backgrounds** |
 | Keyboard shortcuts (on) | Ctrl+Alt+J, Ctrl+Alt+K, Ctrl+Alt+M |
 
@@ -600,7 +630,7 @@ Everything was tested outside the game, on a simulated CSP host. The in-app upda
    - the settings are kept from one session to the next.
 4. **Link**: the chip switches to **Connected to AdvancedIA** when it runs, and to **AdvancedIA suspended · paused** in pause.
 5. **Car sound**: it drops during the radio and comes back afterwards.
-6. **Overlays**: they can be dragged and resized; a right-click locks them; the shortcuts work. On an AZERTY keyboard, AltGr counts as Ctrl+Alt.
+6. **Overlays**: moving the mouse while driving shows the **OVERLAYS** button; its panel opens, overlays can be dragged and resized, **Done** locks them; the shortcuts work. On an AZERTY keyboard, AltGr counts as Ctrl+Alt.
 7. **Overlaps**: the automatic positions may cover SuperHUD blocks; move the overlays if needed.
 8. **Desktops**: with the **Next desktop** command, the overlays of desktop 1 disappear, desktop 2 is empty until it is set up, and the header of the settings window shows the right desktop.
 9. **Level**: master volume at 170 % and car sound during the radio at 85 % by default (the driver's settings). If the voices stay covered, raise the volume up to 200 % and lower the car sound during the radio towards 40 to 60 %.
@@ -634,7 +664,7 @@ SpotterEnginer writes its session log to `Documents/Assetto Corsa/logs/SpotterEn
 
 **Left and right are swapped.** Tick **Swap left and right** (section **Side by side**).
 
-**The update is refused.** Read the message in the UPDATE block: *Update AdvancedIA first* means the new SpotterEnginer needs a newer AdvancedIA (see [Compatibility guard](#compatibility-guard)).
+**The update is refused.** Read the message in the UPDATE block (Diagnostics tab): *Update AdvancedIA first* means the new SpotterEnginer needs a newer AdvancedIA (see [Compatibility guard](#compatibility-guard)).
 
 **A clip is missing.** The call is written on the overlay radio instead. The **Home** tab shows the clips present; `python tools/generer_voix.py` makes the missing ones.
 

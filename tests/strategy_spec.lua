@@ -183,4 +183,33 @@ function T.no_fuel_use_no_fuel_effect()
  local m=SD.model(d,{fuel=50},cfg,100,0)
  check(m.fuelK==0,'model without fuel effect')
 end
+-- Plan d'arrêt pour AdvancedIA (contrat SpotterEnginer.pitplan v1) : prévu, « box » au tour d'arrêt dès 10 % du tour,
+-- fait après la voie des stands jusqu'au plan d'un arrêt suivant ; rien tant que le plan n'est pas prêt ; format.
+function T.pitplan_contract_v1()
+ local Strategist=require('src/strategist')
+ local t=Strategist.new()
+ local me={valid=true,laps=9,spline=0.5,pitlane=false}
+ local F={isRace=true,player=0,cars={[0]=me},clock=1834.7}
+ local ctx={F=F,cfg={boxCalls=true}}
+ local function get() local s=Strategist.pitplan(t,ctx,true); check(#s<=160,'160 bytes at most'); local out={}
+  for k,v in s:gmatch('(%w+)=([^;]*)') do out[k]=v end; return out,s end
+ t.plan={ok=true,optimal=12,window={10,14}}
+ local o,s=get()
+ check(o.state=='none' and o.v=='1','not ready: none ('..s..')')
+ t.ready=true
+ o,s=get()
+ check(s=='v=1;lap=12;compound=-;state=planned;window=10-14;boxcalls=1;stamp=1834','planned: '..s)
+ me.laps=11; me.spline=0.05; o=get(); check(o.state=='planned','stop lap, before 10 %: planned')
+ me.spline=0.2; o=get(); check(o.state=='boxnow' and o.lap=='12','stop lap from 10 %: boxnow')
+ me.spline=0.97; me.pitlane=true; o=get(); check(o.state=='done' and o.lap=='12','pit lane: done')
+ me.laps=12; me.spline=0.1; me.pitlane=false; o=get(); check(o.state=='done','done kept after the stop')
+ t.plan.optimal=30; t.plan.window={27,33}; o=get()
+ check(o.state=='planned' and o.lap=='30' and o.window=='27-33','next stop planned')
+ -- Neutralisation : arrêt dit maintenant.
+ t.neutralBox=true; o=get(); check(o.state=='boxnow','neutral box: boxnow'); t.neutralBox=false
+ -- Appels box coupés : publié quand même, boxcalls=0 ; ingénieur coupé ou hors course : none.
+ ctx.cfg.boxCalls=false; o=get(); check(o.boxcalls=='0' and o.state=='planned','box calls off')
+ check(Strategist.pitplan(t,ctx,false):find('state=none',1,true),'engineer off: none')
+ F.isRace=false; o=get(); check(o.state=='none','not a race: none')
+end
 return T

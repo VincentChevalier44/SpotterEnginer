@@ -933,6 +933,64 @@ function T.fast_car_in_practice()
  r.ctx.cfg.fasterBehind=true; r.ctx.F.isRace=true; announce(4); sim.run(1)
  check(not queued(r.voice,'fastCar'),'race: silent')
 end
+-- Arrivée d'une course : le spotter annonce le damier et la place ; l'ingénieur fait le bilan 5 s plus tard, une
+-- seule fois ; bilan coupé : le damier seul.
+function T.race_finish_debrief()
+ local Engineer=require('src/engineer')
+ local r=rig()
+ r.ctx.F.isRace=true
+ r.step(1)
+ r.ctx.F.cars[r.ctx.F.player].finished=true
+ r.e.hud.finished=true; r.e.hud.final=2; r.e.hud.grid=5; r.step(2)
+ local q=queued(r.voice,'chequered')
+ check(q and q.text:find('course terminée',1,true) and q.text:find('Tu es P2',1,true),'spotter: finish and place: '..tostring(q and q.text))
+ local eng=Engineer.new()
+ r.ctx.F.cars[1].bestMs=0
+ for k=0,7 do r.ctx.real=2+k; Engineer.debrief(eng,r.ctx) end
+ local b=queued(r.voice,'debrief')
+ check(b and b.text:find('3 places gagnées',1,true) and b.text:find('Sur le podium',1,true),'engineer debrief: '..tostring(b and b.text))
+ local n=0; for _,x in ipairs(r.voice.queue) do if x.key=='debrief' then n=n+1 end end
+ for k=8,20 do r.ctx.real=2+k; Engineer.debrief(eng,r.ctx) end
+ local m=0; for _,x in ipairs(r.voice.queue) do if x.key=='debrief' then m=m+1 end end
+ check(n==1 and m==1,'debrief said once')
+ local r2=rig(); r2.ctx.F.isRace=true; r2.ctx.cfg.debrief=false; r2.step(1)
+ r2.ctx.F.cars[r2.ctx.F.player].finished=true
+ r2.e.hud.finished=true; r2.e.hud.final=2; r2.step(2)
+ local q2=queued(r2.voice,'chequered')
+ check(q2 and q2.text:find('Rentre aux stands',1,true),'debrief off: chequered alone: '..tostring(q2 and q2.text))
+end
+-- Ligne passée vue par AC seulement (résultat d'AdvancedIA pas encore là) : damier dit 1 s plus tard avec la place
+-- d'AC ; résultat d'AdvancedIA encore celui d'avant un redémarrage : ni damier ni bilan tant que la ligne n'est pas
+-- passée (même au tour 2), puis la place d'AC, jamais celle de la course d'avant.
+function T.finish_without_bridge_result_and_after_restart()
+ local Engineer=require('src/engineer')
+ local Debrief=require('src/debrief')
+ local F2
+ local Spotter=require('src/spotter')
+ local r=rig()
+ local F=r.ctx.F; F.isRace=true
+ r.step(1)
+ local me=F.cars[F.player]; me.finished=true; me.position=4
+ r.ctx.real=10; Spotter.finish(r.s,r.ctx)
+ check(not queued(r.voice,'chequered'),'waits for the AdvancedIA result')
+ r.ctx.real=11.1; Spotter.finish(r.s,r.ctx)
+ local q=queued(r.voice,'chequered')
+ check(q and q.text:find('Tu es P4',1,true),'AC place after 1 s: '..tostring(q and q.text))
+ local r2=rig(); r2.ctx.F.isRace=true; r2.step(1)
+ local me2=r2.ctx.F.cars[r2.ctx.F.player]; me2.laps=0
+ r2.e.hud.finished=true; r2.e.hud.final=2; r2.e.hud.grid=5; r2.step(2)
+ local eng=Engineer.new()
+ for k=0,8 do r2.ctx.real=2+k; Engineer.debrief(eng,r2.ctx); Spotter.finish(r2.s,r2.ctx) end
+ check(not queued(r2.voice,'chequered') and not queued(r2.voice,'debrief'),'stale result after a restart: silent')
+ me2.laps=2; F2=r2.ctx.F; F2.started=true
+ for k=9,20 do r2.ctx.real=2+k; Debrief.step(eng.debrief,F2,r2.ctx.timing,r2.ctx.link.d); Engineer.debrief(eng,r2.ctx); Spotter.finish(r2.s,r2.ctx) end
+ check(not queued(r2.voice,'chequered') and not queued(r2.voice,'debrief'),'stale result, lap 2: silent')
+ me2.finished=true; me2.position=6
+ for k=21,30 do r2.ctx.real=2+k; Engineer.debrief(eng,r2.ctx); Spotter.finish(r2.s,r2.ctx) end
+ local c=queued(r2.voice,'chequered'); local b=queued(r2.voice,'debrief')
+ check(c and c.text:find('Tu es P6',1,true),'line crossed: AC place, not the stale one: '..tostring(c and c.text))
+ check(b and b.text:find('arrivée P6',1,true) and not b.text:find('P5',1,true) and not b.text:find('podium',1,true),'debrief without the stale result: '..tostring(b and b.text))
+end
 -- Fenêtre d'arrêt : un appel du plan de l'ingénieur, coupé avec le réglage « Fenêtre et box » (les rappels
 -- d'AdvancedIA restent au spotter).
 function T.window_call_follows_box_setting()

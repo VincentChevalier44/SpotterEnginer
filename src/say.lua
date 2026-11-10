@@ -20,7 +20,7 @@ function M.note(s,id,...) return string.format(Catalog.notes[id][s.lang],...) en
 local function singular(lang,v) if lang=='FR' then return v<2 end return v==1 end
 M.singular=singular
 -- Unités accordées (clip au pluriel -> clip au singulier) quand elles suivent un nombre.
-local SINGULAR={laps='lapOne',seconds='secondOne'}
+local SINGULAR={laps='lapOne',seconds='secondOne',placesGained='placeGained',placesLost='placeLost',overtakes='overtakeOne'}
 -- Nombre en atomes : signe, entier (0 à Catalog.maxNumber, plus grand : écrit seulement), virgule et chiffres des
 -- décimales (zéros de fin retirés : « 1 », jamais « 1,0 »). Renvoie la valeur dite.
 local function numberParts(out,value,dec)

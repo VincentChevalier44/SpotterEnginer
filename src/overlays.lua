@@ -281,11 +281,14 @@ function M.draw.strategy(app,f,o)
  return h
 end
 -- Déverrouillé : glisser pour déplacer, coin bas droit pour la taille, clic droit pour verrouiller (cadre et poignée
--- à l'accent). Verrouillé sans clics traversants : clic droit pour déverrouiller.
+-- à l'accent). Verrouillé sans clics traversants : clic droit pour déverrouiller. Édition en jeu (src/editor.lua,
+-- app.editing) : tous déverrouillés sans toucher au réglage enregistré ; un geste ou un clic droit choisit l'overlay
+-- réglé dans le panneau (cadre plus épais, nom en bas).
 local function edit(v,app,o,f)
  local st=v[o]; local cfg=app.cfg; local c=W.colors()
  local w,h=f.w,st.h; local hs=M.handle
- if not cfg[o..'Locked'] then
+ local editing=app.editing==true
+ if editing or not cfg[o..'Locked'] then
   local _,_,a1,r1=W.hit('mv1_'..o,0,0,w,math.max(1,h-hs))
   local _,_,a2,r2=W.hit('mv2_'..o,0,math.max(0,h-hs),math.max(1,w-hs),hs)
   local _,_,a3,r3=W.hit('rs_'..o,math.max(0,w-hs),math.max(0,h-hs),hs,hs)
@@ -309,10 +312,13 @@ local function edit(v,app,o,f)
     end
    end
   else st.drag=nil end
-  if r1 or r2 or r3 then app.set(o..'Locked',true) end
-  W.frameRect(0,0,w,h,c.cyan,1.5)
+  if editing then
+   if a1 or a2 or a3 or r1 or r2 or r3 then app.editSel=o end
+  elseif r1 or r2 or r3 then app.set(o..'Locked',true) end
+  local sel=editing and app.editSel==o
+  W.frameRect(0,0,w,h,c.cyan,sel and 3 or 1.5)
   W.tri(w,h-hs,w,h,w-hs,h,c.cyan)
-  W.right(W.upper(L.t.ov.unlocked),w-hs-4,h-hs+3,10,c.cyan,'cond')
+  W.right(W.upper(editing and L.t.ovui.names[o] or L.t.ov.unlocked),w-hs-4,h-hs+3,10,c.cyan,'cond')
  elseif not cfg.clickThrough then
   local _,_,_,r=W.hit('lk_'..o,0,0,w,h)
   if r then app.set(o..'Locked',false) end
@@ -351,7 +357,7 @@ function M.hud(v,app)
  local sw=screen and screen.x or Config.screenDefault.x; local sh=screen and screen.y or Config.screenDefault.y
  for _,o in ipairs(Config.overlays) do
   local st=v[o]; local k=K[o]
-  local unlocked=not cfg[k.locked]
+  local unlocked=app.editing or not cfg[k.locked]
   if cfg[k.show] and (unlocked or not hidden and connected) then
    local s=cfg[k.scale]; local w=M.design[o]*s; local h=math.max(30,st.h)*s
    local dx,dy=defaultPos(o,sw,sh,w,v)

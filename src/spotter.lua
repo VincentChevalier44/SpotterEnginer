@@ -12,6 +12,7 @@ local Proximity=require('src/proximity')
 local Timing=require('src/timing')
 local Link=require('src/link')
 local Position=require('src/position')
+local Debrief=require('src/debrief')
 local M={}
 local FIELDS={'neutral','neutralMode','ending','safetyPhase','red','greenLeft','zone','zoneDouble','slipperyLeft','slowCar',
  'panelDecided','warnLeft','meatballLeft','disqualified','nativePenalty','finished','deltaOn','deltaValue',
@@ -50,7 +51,7 @@ function M.new()
  return {prev=nil,cur=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
   stopped={},mistakes={},rivalState={},exitSpline=nil,exitSamples=0,inLane={},cuts=0,lapValid=true,
   stint=false,leftBox=false,autoFlip=false,sideAgree=0,sideDisagree=0,sideAtL=-1e9,sideAtR=-1e9,wasL=false,wasR=false,neutralEndAt=-1e9,greenPending=false,lastLapSaid=false,deltaQueuedAt=nil,proxCfg=nil,proxMe=nil,
-  zoneAt=-1e9,zoneGreenAt=-1e9,deltaAbove=nil,penaltyAt=-1e9,blackAt=-1e9,compound=false,wasLane=false,laneCompound=false,planPending=false,planSaid=false}
+  zoneAt=-1e9,zoneGreenAt=-1e9,deltaAbove=nil,penaltyAt=-1e9,blackAt=-1e9,compound=false,wasLane=false,laneCompound=false,planPending=false,planSaid=false,finishSaid=false,finishAt=false,finishStale=false}
 end
 -- Changement de séance : tout repart de zéro (référence de la direction de course comprise), sauf ce qui est appris
 -- sur le circuit (sortie des stands, côtés inversés).
@@ -257,7 +258,6 @@ local function race(s,ctx)
   if (cur.disqualified and not p.disqualified or cur.nativePenalty==4 and p.nativePenalty~=4) and ctx.real-s.blackAt>10 then
    s.blackAt=ctx.real; say(ctx,'black',1,{'black'},{ttl=15})
   end
-  if cur.finished and not p.finished then say(ctx,'chequered',2,{'chequered'},{ttl=10}) end
   if relaunchNow then
    -- Relance après un drapeau rouge : derrière la voiture de sécurité, sous VSC, sous FCY, ou départ lancé.
    local id=cur.neutralMode=='sc' and 'redRestartSc' or cur.neutralMode=='vsc' and 'redRestartVsc' or cur.neutralMode=='fcy' and 'redRestartFcy' or 'rs'
@@ -720,8 +720,32 @@ end
 -- ctx : {F, link, say, voice, cfg, timing, now (horloge de simulation), real (horloge réelle)}
 -- Direction de course toujours suivie (les appels de stands de l'ingénieur en dépendent, rôle Spotter coupé ou non) ;
 -- le reste seulement avec le rôle Spotter.
+-- Arrivée d'une course (bilan de fin de course, src/debrief.lua) : « Drapeau à damier, course terminée ! Tu es P2. » ;
+-- l'ingénieur fait le bilan ensuite ; bilan coupé : le damier seul. Dite dès la ligne passée, pas au retour au stand :
+-- AdvancedIA suspend le pont à l'arrivée (garde « finished », la séance est finie pour AC) mais publie encore son
+-- résultat ; appelée aussi pendant cette suspension (SpotterEnginer.lua). En jeu le 10/11/2026, le damier n'était venu
+-- qu'à la reconnexion du pont, 62 s après la ligne, dans les stands. Place d'AdvancedIA (corrigée des pénalités) dès
+-- qu'il a vu l'arrivée, au plus tard FINISH_WAIT s après la ligne (sinon la place d'AC). Ligne vue par AC seulement :
+-- AdvancedIA ne remet son résultat à zéro qu'au changement de séance, pas au redémarrage d'une même course (déjà fini
+-- avant la ligne : périmé, jamais lu).
+local FINISH_WAIT=1
+function M.finish(s,ctx)
+ local F=ctx.F; local cfg=ctx.cfg; local d=ctx.link.d; local me=F.cars[F.player]
+ if s.finishSaid or not F.isRace or not cfg.raceControl or not me or not me.valid or (tonumber(me.laps) or 0)<1 then return end
+ if not me.finished then
+  if d and d.finished and not F.finishedSession then s.finishStale=true end
+  s.finishAt=false; return
+ end
+ local seen=not s.finishStale and d and d.finished and not d.dnf
+ if not s.finishAt then s.finishAt=ctx.real end
+ if not seen and ctx.real-s.finishAt<FINISH_WAIT then return end
+ s.finishSaid=true
+ local place=cfg.debrief and Debrief.place(seen and d or nil,me) or 0
+ say(ctx,'chequered',2,place>0 and {'raceDone',{pos=place}} or {'chequered'},{ttl=10})
+end
 function M.step(s,ctx)
  race(s,ctx)
+ M.finish(s,ctx)
  if not ctx.cfg.spotterOn then return end
  if ctx.cfg.sideBySide then side(s,ctx) else sideIdle(s) end
  if ctx.cfg.gaps then gaps(s,ctx) end

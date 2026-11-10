@@ -60,8 +60,10 @@ local Say=require('src/say')
 local Timing=require('src/timing')
 local Spotter=require('src/spotter')
 local Engineer=require('src/engineer')
+local Strategist=require('src/strategist')
 local UI=require('src/ui')
 local Overlays=require('src/overlays')
+local Editor=require('src/editor')
 local Lang=require('src/lang')
 local W=require('src/kit')
 local Catalog=require('src/catalog')
@@ -91,6 +93,7 @@ local spotter=Spotter.new()
 local engineer=Engineer.new()
 local view=UI.new()
 local hud=Overlays.new()
+local editor=Editor.new()
 local session=nil
 local carPlayer,carCompound=nil,nil
 local lastLaps,lastPlayer,playerSince=nil,nil,nil
@@ -139,6 +142,7 @@ jlog(string.format('réglages : langue %s, app %s, volume %d %%, voiture pendant
 jlog(string.format('voix : %d clips ; AdvancedIA %s ; pont %s',present or 0,installed and (release~='' and release or 'installé') or 'absent',
  hello and 'ouvert' or 'indisponible ('..tostring(bridgeWhy)..')'))
 app.screen=Port.screen
+app.clock=Port.clock
 -- Mise à jour depuis GitHub (module repris d'AdvancedIA) : vérification une fois par lancement (UPDATE_DELAY s après le
 -- chargement, réglage « Vérifier au lancement »), installation d'un clic à l'arrêt, retour arrière. Avant le redémarrage
 -- de l'app : événements versés au journal, radio arrêtée, son de la voiture rendu, réglages enregistrés. Hors du jeu
@@ -161,6 +165,8 @@ updateLog()
 local updateStart=Port.clock()
 local updateAsked,booted,bootFrames,bootDraws=false,false,0,0
 local statusText=nil
+-- Plan d'arrêt publié pour AdvancedIA (Strategist.pitplan, contrat v1) : dernier texte écrit.
+local pitplanText=nil
 -- Actions de la fenêtre (src/ui.lua) : vérifier, installer, annuler, revenir à la version précédente, notes.
 function app.updateAct(action)
  local now=Port.clock()
@@ -190,6 +196,8 @@ end
 -- Actions des overlays (fenêtre de réglages et raccourcis).
 function app.recenter(o) app.set(o..'X',-1); app.set(o..'Y',-1); app.set(o..'Scale',1) end
 function app.lockAll(locked) for _,o in ipairs(Config.overlays) do app.set(o..'Locked',locked) end end
+-- Édition en jeu (src/editor.lua) : ouverte ou fermée (fermée : tout verrouillé) ; état de la session, jamais enregistré.
+function app.toggleEditor() Editor.toggle(app) end
 function app.backgrounds(mode)
  for _,o in ipairs(Config.overlays) do app.set(o..'Background',mode); if mode=='transparent' then app.set(o..'Accent',false) else app.set(o..'Accent',true) end end
 end
@@ -274,11 +282,11 @@ local function duckStep(dt)
  end
 end
 Port.onRelease(function() Port.duckCar(F.player,1) end)
--- Raccourcis (Ctrl+Alt, comme SuperHUD, sans ses touches H et G) : J overlays, K verrou, M radio coupée.
+-- Raccourcis (Ctrl+Alt, comme SuperHUD, sans ses touches H et G) : J overlays, K édition en jeu, M radio coupée.
 local previousKeys={}
 local hotkeyActions={
  [0x4A]=function() app.set('overlaysOn',not cfg.overlaysOn) end,
- [0x4B]=function() app.lockAll(not app.allLocked()) end,
+ [0x4B]=function() app.toggleEditor() end,
  [0x4D]=function() app.toggleMute() end}
 local function hotkeys()
  if not cfg.hotkeys then return end
@@ -341,6 +349,8 @@ local function step(dt)
   elseif not ok then errors.count=errors.count+1; errors.last=tostring(data):sub(1,120); carPlayer=F.player; carCompound=F.me.compound end
  end
  local active=cfg.enabled and Link.connected(link) and not F.paused and not F.replay and not F.online
+ local finishing=not active and cfg.enabled and F.isRace and link.state=='suspended' and link.reason=='finished'
+  and not F.paused and not F.replay and not F.online
  if active~=lastActive then
   lastActive=active
   local why={}
@@ -370,9 +380,19 @@ local function step(dt)
   -- le rôle Spotter coupé (radio).
   protected(Spotter.step,spotter,ctx)
   if cfg.engineerOn then protected(Engineer.step,engineer,ctx,dt or 0) end
+ elseif finishing then
+  -- Arrivée : AdvancedIA suspend le pont dès la ligne (garde « finished ») mais publie encore son résultat ; l'arrivée
+  -- et le bilan sont dits à la ligne, sans attendre la reconnexion (au retour au stand). Rien d'autre.
+  ctx.now=F.clock; ctx.real=real
+  protected(Spotter.finish,spotter,ctx)
+  if cfg.engineerOn then protected(Engineer.debrief,engineer,ctx) end
  elseif not Link.connected(link) or not cfg.enabled then
   if Voice.busy(voice) or #voice.queue>0 then Voice.stop(voice) end
  end
+ -- Plan d'arrêt pour AdvancedIA (contrat v1) : écrit à chaque changement ; le stamp avance chaque seconde de simulation.
+ -- Selon les réglages seulement : en pause, le plan reste celui d'avant (AdvancedIA ne repasse pas à ses rappels).
+ local pitplan=Strategist.pitplan(engineer.strategist,ctx,cfg.enabled and cfg.engineerOn and cfg.strategyOn)
+ if pitplan~=pitplanText then pitplanText=pitplan; Port.store(Strategist.pitplanKey,pitplan) end
  Voice.step(voice,real)
  duckStep(F.dt or 0)
  if dirtyAt and real-dirtyAt>1 then saveNow() end
@@ -396,7 +416,8 @@ local function window(fn)
  if not ok then pcall(W.finish) else bootDraws=bootDraws+1 end
 end
 local function drawMain(a) UI.draw(view,a) end
-local function drawHud(a) Overlays.hud(hud,a) end
+-- Overlays, puis le bouton et le panneau d'édition en jeu (au-dessus).
+local function drawHud(a) Overlays.hud(hud,a); Editor.hud(editor,a) end
 function script.SPE__MAIN() app.voicePresent=present; window(drawMain) end
 -- Overlays en jeu (rappel IN_GAME du manifeste), comme SuperHUD et AdvancedIA.
 -- CSP peut dessiner le nouveau bureau avant update() : bureau relu ici aussi (comme SuperHUD).

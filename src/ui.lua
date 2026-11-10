@@ -40,8 +40,8 @@ local function labelOf(key)
  local suffix=key:match('^%l+(%u%a*)$')
  return suffix and L.t.okeys[suffix] or {key,''}
 end
--- Position d'un overlay (X ou Y) : bornes de l'écran, -1 = automatique.
-local function positionAxis(key) local o,axis=key:match('^(%l+)([XY])$'); if o and Config.index[o..'Show'] then return axis end return nil end
+-- Position d'un overlay ou du bouton d'édition en jeu (X ou Y) : bornes de l'écran, -1 = automatique.
+local function positionAxis(key) local o,axis=key:match('^(%l+)([XY])$'); if o and (Config.index[o..'Show'] or o=='editor') then return axis end return nil end
 local function valueText(key,v)
  local s=Config.index[key]
  if positionAxis(key) and v<0 then return L.t.ovui.auto end
@@ -140,8 +140,9 @@ local function voiceTest(app,x,y,prefix)
   if W.button(prefix..'test_engineer',L.t.home.testEngineer,x+lw+130,y,120,26) then app.test('engineer') end
  end
 end
--- Mise à jour depuis GitHub (src/update.lua) : état, notes de la version publiée, actions ; refus expliqué quand
--- AdvancedIA installé ne publie pas le pont attendu.
+-- Mise à jour depuis GitHub (src/update.lua), en tête de l'onglet Diagnostic (comme AdvancedIA ; l'en-tête porte le
+-- bouton d'un clic) : état, notes de la version publiée, actions ; refus expliqué quand AdvancedIA installé ne publie
+-- pas le pont attendu.
 local UPDATE_KINDS={uptodate='ok',success='ok',done='ok',rolledback='ok',interrupted='wn',checking='mut',downloading='mut',verifying='mut',
  installing='mut',ready='mut',available='ok',driving='wn',none='mut',unchecked='mut',broken='er',aaiOld='wn',aaiNewer='wn',aaiMissing='er'}
 local UPDATE_NOTES=6
@@ -189,12 +190,12 @@ local function updateBlock(app,x,y,w)
   if W.button(id,label,bx,y,bw,26,false,nil,style) then app.updateAct(action) end
   bx=bx+bw+10
  end
- if Update.offered(u) and view~='aaiOld' and view~='aaiNewer' and view~='aaiMissing' then button('upd_install',U2.button,'install',app.updateStopped and nil or 'disabled') end
+ if Update.offered(u) and view~='aaiOld' and view~='aaiNewer' and view~='aaiMissing' then button('upd_install',U2.button,'install',not app.updateStopped and 'disabled' or nil) end
  if Update.cancelable[u.phase] and u.phase~='available' then button('upd_cancel',U2.cancel,'cancel') end
  if not Update.busy(u) then
   button('upd_check',(view:sub(1,3)=='err' or view:sub(1,3)=='aai') and U2.retry or U2.check,'check')
   if r then button('upd_notes',U2.notes,'notes') end
-  if u.previous then button('upd_rollback',string.format(U2.rollback,u.previous),'rollback',app.updateStopped and nil or 'disabled') end
+  if u.previous then button('upd_rollback',string.format(U2.rollback,u.previous),'rollback',not app.updateStopped and 'disabled' or nil) end
  end
  y=y+36
  y=y+row(app,'updateCheck',x,y,w)
@@ -215,8 +216,7 @@ local function home(app,x,y,w)
  y=y+W.message(L.t.home.silent,x,y,w,'mut')+10
  voiceTest(app,x,y,'')
  y=y+40
- y=y+W.message(L.t.home.overlays,x,y,w,'ok')+8
- return updateBlock(app,x,y+6,w)
+ return y+W.message(L.t.home.overlays,x,y,w,'ok')+14
 end
 -- Bureaux d'applications AC (comme SuperHUD) : bureau courant, overlays affichés sur chacun, copie, vidage.
 local function desktopPanel(app,x,y,w)
@@ -310,6 +310,7 @@ local function diag(app,x,y,w)
  lines[#lines+1]={D.fonts,app.fontDir and 'Barlow / JetBrains Mono' or 'Segoe UI / Consolas'}
  lines[#lines+1]={D.desktop,app.desktopAvailable and string.format(D.desktopFmt,app.desktop or 1,Config.desktopCount) or D.desktopUnread}
  lines[#lines+1]={D.settings,string.format(D.settingsFmt,Config.version,#Config.schema)}
+ y=updateBlock(app,x,y,w)+6
  W.heading(D.title,x,y,w); y=y+30
  for _,l in ipairs(lines) do
   if W.visible(y,18) then W.text(W.upper(l[1]),x,y+1,11,c.label,'label'); W.cell(l[2],x+130,y,w-130,12,c.text,'mono') end
@@ -327,7 +328,7 @@ local function diag(app,x,y,w)
 end
 -- Contenu propre à certaines sections, dessiné avant ou après leurs réglages ; renvoie le bas.
 local CUSTOM={}
-local BEFORE={plan=true,log=true,desktops=true,overlay=true,hotkeys=true}
+local BEFORE={plan=true,log=true,desktops=true,overlay=true,hotkeys=true,editor=true}
 function CUSTOM.plan(app,x,y,w) return planSummary(app,x,y,w) end
 function CUSTOM.log(app,x,y,w) return radioLog(app,x,y,w) end
 function CUSTOM.desktops(app,x,y,w) return desktopPanel(app,x,y,w) end
@@ -344,6 +345,19 @@ function CUSTOM.mute(app,x,y,w)
  end
  y=y+38
  return y+W.message(L.t.home.silent,x,y,w,'mut')+6
+end
+-- Édition en jeu : ouvrir ou fermer depuis ici aussi, position du bouton, retour en haut au centre.
+function CUSTOM.editor(app,x,y,w)
+ local O=L.t.ovui; local cfg=app.cfg
+ y=y+10
+ if W.visible(y,28) then
+  local bw=(w-10)/2
+  if W.button('ed_toggle',app.editing and O.closeEditor or O.openEditor,x,y,bw,28,app.editing) then app.toggleEditor() end
+  if W.button('ed_home',O.editorHome,x+bw+10,y,bw,28,false,nil,(cfg.editorX<0 and cfg.editorY<0) and 'disabled' or nil) then app.set('editorX',-1); app.set('editorY',-1) end
+ end
+ y=y+38
+ local where=(cfg.editorX<0 and cfg.editorY<0) and O.editorAt or string.format(O.editorMoved,math.max(0,cfg.editorX),math.max(0,cfg.editorY))
+ return y+W.message(where,x,y,w,'mut')+6
 end
 function CUSTOM.overlayActions(app,x,y,w)
  local O=L.t.ovui
@@ -493,6 +507,41 @@ local function pane(app,v,tab,sec,x,top,w,bottom)
  W.clip()
  v.heights[key]=cy-from+12
 end
+-- En-tête : version (pastille), en bleu avec un petit bouton « Mettre à jour · x » quand une version plus récente est
+-- publiée (comme AdvancedIA) : actif à l'arrêt, grisé en roulant ; refusée (AdvancedIA à mettre à jour d'abord) :
+-- bouton d'alerte, un clic ouvre l'onglet Diagnostic (de même après un échec : réseau, empreinte, écriture) ; pendant
+-- l'installation, l'étape en cours. limit : bord gauche de la partie droite (le bouton s'y arrête, son texte réduit).
+-- Renvoie la suite.
+local AAI_VIEWS={aaiOld=true,aaiNewer=true,aaiMissing=true}
+local function updateHeader(app,v,x,limit)
+ local c=W.colors(); local U2=L.t.upd
+ local u,port=app.updater,app.updatePort
+ local Update=require('src/update')
+ local view=u and port and port.ready and Update.view(u,app.updateStopped) or nil
+ local offered=view and Update.offered(u) and u.release
+ local version='v'..(app.version or '?')
+ local vw=W.width(version,11,'mono')+10
+ W.frameRect(x,15,vw,18,offered and c.cyan or c.rule); W.text(version,x+5,17,11,offered and c.cyanText or c.label,'mono')
+ x=x+vw+8
+ local failed=view and view:sub(1,3)=='err'
+ if offered and (view=='available' or view=='driving' or AAI_VIEWS[view] or failed) then
+  local r=u.release
+  if v.updFor~=r.version or v.updLang~=L.lang then v.updFor=r.version; v.updLang=L.lang; v.updLabel=string.format(U2.header,r.version); v.updTip=string.format(U2.headerTip,r.version) end
+  if AAI_VIEWS[view] or failed then
+   local label=failed and U2.headerErr or U2.headerAai
+   local bw=math.max(60,math.min(limit-x,W.width(W.upper(label),12,'display')+26+16)) -- icône d'alerte comprise
+   if W.button('upd_header',label,x,12,bw,24,false,updateText(app,u,view),'danger','warn') then v.tab='diag' end
+   return x+bw+12
+  end
+  local stopped=view=='available'
+  local bw=math.max(60,math.min(limit-x,200,W.width(W.upper(v.updLabel),12,'display')+26))
+  if W.button('upd_header',v.updLabel,x,12,bw,24,stopped,stopped and v.updTip or U2.states.driving,stopped and 'primary' or 'disabled') then app.updateAct('install') end
+  return x+bw+12
+ end
+ local busy=view and U2.busy[view]
+ if busy and not Update.reported(u) then return x+W.chip(busy,x,15,'c')+12 end
+ return x+4
+end
 function M.draw(v,app)
  if not v.fonts then v.fonts=true; if W.fontDir~=app.fontDir then W.setFonts(app.fontDir) end end
  app.view=v
@@ -511,27 +560,30 @@ function M.draw(v,app)
  local bw=W.width('SPOTTER',23,'display')
  W.text('ENGINER',x+bw,10,23,c.brand,'display')
  x=x+bw+W.width('ENGINER',23,'display')+9
- local version='v'..(app.version or '?')
- local vw=W.width(version,11,'mono')+10
- W.frameRect(x,15,vw,18,c.rule); W.text(version,x+5,17,11,c.label,'mono')
- x=x+vw+12
- do
-  local label=W.upper(string.format(L.t.ovui.desktopN,app.desktop or 1))
-  W.text(label,x,16,12,c.cyanText,'cond'); local lw=W.width(label,12,'cond')+6
-  for n=1,Config.desktopCount do W.para(x+lw+(n-1)*11,19,8,8,n==(app.desktop or 1) and c.cyan or c.rule,2) end
-  x=x+lw+Config.desktopCount*11+14
- end
+ -- Bord gauche de la partie droite (interrupteur, langue, liaison, radio coupée), dessinée ensuite.
+ local chip,kind=M.linkChip(app.link)
+ local edge=w-12-44-90-W.dotChipWidth(chip)-(app.radioMuted and W.dotChipWidth(L.t.ui.mutedChip)+8 or 0)
+ x=updateHeader(app,v,x,edge-12)
  local right=w-12
  if W.switch('master',right-30,16,app.cfg.enabled,L.t.keys.enabled[2]) then app.set('enabled',not app.cfg.enabled) end
  right=right-44
  local picked=W.segment('lang',{'FR','EN'},right-76,12,76,24,app.cfg.language=='EN' and 2 or 1)
  if picked then app.set('language',picked==2 and 'EN' or 'FR') end
  right=right-90
- local chip,kind=M.linkChip(app.link)
  local cw=W.dotChipWidth(chip)
  local left=right-cw
  W.dotChip(chip,left,15,kind)
  if app.radioMuted then local mw=W.dotChipWidth(L.t.ui.mutedChip); left=left-mw-8; W.dotChip(L.t.ui.mutedChip,left,15,'r') end
+ -- Bureau, puis le rôle de l'app : chacun seulement s'il tient avant la partie droite (fenêtre étroite).
+ do
+  local label=W.upper(string.format(L.t.ovui.desktopN,app.desktop or 1))
+  local lw=W.width(label,12,'cond')+6
+  if x+lw+Config.desktopCount*11<left-16 then
+   W.text(label,x,16,12,c.cyanText,'cond')
+   for n=1,Config.desktopCount do W.para(x+lw+(n-1)*11,19,8,8,n==(app.desktop or 1) and c.cyan or c.rule,2) end
+   x=x+lw+Config.desktopCount*11+14
+  end
+ end
  if x+W.width(W.upper(L.t.appTitle),11,'label')<left-16 then W.label(L.t.appTitle,x,18) end
  tabs(app,v,w)
  local top=94

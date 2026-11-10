@@ -6,7 +6,7 @@ the content, not the extension). For another voice, record files with the same n
 nothing, the call is then only written on the overlay radio.
 This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 
-804 files in all (2 languages).
+842 files in all (2 languages).
 
 ## Calls
 
@@ -153,6 +153,25 @@ This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 | 140 | `140_tour.wav` | tour. | `140_lap.wav` | lap. |
 | 141 | `141_une_minute.wav` | une minute. | `141_one_minute.wav` | one minute. |
 | 142 | `142_voiture_tour_lance.wav` | Voiture en tour lancé derrière, laisse-la passer. | `142_flying_lap_behind.wav` | Car on a flying lap behind, let it through. |
+| 143 | `143_damier_course_terminee.wav` | Drapeau à damier, course terminée ! | `143_chequered_race_over.wav` | Chequered flag, race over! |
+| 144 | `144_course_terminee.wav` | Course terminée. | `144_race_over.wav` | Race over. |
+| 145 | `145_places_gagnees.wav` | places gagnées depuis le départ. | `145_places_gained.wav` | places gained since the start. |
+| 146 | `146_place_gagnee.wav` | place gagnée depuis le départ. | `146_place_gained.wav` | place gained since the start. |
+| 147 | `147_places_perdues.wav` | places perdues depuis le départ. | `147_places_lost.wav` | places lost since the start. |
+| 148 | `148_place_perdue.wav` | place perdue depuis le départ. | `148_place_lost.wav` | place lost since the start. |
+| 149 | `149_meme_place.wav` | Même place qu'au départ. | `149_same_place.wav` | Same place as on the grid. |
+| 150 | `150_depassements.wav` | dépassements en piste. | `150_overtakes.wav` | overtakes on track. |
+| 151 | `151_depassement.wav` | dépassement en piste. | `151_overtake.wav` | overtake on track. |
+| 152 | `152_meilleur_tour_course.wav` | Et le meilleur tour de la course ! | `152_fastest_lap.wav` | And the fastest lap of the race! |
+| 153 | `153_bilan_victoire.wav` | Victoire ! Une course maîtrisée, bravo, c'est magnifique ! | `153_debrief_win.wav` | You won! A controlled race, well done, brilliant! |
+| 154 | `154_bilan_podium.wav` | Sur le podium, superbe course, bravo ! | `154_debrief_podium.wav` | On the podium, superb race, well done! |
+| 155 | `155_bilan_top5.wav` | Très belle course, bien joué. | `155_debrief_top5.wav` | Very nice race, well done. |
+| 156 | `156_bilan_top10.wav` | Course solide, bien joué. | `156_debrief_top10.wav` | Solid race, good job. |
+| 157 | `157_bilan_remontee.wav` | Belle remontée, c'est encourageant. | `157_debrief_comeback.wav` | Nice comeback, that's encouraging. |
+| 158 | `158_bilan_difficile.wav` | Course difficile, on analysera ça ensemble. | `158_debrief_tough.wav` | Tough race, we'll go through it together. |
+| 159 | `159_bilan_progresser.wav` | On continue de progresser, chaque course compte. | `159_debrief_keep_going.wav` | We keep improving, every race counts. |
+| 160 | `160_bilan_abandon.wav` | Pas classé cette fois, on repart de l'avant. | `160_debrief_dnf.wav` | Not classified this time, we go again. |
+| 161 | `161_bilan_disqualifie.wav` | Disqualifié. On en reparlera au débrief. | `161_debrief_dq.wav` | Disqualified. We'll talk about it at the debrief. |
 
 ## Numbers
 

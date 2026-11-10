@@ -150,6 +150,34 @@ function T.full_race_with_bridge()
  check((H.images or 0)>0,'logo drawn in the header')
  check(texted('SPOTTER') and texted('ENGINER'),'brand name in the header')
 end
+-- Arrivée (en jeu le 10/11/2026) : AdvancedIA suspend le pont dès la ligne (garde « finished ») et publie son résultat
+-- 0,4 s plus tard ; le damier et la place sont dits à la ligne, le bilan quelques secondes après, sans attendre la
+-- reconnexion du pont (au retour au stand) ; rien d'autre de l'ingénieur sur la ligne.
+function T.debrief_at_the_line_while_suspended()
+ local lineAt=205
+ local doneAt,debriefAt,reconnect
+ H.onStep=function(now,e)
+  if now>=lineAt then
+   H.cars[0].isRaceFinished=true; H.sim.isSessionFinished=true; e.guard='finished'
+   if now>=lineAt+0.4 then e.hud.finished=true; e.hud.final=3; e.hud.grid=1 end
+  end
+  if not doneAt and played('143_damier_course_terminee') then doneAt=now end
+  if not debriefAt and (played('147_places_perdues') or played('148_place_perdue')) then debriefAt=now end
+ end
+ race(true,lineAt+15,false)
+ H.onStep=nil
+ check(#H.logs==0,'errors: '..table.concat(H.logs,' | '))
+ check(doneAt and doneAt-lineAt<4,'chequered said at the line: '..tostring(doneAt and doneAt-lineAt))
+ check(debriefAt and debriefAt-lineAt<12,'debrief said a few seconds after the line: '..tostring(debriefAt and debriefAt-lineAt))
+ local n=0; for _,x in ipairs(H.played) do if x:find('143_damier',1,true) then n=n+1 end end
+ check(n==1,'chequered once: '..n)
+end
+-- Plan d'arrêt publié pour AdvancedIA pendant une course (clé SpotterEnginer.pitplan, contrat v1).
+function T.pitplan_published()
+ race(true,200,false)
+ local s=H.store['SpotterEnginer.pitplan']
+ check(type(s)=='string' and s:match('^v=1;lap=%d+;compound=%-;state=%a+;window=%d+%-%d+;boxcalls=[01];stamp=%d+$') and #s<=160,'pitplan written: '..tostring(s))
+end
 function T.pit_loss_learnt_from_ai_stop()
  race(true,260,false)
  local app=SPE_TEST.app
@@ -532,5 +560,116 @@ function T.silent_without_bridge()
  check(H.windowIds['SpotterEnginer_d1_spotter'] and not H.windowIds['SpotterEnginer_d1_engineer'],'unlocked overlay shown alone')
  check(texted('DÉVERROUILLÉ'),'unlock hint drawn')
  check(H.fonts==0,'fonts balanced')
+end
+-- Édition en jeu (1.2.0) : bouton montré quand la souris bouge, caché ensuite ; un clic ouvre le panneau ; pendant
+-- l'édition les overlays se déplacent sans toucher au verrou enregistré ; le panneau règle chacun ; TERMINER ferme et
+-- verrouille ; Ctrl+Alt+K ouvre et ferme ; bouton coupé : aucune fenêtre.
+function T.in_game_editor()
+ race(true,30,false)
+ local app=SPE_TEST.app
+ local E=require('src/editor')
+ local function hud() H.windowIds={}; script.SPE__HUD() end
+ H.mouse=vec2(-100,-100); hud(); hud()
+ check(not H.windowIds[E.ids.launcher],'launcher hidden while the mouse stays still')
+ H.mouse=vec2(600,500); hud()
+ check(H.windowIds[E.ids.launcher] and not H.windowIds[E.ids.panel],'launcher shown when the mouse moves, panel closed')
+ H.clock=H.clock+E.SHOW+0.5; hud()
+ check(not H.windowIds[E.ids.launcher],'launcher hidden a few seconds later')
+ -- Clic sur le bouton : panneau ouvert, overlays déverrouillés pour la session seulement.
+ H.mouse=vec2(610,500); hud()
+ H.clickId='##spe_ed_launch'; hud(); H.clickId=nil
+ check(app.editing==true,'click opens the editor')
+ hud()
+ check(H.windowIds[E.ids.panel] and H.windowIds[E.ids.launcher],'panel drawn under the button')
+ check(app.cfg.spotterLocked==true and app.cfg.engineerLocked==true,'saved locks untouched while editing')
+ H.clock=H.clock+30; hud()
+ check(H.windowIds[E.ids.panel],'panel stays open without mouse movement')
+ -- Glisser l'overlay Ingénieur : déplacé et choisi dans le panneau.
+ local y0=app.cfg.engineerY
+ H.activeId='##spe_mv1_engineer'; H.delta=vec2(0,40); hud(); H.activeId=nil; H.delta=nil; hud()
+ check(app.cfg.engineerY>=0 and app.cfg.engineerY~=y0 and app.editSel=='engineer','overlay dragged while editing, picked: '..tostring(app.editSel))
+ check(app.cfg.engineerLocked==true,'lock setting still saved as locked')
+ -- Panneau : choisir la stratégie, la masquer puis la réafficher, bande coupée, recentrer.
+ H.clickId='##spe_ed_pick_strategy'; hud(); H.clickId=nil
+ check(app.editSel=='strategy','row picks the overlay')
+ H.clickId='##spe_ed_show_strategy'; hud(); H.clickId=nil
+ check(app.cfg.strategyShow==false,'switch hides the overlay')
+ H.clickId='##spe_ed_show_strategy'; hud(); H.clickId=nil
+ local accent=app.cfg.strategyAccent
+ H.clickId='##spe_ed_acc_strategy'; hud(); H.clickId=nil
+ check(app.cfg.strategyShow==true and app.cfg.strategyAccent==not accent,'switches apply')
+ app.set('strategyX',300); H.clickId='##spe_ed_center_strategy'; hud(); H.clickId=nil
+ check(app.cfg.strategyX==-1,'recenter')
+ -- Terminer : panneau fermé, tout verrouillé (un overlay déverrouillé dans la fenêtre l'est aussi).
+ app.set('spotterLocked',false)
+ H.clickId='##spe_ed_done'; hud(); H.clickId=nil
+ check(app.editing==false and app.allLocked(),'done closes and locks')
+ hud(); check(not H.windowIds[E.ids.panel],'panel closed')
+ -- Ctrl+Alt+K : ouvre, puis ferme.
+ local function hotkey() H.keys[0x11]=true; H.keys[0x12]=true; H.keys[0x4B]=true; H.clock=H.clock+1/30; script.update(1/30)
+  H.keys[0x4B]=nil; H.clock=H.clock+1/30; script.update(1/30); H.keys[0x11]=nil; H.keys[0x12]=nil end
+ hotkey(); check(app.editing==true,'Ctrl+Alt+K opens')
+ hotkey(); check(app.editing==false,'Ctrl+Alt+K closes')
+ -- Glisser le bouton : déplacé, pas de clic ; position enregistrée dans les réglages.
+ H.mouse=vec2(620,500); hud()
+ H.activeId='##spe_ed_launch'; H.delta=vec2(12,0); hud(); hud(); H.activeId=nil; H.delta=nil
+ H.clickId='##spe_ed_launch'; hud(); H.clickId=nil
+ check(app.cfg.editorX>=0 and app.editing==false,'button dragged, not toggled: '..app.cfg.editorX)
+ -- Bouton coupé : rien, même souris en mouvement.
+ app.set('editButton',false); H.mouse=vec2(700,520); hud()
+ check(not H.windowIds[E.ids.launcher],'button off: no window')
+ app.set('editButton',true); app.set('editorX',-1); app.set('editorY',-1)
+ check(H.fonts==0 and #H.logs==0,'fonts balanced, no error: '..table.concat(H.logs,' | '))
+end
+-- En-tête de la fenêtre (1.2.0, comme AdvancedIA) : version, en bleu avec le bouton « Mettre à jour · x » quand une
+-- version plus récente est publiée (actif à l'arrêt) ; AdvancedIA à mettre à jour d'abord : bouton d'alerte qui ouvre
+-- le Diagnostic ; plus de bloc Mise à jour sur l'Accueil (il est dans le Diagnostic).
+function T.update_offered_in_header()
+ race(true,30,false)
+ local app=SPE_TEST.app
+ local u=app.updater
+ app.updatePort.ready=true
+ u.phase='available'; u.release={version='9.9.9',tag='v9.9.9',notes={'Note'},published='2026-11-10',page='https://github.com'}
+ app.updateStopped=true; app.set('language','FR')
+ H.space=vec2(860,640); script.SPE__MAIN()
+ app.view.tab='home'; H.texts={}; H.space=vec2(860,640); script.SPE__MAIN()
+ check(texted('METTRE À JOUR · 9%.9%.9'),'header button with the new version')
+ check(not texted('^MISE À JOUR$'),'no update block on Home')
+ local installs=0; local act=app.updateAct; app.updateAct=function(a) if a=='install' then installs=installs+1 end end
+ H.clickId='##spe_upd_header'; script.SPE__MAIN(); H.clickId=nil
+ check(installs==1,'header button installs')
+ app.updateStopped=false; H.clickId='##spe_upd_header'; script.SPE__MAIN(); H.clickId=nil
+ check(installs==1,'greyed while driving')
+ app.updateAct=act
+ app.view.tab='diag'; H.texts={}; script.SPE__MAIN()
+ local seen={}; for _,x in ipairs(H.texts) do if x:find('MISE') or x:find('NOTES') or x:find('9.9.9',1,true) then seen[#seen+1]=x end end
+ check(texted('^MISE À JOUR$') and texted('^NOTES DE VERSION$'),'update block in Diagnostic: '..table.concat(seen,' | '))
+ -- Boutons du bloc (Diagnostic) : installer et revenir en arrière à l'arrêt ; grisés en roulant (avant la 1.2.0, ils
+ -- restaient grisés même à l'arrêt : « stopped and nil or 'disabled' » vaut toujours 'disabled').
+ local acts={}; app.updateAct=function(a) acts[#acts+1]=a end
+ u.previous='1.1.0'; app.updateStopped=true; script.SPE__MAIN()
+ H.clickId='##spe_upd_install'; script.SPE__MAIN(); H.clickId='##spe_upd_rollback'; script.SPE__MAIN(); H.clickId=nil
+ check(table.concat(acts,',')=='install,rollback','block buttons work when stopped: '..table.concat(acts,','))
+ acts={}; app.updateStopped=false; script.SPE__MAIN()
+ H.clickId='##spe_upd_install'; script.SPE__MAIN(); H.clickId='##spe_upd_rollback'; script.SPE__MAIN(); H.clickId=nil
+ check(#acts==0,'block buttons greyed while driving: '..table.concat(acts,','))
+ app.updateAct=act; u.previous=nil; app.updateStopped=true
+ -- AdvancedIA trop ancien : alerte, un clic ouvre le Diagnostic.
+ u.phase='failed'; u.error='aaiOld'; u.release.needs='Beta 1.60'
+ app.view.tab='home'; H.texts={}; script.SPE__MAIN()
+ check(texted("ADVANCEDIA D'ABORD"),'incompatible: warning in the header')
+ H.clickId='##spe_upd_header'; script.SPE__MAIN(); H.clickId=nil
+ check(app.view.tab=='diag','warning opens Diagnostic')
+ -- Échec du téléchargement : alerte, un clic ouvre le Diagnostic (jamais une version bleue sans rien à cliquer).
+ u.phase='failed'; u.error='network'; app.view.tab='home'; H.texts={}; script.SPE__MAIN()
+ check(texted('ÉCHEC · DIAGNOSTIC'),'failed download: warning in the header')
+ H.clickId='##spe_upd_header'; script.SPE__MAIN(); H.clickId=nil
+ check(app.view.tab=='diag','failure warning opens Diagnostic')
+ -- Fenêtre étroite (760 px), radio coupée, mise à jour proposée : en-tête dessiné sans erreur.
+ u.phase='available'; u.error=''; app.updateStopped=true; app.toggleMute(); app.view.tab='spotter'
+ local before=app.errors.count
+ for _,lang in ipairs({'FR','EN'}) do app.set('language',lang); H.texts={}; H.space=vec2(760,640); script.SPE__MAIN() end
+ check(app.errors.count==before and H.fonts==0 and H.clips==0,'narrow window with an update offered')
+ app.toggleMute(); app.set('language','FR'); app.updatePort.ready=false; u.phase='idle'; u.release=nil
 end
 return T

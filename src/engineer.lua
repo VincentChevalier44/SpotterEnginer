@@ -6,6 +6,7 @@ local Timing=require('src/timing')
 local Coach=require('src/coach')
 local Strategist=require('src/strategist')
 local Position=require('src/position')
+local Debrief=require('src/debrief')
 local Voice=require('src/voice')
 local M={}
 local GAP,PACE=Position.GAP,Position.PACE
@@ -15,7 +16,7 @@ function M.new()
  return {strategist=Strategist.new(),coach=Coach.new(),sectorOf={},lap=-1,coldFor=0,hotFor=0,warm=false,brakeHotFor=0,bias=0,
   biasFor=0,trans=0,rain=0,rainSaid={},gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
   mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
-  brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={}}
+  brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={},debrief=Debrief.new()}
 end
 -- Changement de séance : tout repart de zéro (clés à nil comprises), sauf les données de la voiture (src/port.lua).
 function M.reset(e)
@@ -245,6 +246,28 @@ local function tyres(e,ctx,dt)
 end
 M.tyres=tyres
 M.pace=pace
+-- Bilan de fin de course (src/debrief.lua) : une fois, Debrief.DELAY s après la ligne d'arrivée (le spotter annonce
+-- d'abord la place), après un abandon ou une disqualification aussi ; dit en entier (jamais tenu pour déjà entendu).
+-- Arrivée vue par AC seulement (ligne passée, ou séance finie : abandon) ; appelé aussi pendant la suspension
+-- « finished » d'AdvancedIA (SpotterEnginer.lua), jamais au retour au stand. Le résultat d'AdvancedIA ne sert qu'aux
+-- détails (place corrigée, grille, abandon), et pas s'il était déjà fini avant l'arrivée : il ne le remet à zéro qu'au
+-- changement de séance, et après un redémarrage le bilan de la course d'avant a été dit à tort le 10/11/2026.
+local function debrief(e,ctx)
+ local F=ctx.F; local st=e.debrief
+ if st.said or not F.isRace or not ctx.cfg.debrief then return end
+ local me=F.cars[F.player]
+ if not me or not me.valid or (tonumber(me.laps) or 0)<1 then return end
+ if not (me.finished or F.finishedSession) then return end
+ local d=Debrief.fresh(st,ctx.link.d) or {dnf=not me.finished}
+ if not st.at then st.at=ctx.real; return end
+ if ctx.real-st.at<Debrief.DELAY then return end
+ st.said=true
+ local s=ctx.say
+ local parts=Debrief.parts(st,F,d,not Debrief.spotterSays(ctx.cfg),function(id,...) return Say.note(s,id,...) end,
+  function(sec) return U.lapTime(sec,Say.mark(s)) end)
+ say(ctx,'debrief',3,parts,{ttl=30,fresh=true})
+end
+M.debrief=debrief
 -- Freins : surchauffe et déséquilibre avant / arrière (répartition à corriger si la voiture la règle au volant).
 local function brakes(e,ctx,dt)
  local F=ctx.F; local cfg=ctx.cfg; local b=F.me.brakes
@@ -363,6 +386,10 @@ function M.step(e,ctx,dt)
  if me.pitlane then e.inPitLap=true; e.stintTyresOk=false; e.warm=false; e.posTyresSaid=false end
  -- Voitures passées par la voie des stands depuis la ligne du joueur (« Bien joué » : dépassements en piste seulement).
  for i=0,F.count-1 do if F.cars[i].pitlane then e.pitted[i]=true end end
+ Debrief.step(e.debrief,F,ctx.timing,ctx.link.d)
+ -- Ligne d'arrivée passée : plus aucun appel de course (« undercut possible » dit sur la ligne le 10/11/2026), le bilan
+ -- seulement.
+ if me.finished and F.isRace then debrief(e,ctx); return end
  Strategist.step(e.strategist,ctx)
  pace(e,ctx,lapDone)
  fuel(e,ctx,lapDone)
@@ -372,5 +399,6 @@ function M.step(e,ctx,dt)
  weather(e,ctx)
  wind(e,ctx)
  driving(e,ctx,lapDone)
+ debrief(e,ctx)
 end
 return M

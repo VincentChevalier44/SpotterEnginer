@@ -118,6 +118,17 @@ end
 - A new version of the format changes the `data` key and `version`: SpotterEnginer then shows **Different bridge
   version** instead of reading wrong data.
 
+## Keys published by SpotterEnginer (read by AdvancedIA)
+
+SpotterEnginer never writes into the bridge. It publishes two short texts with `ac.store`, read by AdvancedIA, each with its own contract version:
+
+| Key | Format | Read by |
+|---|---|---|
+| `SpotterEnginer.update` | `v=1;installed=…;latest=…;state=available\|uptodate\|checking\|error\|incompatible[;needs=…]` | AdvancedIA's home page (line « SpotterEnginer › ») |
+| `SpotterEnginer.pitplan` (1.2.0) | `v=1;lap=<N>;compound=-;state=planned\|boxnow\|done\|none;window=<a>-<b>;boxcalls=0\|1;stamp=<s>` | AdvancedIA's pit overlay, from Beta 1.59 |
+
+Both are 200 (update) and 160 (pit plan) characters at most; unknown fields are ignored and another `v` is ignored. See the README for the meaning of each field.
+
 ## Announcements read by SpotterEnginer (`messageKind`, Beta 1.49 to 1.51)
 
 A single slot in `data`: `messageId` increases with every announcement; `messageKind`, `messageValue`, `messageExtra`,

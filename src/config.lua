@@ -11,7 +11,7 @@ M.schema={
  {'blueFlags',true},{'backmarkers',true},{'fasterBehind',true},{'pitExit',true},{'hazards',true},{'rivalPenalties',true},
  {'trackLimits',true},{'drsVoice',false},{'deltaVoice',true},{'penaltiesVoice',true},{'flashVoice',true},{'aaiMessages',true},{'sec_penalties',true},{'sec_traffic',true},
  -- Ingénieur
- {'engineerOn',true},{'engineerVolume',1.0,0,2,0.05},{'pace',true},{'paceEvery',3,1,10,1},{'pushHold',true},{'positionCalls',true},
+ {'engineerOn',true},{'engineerVolume',1.0,0,2,0.05},{'pace',true},{'paceEvery',3,1,10,1},{'pushHold',true},{'positionCalls',true},{'debrief',true},
  {'fuel',true},{'fuelMargin',1.0,0,5,0.25},{'fuelK',0.03,0.005,0.08,0.005},
  {'tyres',true},{'tyreCold',15,5,40,1},{'tyreHot',12,4,40,1},{'brakes',true},{'brakeHot',850,400,1200,10},
  {'biasDiff',180,60,400,10},{'damage',true},{'weather',true},{'wind',true},{'windMin',15,5,50,1},{'driving',true},
@@ -22,6 +22,8 @@ M.schema={
  {'boxCalls',true},{'neutralBox',true},{'neutralFactor',0.55,0.2,1,0.05},{'duels',true},{'rivalPitVoice',true},{'sec_stratCalls',true},
  -- Overlays : réglages communs (comme SuperHUD et AdvancedIA)
  {'overlaysOn',true},{'clickThrough',true},{'hideReplay',true},{'hidePits',false},{'hotkeys',true},
+ -- Édition en jeu (1.2.0) : bouton montré quand la souris bouge, position (-1 : en haut au centre), commune aux bureaux.
+ {'editButton',true},{'editorX',-1,-1,7680,1},{'editorY',-1,-1,4320,1},
  {'radioLines',4,1,8,1},{'radioSeconds',10,3,30,1},
 }
 -- Réglages de chaque overlay (Spotter, Ingénieur, Stratégie), comme chaque bloc de SuperHUD : affiché, verrouillé,
@@ -66,6 +68,7 @@ M.sections={
  engineer={
   {'raceGroup',{
    {id='pace',master='pace',keys={'paceEvery','pushHold','positionCalls'},gate=true},
+   {id='debrief',master='debrief',keys={},gate=true},
    {id='fuel',master='fuel',keys={'fuelMargin','fuelK'},gate=true},
    {id='driving',master='driving',keys={'drivingLoss'},gate=true}}},
   {'carGroup',{
@@ -93,6 +96,7 @@ M.sections={
  overlays={
   {'ovAll',{
    {id='desktops',keys={},custom='desktops'},
+   {id='editor',master='editButton',keys={'editorX','editorY'},custom='editor'},
    {id='common',master='overlaysOn',keys={'clickThrough','hideReplay','hidePits','radioLines','radioSeconds'},custom='overlayActions'},
    {id='hotkeys',master='hotkeys',keys={},custom='hotkeys'}}},
   {'ovEach',{}}},

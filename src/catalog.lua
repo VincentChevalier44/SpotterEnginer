@@ -174,6 +174,27 @@ local list={
  -- Essais et qualifications (AdvancedIA 1.51, annonce 'fastCar') : une IA en tour lancé arrive derrière le joueur en
  -- tour de sortie ou de refroidissement.
  {'fastCar',142,'142_voiture_tour_lance',"Voiture en tour lancé derrière, laisse-la passer.",'142_flying_lap_behind',"Car on a flying lap behind, let it through."},
+ -- Bilan de fin de course (src/debrief.lua) : arrivée et place (spotter, puis « Tu es P2 »), places gagnées ou perdues
+ -- et dépassements (après un nombre, accordés par src/say.lua), meilleur tour de la course, verdict de l'ingénieur.
+ {'raceDone',143,'143_damier_course_terminee',"Drapeau à damier, course terminée !",'143_chequered_race_over',"Chequered flag, race over!"},
+ {'raceOver',144,'144_course_terminee',"Course terminée.",'144_race_over',"Race over."},
+ {'placesGained',145,'145_places_gagnees',"places gagnées depuis le départ.",'145_places_gained',"places gained since the start."},
+ {'placeGained',146,'146_place_gagnee',"place gagnée depuis le départ.",'146_place_gained',"place gained since the start."},
+ {'placesLost',147,'147_places_perdues',"places perdues depuis le départ.",'147_places_lost',"places lost since the start."},
+ {'placeLost',148,'148_place_perdue',"place perdue depuis le départ.",'148_place_lost',"place lost since the start."},
+ {'placeKept',149,'149_meme_place',"Même place qu'au départ.",'149_same_place',"Same place as on the grid."},
+ {'overtakes',150,'150_depassements',"dépassements en piste.",'150_overtakes',"overtakes on track."},
+ {'overtakeOne',151,'151_depassement',"dépassement en piste.",'151_overtake',"overtake on track."},
+ {'fastestLap',152,'152_meilleur_tour_course',"Et le meilleur tour de la course !",'152_fastest_lap',"And the fastest lap of the race!"},
+ {'debriefWin',153,'153_bilan_victoire',"Victoire ! Une course maîtrisée, bravo, c'est magnifique !",'153_debrief_win',"You won! A controlled race, well done, brilliant!"},
+ {'debriefPodium',154,'154_bilan_podium',"Sur le podium, superbe course, bravo !",'154_debrief_podium',"On the podium, superb race, well done!"},
+ {'debriefTop5',155,'155_bilan_top5',"Très belle course, bien joué.",'155_debrief_top5',"Very nice race, well done."},
+ {'debriefTop10',156,'156_bilan_top10',"Course solide, bien joué.",'156_debrief_top10',"Solid race, good job."},
+ {'debriefComeback',157,'157_bilan_remontee',"Belle remontée, c'est encourageant.",'157_debrief_comeback',"Nice comeback, that's encouraging."},
+ {'debriefTough',158,'158_bilan_difficile',"Course difficile, on analysera ça ensemble.",'158_debrief_tough',"Tough race, we'll go through it together."},
+ {'debriefOther',159,'159_bilan_progresser',"On continue de progresser, chaque course compte.",'159_debrief_keep_going',"We keep improving, every race counts."},
+ {'debriefDnf',160,'160_bilan_abandon',"Pas classé cette fois, on repart de l'avant.",'160_debrief_dnf',"Not classified this time, we go again."},
+ {'debriefDq',161,'161_bilan_disqualifie',"Disqualifié. On en reparlera au débrief.",'161_debrief_dq',"Disqualified. We'll talk about it at the debrief."},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={
@@ -183,6 +204,9 @@ C.notes={
  perLap={FR='/tour',EN='/lap'},
  coverUndercut={FR="(couvrir l'undercut)",EN='(cover the undercut)'},
  neutralised={FR='(neutralisation)',EN='(neutralised)'},
+ debriefPlaces={FR='(départ P%d → arrivée P%d)',EN='(start P%d → finish P%d)'},
+ debriefBest={FR='(meilleur tour %s)',EN='(best lap %s)'},
+ debriefPassed={FR='(dépassé %d fois)',EN='(passed %d times)'},
 }
 C.clips={}
 C.order={}

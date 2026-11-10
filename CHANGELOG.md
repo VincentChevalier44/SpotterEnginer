@@ -2,6 +2,36 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.2.0 — 10 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.
+
+**From 1.1.0 or 1.1.1, install this version by hand once** (zip from the Releases page): in those versions the **Update** button stayed greyed even when stopped (fixed below). From 1.2.0 on, the in-app update works.
+
+### In-game overlay editing
+- While driving, move the mouse: a small **OVERLAYS** button shows for 3 seconds at the top centre of the screen. It can be dragged elsewhere; its position is kept.
+- A click opens the edit panel under the button, without the pause menu or the pits. Every overlay shown is unlocked for the edit: drag it to move it, pull its bottom-right corner for the size.
+- In the panel: show or hide each overlay of the current desktop, then for the one picked (click its row, or touch the overlay itself) its size, background (Solid, Ghost, Transparent), background and content opacity, decorative band, header, and **Recenter**.
+- **Done** (or **Ctrl+Alt+K**, which now opens and closes the editor) locks every overlay. Editing is never saved as "unlocked": after a crash, everything stays locked.
+- New section **In-game editing** (tab **Overlays**): switch **In-game edit button**, button position, **Open in-game editing**, **Put the button back at the top centre**.
+
+### End-of-race debrief
+- At the finish of a race the spotter says *"Chequered flag, race over! You're P2."*, then the engineer sums the race up: places gained or lost since the start, overtakes on track, *"And the fastest lap of the race!"* when it is yours, and a verdict (win, podium, top 5, top 10, good comeback, tough race, keep improving, not classified, disqualified).
+- Overtakes are counted by SpotterEnginer on the order of the cars on track: a backmarker being lapped and a place gained during a pit stop do not count. Start and finish places, best lap and how many times you were passed are written on the radio.
+- Said as soon as you cross the line, not when you get back to the pits: AdvancedIA pauses its bridge at the finish, and SpotterEnginer still reads its result during that pause. Once the line is crossed the engineer makes no other race call, and a result left over from before a session restart is never read out.
+- New setting **End-of-race debrief** (tab **Engineer**, on by default). 19 new voice clips in each language (clips 143 to 161).
+
+### Pit plan shared with AdvancedIA
+- SpotterEnginer publishes its pit plan for AdvancedIA (`ac.store` key `SpotterEnginer.pitplan`, contract v1): stop lap, window, state (planned, box now, done, none), whether the "box" calls are on, and a time stamp. From AdvancedIA Beta 1.59, its pit overlay follows it: a short notice when the window opens, then *box this lap* only on the planned lap. Nothing changes in the bridge.
+
+### Update in the header, as in AdvancedIA
+- The header shows the installed version. When a newer one is published, the version turns blue and a small **Update · x** button appears next to it: one click installs it when stopped (pit box or pause), greyed while driving.
+- If AdvancedIA must be updated first, the header shows **AdvancedIA first** with the explanation; a click opens the **Diagnostics** tab. During the download and installation, the header shows the current step.
+- The UPDATE block (state, release notes, Check now, Roll back, Check for updates at launch) moved from the bottom of **Home** to the top of **Diagnostics**.
+
+### Fixed
+- The **Update** and **Roll back** buttons of the UPDATE block stayed greyed and did nothing even when stopped.
+
 ## 1.1.1 — 9 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.

@@ -11,7 +11,7 @@ local Say=require('src/say')
 local M={}
 function M.new()
  return {data=SD.new(),car=nil,plan=nil,model=nil,race=nil,duel=nil,rejoin=nil,solvedLap=-1,solvedAt=-1e9,neutral=false,
-  announcedWindow=nil,boxSaid={},lastPit={},rivalPit={},costMs=0,status='learning',neutralBox=false,targetPrev=nil,ready=false,pitDueSeen=false,boxLap=false}
+  announcedWindow=nil,boxSaid={},lastPit={},rivalPit={},costMs=0,status='learning',neutralBox=false,targetPrev=nil,ready=false,pitDueSeen=false,boxLap=false,stopDone=false}
 end
 function M.reset(t) local car=t.car; local n=M.new(); for k,v in pairs(n) do t[k]=v end; t.car=car end
 -- Retard sur le leader en tours, en continu (tours + fraction) : stable quand le leader passe la ligne avant le joueur
@@ -286,5 +286,33 @@ function M.boxCalls(t,ctx)
   t.neutralBox=true; say(ctx,'boxNeutral',1,{'boxThisLap',{text=Say.note(ctx.say,'neutralised')}},{ttl=15})
  end
  if not (d and d.neutral) then t.neutralBox=false end
+end
+-- Plan d'arrêt publié pour AdvancedIA (contrat v1 avec sa session, 10/11/2026 ; son overlay d'arrêt suit ce plan) :
+-- ac.store('SpotterEnginer.pitplan','v=1;lap=<N>;compound=-;state=planned|boxnow|done|none;window=<a>-<b>;boxcalls=0|1;
+-- stamp=<s>'), 160 octets au plus.
+-- lap : tour en cours au moment d'entrer (me.laps+1), celui du « box » (figé dès « box au prochain tour »). compound :
+-- toujours « - » (le modèle ne choisit pas de composé). state : planned (plan prêt, jamais sur les estimations des
+-- premiers tours), boxnow (tour d'arrêt à partir de 10 % du tour, comme « box ce tour-ci », ou arrêt dit sous
+-- neutralisation), done (joueur passé par la voie des stands, jusqu'au plan d'un arrêt suivant), none (pas de plan prêt,
+-- hors course, app ou ingénieur coupés). stamp : temps de simulation en secondes entières (le texte change chaque
+-- seconde : AdvancedIA tient le plan pour figé s'il n'avance plus pendant 6 s, et repart de zéro s'il recule).
+M.pitplanKey='SpotterEnginer.pitplan'
+function M.pitplan(t,ctx,on)
+ local F=ctx.F; local cfg=ctx.cfg; local plan=t.plan; local me=F.cars and F.cars[F.player]
+ local stamp=math.max(0,math.floor(tonumber(F.clock) or 0))
+ local state,lap,a,b='none',0,0,0
+ if on and F.isRace and me and me.valid and t.ready and plan and plan.ok then
+  local cur=me.laps+1
+  local L=t.boxLap or plan.optimal
+  -- Arrêt fait : voie des stands empruntée pendant un plan ; tenu jusqu'à ce qu'un arrêt suivant soit prévu.
+  if me.pitlane and (L or t.stopDone) then t.stopDone=cur end
+  if t.stopDone and (not L or L<=t.stopDone) then state='done'; lap=t.stopDone
+  elseif L then
+   t.stopDone=false
+   lap=L; state=(cur==L and me.spline>0.1 or t.neutralBox) and 'boxnow' or 'planned'
+  end
+  if plan.window then a,b=plan.window[1] or 0,plan.window[2] or 0 end
+ end
+ return string.format('v=1;lap=%d;compound=-;state=%s;window=%d-%d;boxcalls=%d;stamp=%d',lap,state,a,b,cfg.boxCalls and 1 or 0,stamp)
 end
 return M

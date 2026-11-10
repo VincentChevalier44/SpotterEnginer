@@ -359,6 +359,55 @@ function T.wear_said_once_without_virtual_km()
  for k=1,4 do F.me.tyres[k].vkm=4 end; run(1); for k=1,4 do F.me.tyres[k].vkm=0 end; run(5)
  check(count()==3,'new set seen by the virtual km: said')
 end
+-- Bilan de fin de course : dépassements comptés sur la progression (un vrai dépassement compte, côte à côte non, une
+-- voiture prise d'un tour non, un arrêt non) ; verdicts ; phrase de l'ingénieur accordée (« 1 place gagnée »).
+function T.debrief_counts_and_verdicts()
+ local Debrief=require('src/debrief'); local Timing=require('src/timing')
+ local t=Timing.new()
+ local F={isRace=true,started=true,player=0,count=4,trackLength=4000,cars={}}
+ local prog={[0]=3.50,[1]=3.52,[2]=3.40,[3]=2.80} -- 1 juste devant, 2 derrière, 3 un tour (et plus) derrière
+ for i=0,3 do F.cars[i]={valid=true,pitlane=false,retired=false,finished=false,position=i+1,bestMs=0} end
+ local st=Debrief.new()
+ local now=0
+ local function frame() now=now+0.05; for i=0,3 do Timing.update(t,i,prog[i]%1,math.floor(prog[i]),now,true,false) end; Debrief.step(st,F,t) end
+ frame(); frame()
+ check(st.grid==1,'grid seen at the start')
+ -- Côte à côte avec la 1 (moins de 8 m) : rien ; puis vraiment devant : un dépassement.
+ prog[0]=3.5199; frame(); prog[0]=3.5201; frame(); prog[0]=3.5199; frame()
+ check(st.made==0 and st.lost==0,'side by side: nothing counted')
+ prog[0]=3.53; frame()
+ check(st.made==1,'real overtake counted: '..st.made)
+ -- La 3, un tour derrière, doublée sur la piste : l'ordre ne change pas.
+ prog[3]=3.531-1; frame(); prog[0]=3.54; frame()
+ check(st.made==1,'lapping a backmarker is not an overtake')
+ -- La 2 passe devant pendant que le joueur est aux stands : rien ; repassée en piste après : compte.
+ F.cars[0].pitlane=true; prog[2]=3.56; frame(); F.cars[0].pitlane=false; frame()
+ check(st.lost==0,'passed during a pit stop: not counted')
+ prog[0]=3.57; frame()
+ check(st.made==2,'overtake after the stop counted: '..st.made)
+ prog[2]=3.58; frame()
+ check(st.lost==1,'being passed counted')
+ -- Verdicts.
+ check(Debrief.verdict(1,5)=='debriefWin' and Debrief.verdict(3,3)=='debriefPodium' and Debrief.verdict(5,1)=='debriefTough'
+  and Debrief.verdict(4,4)=='debriefTop5' and Debrief.verdict(9,12)=='debriefTop10' and Debrief.verdict(14,20)=='debriefComeback'
+  and Debrief.verdict(15,15)=='debriefOther' and Debrief.verdict(0,3,true)=='debriefDnf' and Debrief.verdict(4,4,false,true)=='debriefDq','verdicts')
+ -- Phrase : place corrigée des pénalités, une place gagnée (singulier), deux dépassements, meilleur tour de la course.
+ F.cars[0].bestMs=100500; F.cars[1].bestMs=100800; F.cars[2].bestMs=0
+ local d={finished=true,dnf=false,dq=false,finalPosition=2,correctedPosition=3,gridPosition=4}
+ local Voice=require('src/voice'); local Say=require('src/say')
+ local port={play=function() return {} end,playing=function() return false end,stop=function() end}
+ local sayer=Say.new(Voice.new(port),{},'vox','FR',nil)
+ local parts=Debrief.parts(st,F,d,false,function(id,...) return Say.note(sayer,id,...) end,function(s) return string.format('%.3f',s) end)
+ local text=Say.text(sayer,parts)
+ check(text:find('(départ P4 → arrivée P3)',1,true) and text:find('1 place gagnée depuis le départ.',1,true)
+  and text:find('2 dépassements en piste.',1,true) and text:find('(dépassé 1 fois)',1,true) and text:find('meilleur tour de la course',1,true)
+  and text:find('Sur le podium',1,true),'debrief text: '..text)
+ check(not text:find('Course terminée',1,true),'place left to the spotter')
+ local alone=Say.text(sayer,Debrief.parts(st,F,d,true,function(id,...) return Say.note(sayer,id,...) end,function(s) return tostring(s) end))
+ check(alone:find('^Course terminée%. Tu es P3%.'),'spotter silent: place said by the engineer: '..alone)
+ local out=Say.text(sayer,Debrief.parts(Debrief.new(),F,{dnf=true},false,function(id,...) return Say.note(sayer,id,...) end,tostring))
+ check(out:find('Pas classé',1,true) and not out:find('place',1,true),'dnf: '..out)
+end
 -- Réglages version 3 : volume général 170 % et son de la voiture à 85 % par défaut ; les anciens défauts enregistrés
 -- (100 %, 40 %) passent aux nouveaux, un choix fait à la main est gardé.
 function T.config_migration_volume_defaults()

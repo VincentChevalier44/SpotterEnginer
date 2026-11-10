@@ -65,13 +65,16 @@ function ui.drawLine(p1,p2,col,th) H.draws=H.draws+1; rec({kind='line',x1=p1.x+H
 function ui.drawCircleFilled(p,r,col) H.draws=H.draws+1; rec({kind='circle',x=p.x+H.ox,y=p.y+H.oy,r=r,col=col}) end
 function ui.drawQuadFilled(a,b,c,d,col) H.draws=H.draws+1; rec({kind='poly',pts={a.x+H.ox,a.y+H.oy,b.x+H.ox,b.y+H.oy,c.x+H.ox,c.y+H.oy,d.x+H.ox,d.y+H.oy},col=col}) end
 function ui.drawTriangleFilled(a,b,c,col) H.draws=H.draws+1; rec({kind='poly',pts={a.x+H.ox,a.y+H.oy,b.x+H.ox,b.y+H.oy,c.x+H.ox,c.y+H.oy},col=col}) end
--- Souris simulée : H.activeId (bouton tenu), H.hoverId (survolé), H.rightClick (clic droit sur le survolé), H.delta.
-function ui.invisibleButton(id) H.lastId=id; return false end
+-- Souris simulée : H.activeId (bouton tenu), H.hoverId (survolé), H.rightClick (clic droit sur le survolé), H.delta,
+-- H.clickId (bouton relâché : clic gauche), H.mouse (position à l'écran).
+function ui.invisibleButton(id) H.lastId=id; return H.clickId~=nil and id==H.clickId end
 function ui.itemHovered() return H.lastId~=nil and H.lastId==H.hoverId end
 function ui.itemActive() return H.lastId~=nil and H.lastId==H.activeId end
 function ui.mouseClicked(button) return button==1 and H.rightClick==true end
 function ui.mouseDown() return false end
 function ui.mouseLocalPos() return vec2(-100,-100) end
+H.mouse=vec2(-100,-100)
+function ui.mousePos() return H.mouse end
 function ui.mouseWheel() return 0 end
 function ui.mouseDelta() return H.delta or zero end
 function ui.setCursor() end
@@ -100,7 +103,9 @@ function ac.dirname() return H.appsDir..'/SpotterEnginer' end
 function ac.getFolder() return H.appsDir end
 function ac.log(...) H.logs[#H.logs+1]=table.concat({...},' ') end
 function ac.getUI() return {windowSize=vec2(1920,1080),currentDesktop=H.desktop or 0} end
-function ac.isKeyDown() return false end
+-- Touches tenues : H.keys[code]=true.
+H.keys={}
+function ac.isKeyDown(k) return H.keys[k]==true end
 local S=ac.StructItem
 for _,t in ipairs({'boolean','int32','uint32','float','double'}) do S[t]=function() return {t=t} end end
 function S.string(n) return {t='string',n=n} end
