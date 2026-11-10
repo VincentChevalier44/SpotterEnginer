@@ -9,9 +9,50 @@ local Voice=require('src/voice')
 local M={}
 -- voice : file de la radio ; files : ensemble des chemins relatifs présents (« FR/01_vert.wav ») ; root : dossier vox.
 -- Le signal d'ouverture (s.chirp) est réglé par l'app (réglage « Signal radio »).
+-- vary : formulations variées (réglage « Formulations variées », 1.3.0) ; random(n) : tirage de 1 à n (remplacé dans les
+-- tests) ; lastPick : dernière variante dite de chaque groupe.
 function M.new(voice,files,root,lang)
- return {voice=voice,files=files or {},root=root or '',lang=lang=='EN' and 'EN' or 'FR',chirp=nil}
+ return {voice=voice,files=files or {},root=root or '',lang=lang=='EN' and 'EN' or 'FR',chirp=nil,vary=M.varyDefault~=false,lastPick={},
+  random=math.random,pickList={}}
 end
+-- Variante d'un clip (1.3.0, src/catalog.lua : groupes et tons) : une du ton demandé (sans ton : neutre ou calme ; aucune
+-- du ton demandé : les neutres), dont le fichier existe, jamais la dernière dite du groupe s'il y en a une autre.
+-- Formulations variées coupées, ou clip sans variante : le clip lui-même.
+function M.pick(s,id,tone)
+ local g=Catalog.groups[id]
+ if not g or s.vary==false then return id end
+ local want=tone or 'neutral'
+ local list=s.pickList
+ local function fill(match)
+  for k=#list,1,-1 do list[k]=nil end
+  for _,v in ipairs(g) do
+   local c=Catalog.clips[v]
+   if match(c.tone) and (s.files[s.lang..'/'..c[s.lang]] or not next(s.files)) then list[#list+1]=v end
+  end
+ end
+ fill(function(x) return x==want or want=='neutral' and x=='calm' end)
+ if #list==0 then fill(function(x) return x=='neutral' end) end
+ if #list==0 then return id end
+ local last=s.lastPick[id]
+ if #list>1 and last then for k=1,#list do if list[k]==last then table.remove(list,k); break end end end
+ local pick=list[#list>1 and math.max(1,math.min(#list,s.random(#list))) or 1]
+ s.lastPick[id]=pick
+ return pick
+end
+-- Sens d'une annonce (clips de base et valeurs, avant le choix des variantes) : une même annonce dite autrement reste une
+-- redite (src/voice.lua, repeatGap).
+local function meaning(parts)
+ local out={}
+ for k=1,#parts do
+  local p=parts[k]
+  if type(p)=='string' then out[#out+1]=p
+  elseif type(p)=='table' then out[#out+1]=p.pos and ('P'..p.pos) or p.n and tostring(p.n) or p.text or '' end
+ end
+ return table.concat(out,' ')
+end
+M.meaning=meaning
+-- Ton d'un clip du catalogue (neutral sans précision).
+function M.toneOf(id) local c=Catalog.clips[id]; return c and c.tone or 'neutral' end
 function M.setLanguage(s,lang) s.lang=lang=='EN' and 'EN' or 'FR' end
 function M.mark(s) return s.lang=='FR' and ',' or '.' end
 -- Précision écrite seulement (Catalog.notes), dans la langue de la radio.
@@ -135,12 +176,24 @@ function M.secondsText(lang,v,dec)
  return num..(singular(lang,v) and (lang=='FR' and ' seconde' or ' second') or (lang=='FR' and ' secondes' or ' seconds'))
 end
 -- Annonce : role 'spotter' ou 'engineer', key (dédoublonnage), prio 1..5, parts, opts {ttl, cooldown, text, kind, once,
--- fresh}. once : annonce d'un instant, jamais redite si une annonce plus urgente la coupe ; fresh : un état nouveau,
+-- fresh, tone}. once : annonce d'un instant, jamais redite si une annonce plus urgente la coupe ; fresh : un état nouveau,
 -- jamais écarté comme une redite (position). Une partie {text='…'} est écrite seulement (nom d'un pilote) : l'annonce
--- reste dite sans elle.
+-- reste dite sans elle. tone : ton de la situation (calm, urgent, motivating, frustrated), qui choisit les variantes.
 function M.say(s,role,key,prio,parts,now,opts)
  opts=opts or {}
  if M.strict then for k=1,#parts do local p=parts[k]; if type(p)=='string' and not Catalog.clips[p] then error('clip inconnu : '..p,2) end end end
+ if M.strict and opts.tone and not Catalog.tones[opts.tone] then error('ton inconnu : '..tostring(opts.tone),2) end
+ local sense=meaning(parts)
+ local chosen=nil
+ for k=1,#parts do
+  local p=parts[k]
+  if type(p)=='string' and Catalog.groups[p] then
+   chosen=chosen or {}
+   for j=1,#parts do chosen[j]=parts[j] end
+   break
+  end
+ end
+ if chosen then for k=1,#chosen do if type(chosen[k])=='string' then chosen[k]=M.pick(s,chosen[k],opts.tone) end end; parts=chosen end
  -- Clips groupés (« 9,3 secondes ») d'abord ; s'il en manque, la durée est lue chiffre par chiffre.
  local atoms=M.expand(s,parts)
  local clips=M.paths(s,atoms)
@@ -150,6 +203,6 @@ function M.say(s,role,key,prio,parts,now,opts)
   if clips then atoms=digits end
  end
  return Voice.say(s.voice,{key=key,role=role,prio=prio,clips=clips,text=opts.text or textOf(s,atoms),ttl=opts.ttl or Voice.TTL,
-  cooldown=opts.cooldown or 0,kind=opts.kind,chirp=s.chirp,once=opts.once,fresh=opts.fresh},now)
+  cooldown=opts.cooldown or 0,kind=opts.kind,chirp=s.chirp,once=opts.once,fresh=opts.fresh,sense=sense,tone=opts.tone},now)
 end
 return M

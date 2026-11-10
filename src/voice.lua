@@ -87,7 +87,9 @@ local function pick(v,now)
  local best=nil
  for i=#v.queue,1,-1 do
   local q=v.queue[i]
-  local heard=not q.replay and not q.fresh and q.role=='engineer' and q.prio>=3 and v.repeatGap>0 and q.text and v.heard[q.text]
+  -- Redite jugée sur le sens (q.sense : clips de base et valeurs, src/say.lua) : une même annonce dite avec une autre
+  -- formulation (1.3.0) reste une redite.
+  local heard=not q.replay and not q.fresh and q.role=='engineer' and q.prio>=3 and v.repeatGap>0 and (q.sense or q.text) and v.heard[q.sense or q.text]
   if now-q.at>(q.ttl or M.TTL) or heard and now-heard<v.repeatGap then
    table.remove(v.queue,i)
    if v.onEvent then pcall(v.onEvent,now-q.at>(q.ttl or M.TTL) and 'expired' or 'repeat',q) end
@@ -146,7 +148,7 @@ function M.step(v,now)
  -- Reprise après une coupure : déjà au journal (une seule ligne sur la radio de l'overlay).
  if not item.replay then note(v,item,now,spoken) end
  v.started[item.key]=now
- if spoken and item.text then v.heard[item.text]=now end
+ if spoken and (item.sense or item.text) then v.heard[item.sense or item.text]=now end
  if item.prio>=4 then v.infoAt=now end
  if spoken then
   v.current=item; v.part=1

@@ -2,6 +2,44 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.0 — 10 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Nothing changes in the bridge or in the pit plan contract (`SpotterEnginer.pitplan` v1).
+
+### A more human radio
+- The most frequent calls have two to four wordings, never the same one twice in a row, and each clip has a tone chosen by the situation: urgent (hazards, emergencies), motivating (place gained, attack, within a second), disappointed but supportive (place lost, damage), calm (managing a gap, neutralisation). The tone is in the wording and the delivery (speed and pitch of the same voice).
+- A call said with another wording still counts as a repeat (the 180 s rule follows the meaning, not the text).
+- New setting **Varied wording** (tab **Radio & voice**, on).
+
+### Earlier warnings
+- Stopped, spinning or wrong-way car ahead: still called within 600 m as in 1.2.0, and now earlier at high speed (11 s at your closing speed, up to 900 m), with its side and where to go (*"Stopped car ahead! It's on the left. Go right."*).
+- *"Contact between cars ahead, careful!"* when two cars ahead touch and one of them really slows down.
+- *"Coming up on your left!"* before a faster car is alongside; *"You're clear, you can move over."* when the car you were alongside is behind you; *"Nothing behind, you can have a go."* when you attack with nobody close behind.
+- New setting **Anticipation** (section **Traffic**, on); off, hazards are called from 600 m only, as in 1.2.0, and the other early calls are off.
+
+### Live gaps and position
+- *"You're within a second, go for it!"* (with *"Nothing behind, you can have a go."* when nobody is close behind), *"He's within a second behind, watch your mirrors!"* during the lap, never near the line; gaps at the line say *"He's pulling away"*, *"You're pulling away"* or *"Gap is stable"*.
+- A place gained or lost on track is said at once (held 2.5 s), not at the next line: *"You're P4. Great move, well done!"*, *"You're P5. He got by. Stay calm, we'll get him back."*
+- The engineer no longer repeats "push" or "defend" at the line when the spotter has just said the gap.
+- New settings **Live gaps** (section **Gaps**) and **Live position** (section **Pace and calls**), on.
+
+### Strategy explained
+- The engineer decides alone and says why: *"We're going for the undercut. Box, box, this lap."* when the undercut pays inside the window; *"Car ahead is pitting. Stay out, we'll do the overcut."*; *"He's pitting, we cover."*; under neutralisation *"Let's use the neutralisation… That gains us about 12 seconds."* or *"Stay out, a stop isn't worth it."*; *"No more stops, we go to the end."*
+- A decided undercut or cover commits the box like any other, and the pit plan published for AdvancedIA follows it.
+- New setting **Strategy explained** (section **Strategy calls**, on).
+
+### Emergencies
+- *"Contact!"* when a contact with a car really costs you speed or damage (at most every 15 s); *"Big hit!"* against a wall; then the engineer's damage report (none, light, moderate, heavy, suspension).
+- *"Puncture! Bring it back to the pits slowly."* instead of "abnormal tyre wear".
+- After a spin or a stop on track, a guided rejoin: *"Stay on the brakes, cars coming."*, *"Car coming, wait!"*, *"It's clear, go now."*; *"You're facing the wrong way!"*; *"Careful rejoining, car coming!"* after going off.
+- New section **Emergencies** (tab **Spotter**, on).
+
+### Voice clips
+- 65 new clips in each language (162 to 227; 193 is unused): 225 calls, 972 files.
+
+### Tests
+- New `tests/radio_spec.lua`: every new call has its silent case (nothing happens: nothing is said). A simulated 10-lap race caps the radio: at most 4 spotter and 3 engineer calls (priority 3 to 5) in any minute.
+
 ## 1.2.0 — 10 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.

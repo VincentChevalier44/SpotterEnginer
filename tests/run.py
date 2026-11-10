@@ -61,6 +61,10 @@ def runtime(host=False):
     lua.execute("local p = ... ; package.path = p .. '/?.lua;' .. package.path", APP.as_posix())
     # Toute partie de phrase inconnue du catalogue fait échouer les tests (au lieu d'une annonce seulement écrite).
     lua.execute("(require('src/say')).strict = true")
+    # Formulations variées coupées par défaut (textes attendus exacts) ; les tests des variantes les remettent.
+    lua.execute("(require('src/say')).varyDefault = false")
+    # Variantes tirées au hasard dans l'intégration (app réelle) : graine fixe, résultats reproductibles.
+    lua.execute("math.randomseed(1)")
     if host:
         lua.execute((APP / 'tests' / 'host.lua').read_text(encoding='utf-8'))
         g = lua.globals()

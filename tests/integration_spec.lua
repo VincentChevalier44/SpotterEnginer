@@ -165,7 +165,7 @@ function T.debrief_at_the_line_while_suspended()
   if not debriefAt and (played('147_places_perdues') or played('148_place_perdue')) then debriefAt=now end
  end
  race(true,lineAt+15,false)
- H.onStep=nil
+ H.onStep=nil; H.sim.isSessionFinished=false
  check(#H.logs==0,'errors: '..table.concat(H.logs,' | '))
  check(doneAt and doneAt-lineAt<4,'chequered said at the line: '..tostring(doneAt and doneAt-lineAt))
  check(debriefAt and debriefAt-lineAt<12,'debrief said a few seconds after the line: '..tostring(debriefAt and debriefAt-lineAt))
@@ -408,6 +408,27 @@ function T.no_strategy_call_in_first_laps()
  end
  check(windowOpen and windowOpen.role=='spotter' and not windowOpen.text:find('optimal',1,true),'regulation window open said by the spotter, rule only: '..tostring(windowOpen and windowOpen.text))
  check(windowAfter,'plan window announced once ready')
+end
+-- Budget de la radio (1.3.0 : appels plus nombreux et plus tôt, jamais du harcèlement). Course simulée de 1000 s (tours
+-- de 100 s, SC au tour 2, côte à côte, arrêt d'une IA) : annonces dites par rôle sur toute la course et sur la pire
+-- minute, hors sécurité (priorités 1 et 2 : jamais retenues). Référence de la 1.2.0 relevée le 10/11/2026 : spotter 5 (2 sur la
+-- pire minute), ingénieur 9 (2) ; 1.3.0 : spotter 9 (3), ingénieur 8 (2). Plafonds : RADIO_BUDGET.
+local RADIO_BUDGET={spotter=14,engineer=12,spotterMinute=4,engineerMinute=3}
+function T.radio_budget_full_race()
+ H.raceDt=0.1
+ local Voice=require('src/voice'); local new=Voice.new
+ Voice.new=function(port) local v=new(port); v.logMax=5000; return v end
+ local ok,err=pcall(race,true,1000,false)
+ Voice.new=new; H.raceDt=nil
+ if not ok then error(err,0) end
+ local total={spotter=0,engineer=0}; local at={spotter={},engineer={}}
+ for _,e in ipairs(SPE_TEST.app.voice.log) do
+  if e.spoken and e.prio>=3 and total[e.role] then total[e.role]=total[e.role]+1; local l=at[e.role]; l[#l+1]=e.at end
+ end
+ local function worst(l) local w=0; for k=1,#l do local n=0; for j=k,#l do if l[j]-l[k]<60 then n=n+1 end end; if n>w then w=n end end; return w end
+ local out={spotter=total.spotter,engineer=total.engineer,spotterMinute=worst(at.spotter),engineerMinute=worst(at.engineer)}
+ print(string.format('radio budget: spotter %d (worst minute %d), engineer %d (worst minute %d)',out.spotter,out.spotterMinute,out.engineer,out.engineerMinute))
+ for k,v in pairs(RADIO_BUDGET) do if v>0 then check(out[k]<=v,string.format('radio budget %s: %d > %d',k,out[k],v)) end end
 end
 -- Course du 05/11/2026 à 14:17 : avis « même composé » au départ, le spotter est resté muet jusqu'à la mi-tour. Avec
 -- l'avis en attente, le côte à côte (40 à 44 s) et les autres annonces doivent marcher, sans erreur ; l'avis est dit à

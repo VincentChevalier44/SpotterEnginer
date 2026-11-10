@@ -73,6 +73,16 @@ def true_peak(path):
 # plus rapide pour les mots des écarts.
 FAST = '+10%'
 FAST_CLIPS = {'gapAhead', 'gapBehind', 'andBehind'}
+# Ton du clip (1.3.0, src/catalog.lua : tone) : débit et hauteur d'edge-tts (rate, pitch), la même voix ; le niveau
+# reste celui de tous les clips (FINAL_RMS). Aucun style SSML (non pris par ces voix) : le ton tient à la formulation et
+# à la prosodie. Neutre : rien de changé (clips d'avant 1.3.0 identiques).
+TONES = {
+    'neutral': (None, None),
+    'calm': ('-4%', '-2Hz'),
+    'urgent': ('+14%', '+4Hz'),
+    'motivating': ('+7%', '+3Hz'),
+    'frustrated': ('-6%', '-4Hz'),
+}
 
 
 def runtime():
@@ -94,14 +104,15 @@ def catalog(everything=False):
     for lang in languages:
         for k in range(1, len(order) + 1):
             c = cat.clips[order[k]]
-            jobs.append((lang, c[lang], c['text' + lang], everything or not c.shipped, FAST if order[k] in FAST_CLIPS else None))
+            rate, pitch = TONES[c.tone]
+            jobs.append((lang, c[lang], c['text' + lang], everything or not c.shipped, FAST if order[k] in FAST_CLIPS else rate, pitch))
         for n in range(int(cat.maxNumber) + 1):
-            jobs.append((lang, cat.numberFile(n), str(n), True, None))
+            jobs.append((lang, cat.numberFile(n), str(n), True, None, None))
         for n in range(int(cat.maxTenths) + 1):
-            jobs.append((lang, cat.secondsFile(n), say.secondsText(lang, n / 10, 1 if n % 10 else 0), True, FAST))
+            jobs.append((lang, cat.secondsFile(n), say.secondsText(lang, n / 10, 1 if n % 10 else 0), True, FAST, None))
         # Positions « Tu es P7 » (écrit « Pé 7 » pour edge-tts en français : « P7 » y est mal prononcé).
         for n in range(1, int(cat.maxPosition) + 1):
-            jobs.append((lang, cat.positionFile(n), cat.positionSpoken(lang, n), True, FAST))
+            jobs.append((lang, cat.positionFile(n), cat.positionSpoken(lang, n), True, FAST, None))
     assert len(jobs) == int(cat.fileCount()), 'un travail par fichier attendu'
     return jobs, str(cat.toneFile)
 
@@ -153,7 +164,7 @@ def encode(raw, chain, out, tmp):
     return best is not None
 
 
-async def one(lang, name, text, redo, rate, force, sem, report):
+async def one(lang, name, text, redo, rate, pitch, force, sem, report):
     target = APP / 'vox' / lang / name
     if target.exists() and not (force and redo):
         report['skipped'] += 1
@@ -164,7 +175,7 @@ async def one(lang, name, text, redo, rate, force, sem, report):
             try:
                 with tempfile.TemporaryDirectory() as tmp:
                     raw = Path(tmp) / 'raw.mp3'
-                    voice = edge_tts.Communicate(text, VOICES[lang], rate=rate) if rate else edge_tts.Communicate(text, VOICES[lang])
+                    voice = edge_tts.Communicate(text, VOICES[lang], rate=rate or '+0%', pitch=pitch or '+0Hz')
                     await voice.save(str(raw))
                     if FFMPEG:
                         out = Path(tmp) / 'clip.mp3'
@@ -187,7 +198,7 @@ async def main(force, everything):
     radio_tone(tone, force)
     report = {'done': 0, 'skipped': 0, 'failed': []}
     sem = asyncio.Semaphore(4)
-    await asyncio.gather(*(one(lang, name, text, redo, rate, force, sem, report) for lang, name, text, redo, rate in jobs))
+    await asyncio.gather(*(one(lang, name, text, redo, rate, pitch, force, sem, report) for lang, name, text, redo, rate, pitch in jobs))
     print(f"\n{report['done']} clips générés, {report['skipped']} déjà présents, {len(report['failed'])} en échec")
     for f in report['failed']:
         print('  ÉCHEC', f)

@@ -4,14 +4,16 @@
 local M={}
 M.schema={
  -- Général
- {'language','FR',{'FR','EN'}},{'enabled',true},{'updateCheck',true},{'volume',1.7,0,2,0.05},{'chirp',true},{'infoGap',12,0,60,1},{'repeatGap',180,0,600,10},{'duck',true},{'duckLevel',0.85,0.1,1,0.05},
+ {'language','FR',{'FR','EN'}},{'enabled',true},{'updateCheck',true},{'volume',1.7,0,2,0.05},{'chirp',true},{'variety',true},{'infoGap',12,0,60,1},{'repeatGap',180,0,600,10},{'duck',true},{'duckLevel',0.85,0.1,1,0.05},
  -- Spotter
  {'spotterOn',true},{'spotterVolume',1.0,0,2,0.05},{'raceControl',true},{'sideBySide',true},{'flipSides',false},
  {'stillThere',true},{'gaps',true},{'gapEvery',2,1,5,1},{'gapDecimals',1,0,2,1},{'closingAlert',0.3,0.1,1.5,0.05},
  {'blueFlags',true},{'backmarkers',true},{'fasterBehind',true},{'pitExit',true},{'hazards',true},{'rivalPenalties',true},
+ -- 1.3.0 : anticipation, urgences, écarts en direct.
+ {'anticipation',true},{'emergencies',true},{'gapEvents',true},
  {'trackLimits',true},{'drsVoice',false},{'deltaVoice',true},{'penaltiesVoice',true},{'flashVoice',true},{'aaiMessages',true},{'sec_penalties',true},{'sec_traffic',true},
  -- Ingénieur
- {'engineerOn',true},{'engineerVolume',1.0,0,2,0.05},{'pace',true},{'paceEvery',3,1,10,1},{'pushHold',true},{'positionCalls',true},{'debrief',true},
+ {'engineerOn',true},{'engineerVolume',1.0,0,2,0.05},{'pace',true},{'paceEvery',3,1,10,1},{'pushHold',true},{'positionCalls',true},{'positionLive',true},{'debrief',true},
  {'fuel',true},{'fuelMargin',1.0,0,5,0.25},{'fuelK',0.03,0.005,0.08,0.005},
  {'tyres',true},{'tyreCold',15,5,40,1},{'tyreHot',12,4,40,1},{'brakes',true},{'brakeHot',850,400,1200,10},
  {'biasDiff',180,60,400,10},{'damage',true},{'weather',true},{'wind',true},{'windMin',15,5,50,1},{'driving',true},
@@ -19,7 +21,7 @@ M.schema={
  -- Stratégie
  {'strategyOn',true},{'tolerance',2.0,0.5,6,0.1},{'gripFloor',94,85,99,0.5},{'tempSens',0.02,0,0.06,0.005},
  {'trafficCost',1.5,0,5,0.1},{'pitLane',22,8,60,0.5},{'warmup',1.5,0,6,0.1},{'degPrior',0.05,0.0,0.5,0.01},
- {'boxCalls',true},{'neutralBox',true},{'neutralFactor',0.55,0.2,1,0.05},{'duels',true},{'rivalPitVoice',true},{'sec_stratCalls',true},
+ {'boxCalls',true},{'neutralBox',true},{'neutralFactor',0.55,0.2,1,0.05},{'duels',true},{'rivalPitVoice',true},{'strategyTalk',true},{'sec_stratCalls',true},
  -- Overlays : réglages communs (comme SuperHUD et AdvancedIA)
  {'overlaysOn',true},{'clickThrough',true},{'hideReplay',true},{'hidePits',false},{'hotkeys',true},
  -- Édition en jeu (1.2.0) : bouton montré quand la souris bouge, position (-1 : en haut au centre), commune aux bureaux.
@@ -62,12 +64,13 @@ M.sections={
    {id='penalties',master='sec_penalties',keys={'penaltiesVoice','trackLimits','rivalPenalties'},gate=true}}},
   {'traffic',{
    {id='sides',master='sideBySide',keys={'stillThere','flipSides'},gate=true},
-   {id='trafficCalls',master='sec_traffic',keys={'backmarkers','fasterBehind','hazards','flashVoice'},gate=true},
+   {id='trafficCalls',master='sec_traffic',keys={'backmarkers','fasterBehind','hazards','anticipation','flashVoice'},gate=true},
+   {id='emergencies',master='emergencies',keys={},gate=true},
    {id='pitExit',master='pitExit',keys={},gate=true},
-   {id='gaps',master='gaps',keys={'gapEvery','gapDecimals','closingAlert'},gate=true}}}},
+   {id='gaps',master='gaps',keys={'gapEvents','gapEvery','gapDecimals','closingAlert'},gate=true}}}},
  engineer={
   {'raceGroup',{
-   {id='pace',master='pace',keys={'paceEvery','pushHold','positionCalls'},gate=true},
+   {id='pace',master='pace',keys={'paceEvery','pushHold','positionCalls','positionLive'},gate=true},
    {id='debrief',master='debrief',keys={},gate=true},
    {id='fuel',master='fuel',keys={'fuelMargin','fuelK'},gate=true},
    {id='driving',master='driving',keys={'drivingLoss'},gate=true}}},
@@ -84,13 +87,13 @@ M.sections={
    {id='model',keys={'tolerance','gripFloor','tempSens','degPrior'}},
    {id='pits',keys={'pitLane','warmup','trafficCost','neutralBox','neutralFactor'}}}},
   {'stratRadio',{
-   {id='stratCalls',master='sec_stratCalls',keys={'boxCalls','duels','rivalPitVoice'},gate=true}}}},
+   {id='stratCalls',master='sec_stratCalls',keys={'boxCalls','duels','strategyTalk','rivalPitVoice'},gate=true}}}},
  radio={
   {'radioLevels',{
    {id='volumes',keys={'volume','spotterVolume','engineerVolume'},custom='test'},
    {id='duck',master='duck',keys={'duckLevel'}}}},
   {'radioVoice',{
-   {id='voice',keys={'language','chirp'},custom='mute'},
+   {id='voice',keys={'language','chirp','variety'},custom='mute'},
    {id='pacing',keys={'infoGap','repeatGap'}},
    {id='log',keys={},custom='log'}}}},
  overlays={

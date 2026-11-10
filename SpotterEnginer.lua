@@ -60,6 +60,7 @@ local Say=require('src/say')
 local Timing=require('src/timing')
 local Spotter=require('src/spotter')
 local Engineer=require('src/engineer')
+local Emergency=require('src/emergency')
 local Strategist=require('src/strategist')
 local UI=require('src/ui')
 local Overlays=require('src/overlays')
@@ -91,6 +92,8 @@ local sayer=Say.new(voice,files,appDir..'/vox',cfg.language)
 local timing=Timing.new()
 local spotter=Spotter.new()
 local engineer=Engineer.new()
+-- Urgences du joueur (1.3.0, src/emergency.lua) : contact, dégâts, crevaison, tête-à-queue et reprise.
+local emergency=Emergency.new()
 local view=UI.new()
 local hud=Overlays.new()
 local editor=Editor.new()
@@ -131,6 +134,8 @@ local function apply()
  voice.muted=not cfg.enabled or app.radioMuted==true
  Say.setLanguage(sayer,cfg.language)
  sayer.chirp=cfg.chirp and chirp or nil
+ -- Formulations variées (1.3.0, src/say.lua : variantes selon le ton).
+ sayer.vary=cfg.variety~=false
  voice.infoGap=cfg.infoGap; voice.repeatGap=cfg.repeatGap
  Lang.set(cfg.language)
 end
@@ -298,7 +303,7 @@ local function hotkeys()
  end
 end
 local ctx={F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
- trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog}
+ trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency}
 -- Journal : état de l'app, tour du joueur, point d'état périodique.
 local lastActive,lapLogged,stateAt=nil,nil,-1e9
 local function lapText(ms) ms=tonumber(ms) or 0; if ms<=0 then return '-' end; local s=ms/1000; return string.format('%d:%06.3f',math.floor(s/60),s%60) end
@@ -337,7 +342,7 @@ local function step(dt)
  local switched=playerSince and real-playerSince>2
  if F.session~=session or restarted or switched then
   session=F.session; lastPlayer=F.player; playerSince=nil
-  Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
+  Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
   jlog(string.format('séance %s : %s, %d voitures, circuit de %.0f m, joueur voiture %d%s',tostring(F.session),F.isRace and 'course' or 'hors course',F.count or 0,
    tonumber(F.trackLength) or 0,F.player or -1,restarted and ' (redémarrage)' or switched and ' (autre voiture)' or ''))
   lapLogged=nil
@@ -379,6 +384,7 @@ local function step(dt)
   -- Spotter.step suit toujours la direction de course (appels de stands de l'ingénieur) ; ses annonces se taisent avec
   -- le rôle Spotter coupé (radio).
   protected(Spotter.step,spotter,ctx)
+  protected(Emergency.step,emergency,ctx,dt or 0)
   if cfg.engineerOn then protected(Engineer.step,engineer,ctx,dt or 0) end
  elseif finishing then
   -- Arrivée : AdvancedIA suspend le pont dès la ligne (garde « finished ») mais publie encore son résultat ; l'arrivée

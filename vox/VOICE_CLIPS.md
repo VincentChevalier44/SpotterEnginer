@@ -6,7 +6,7 @@ the content, not the extension). For another voice, record files with the same n
 nothing, the call is then only written on the overlay radio.
 This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 
-842 files in all (2 languages).
+972 files in all (2 languages).
 
 ## Calls
 
@@ -172,6 +172,71 @@ This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 | 159 | `159_bilan_progresser.wav` | On continue de progresser, chaque course compte. | `159_debrief_keep_going.wav` | We keep improving, every race counts. |
 | 160 | `160_bilan_abandon.wav` | Pas classé cette fois, on repart de l'avant. | `160_debrief_dnf.wav` | Not classified this time, we go again. |
 | 161 | `161_bilan_disqualifie.wav` | Disqualifié. On en reparlera au débrief. | `161_debrief_dq.wav` | Disqualified. We'll talk about it at the debrief. |
+| 162 | `162_bien_joue_superbe.wav` | Superbe dépassement, bravo ! | `162_great_move.wav` | Great move, well done! |
+| 163 | `163_bien_joue_continue.wav` | Joli coup, continue comme ça ! | `163_nice_one.wav` | Nice one, keep it going! |
+| 164 | `164_bien_joue_manoeuvre.wav` | Bien vu, belle manœuvre. | `164_clean_move.wav` | Good job, clean move. |
+| 165 | `165_bon_rythme_garde.wav` | C'est un bon rythme, garde ça. | `165_good_pace_keep.wav` | That's a good pace, keep it there. |
+| 166 | `166_tres_bon_tour.wav` | Très bon tour, tu es dans le coup ! | `166_great_lap.wav` | Great lap, you're right on it! |
+| 167 | `167_attaque_allez.wav` | Allez, c'est le moment, attaque ! | `167_push_come_on.wav` | Come on, now's the time, push! |
+| 168 | `168_il_faut_pousser.wav` | Il faut pousser maintenant. | `168_need_to_push.wav` | We need to push now. |
+| 169 | `169_tranquille_gere.wav` | Tranquille, gère l'écart, pas de risque. | `169_easy_manage.wav` | Easy now, manage the gap, no risks. |
+| 170 | `170_position_controle.wav` | On gère, la position est sous contrôle. | `170_under_control.wav` | We're managing it, position is under control. |
+| 171 | `171_il_attaque_protege.wav` | Il attaque, protège ta position ! | `171_protect_position.wav` | He's attacking, protect your position! |
+| 172 | `172_couvre_interieur.wav` | Couvre l'intérieur aux freinages. | `172_cover_inside.wav` | Cover the inside into the braking zones. |
+| 173 | `173_tu_reviens_bien.wav` | Tu reviens bien, continue ! | `173_reeling_in.wav` | You're reeling him in, keep going! |
+| 174 | `174_ecart_fond.wav` | L'écart fond. | `174_gap_coming_down.wav` | The gap is coming down. |
+| 175 | `175_il_te_reprend.wav` | Il te reprend du temps. | `175_taking_time.wav` | He's taking time out of you. |
+| 176 | `176_il_revient_fort.wav` | Il revient fort derrière ! | `176_coming_back_hard.wav` | He's coming back hard behind you! |
+| 177 | `177_cest_degage.wav` | C'est dégagé. | `177_all_clear.wav` | All clear. |
+| 178 | `178_voiture_rapide_place.wav` | Voiture rapide derrière, laisse-lui la place. | `178_quicker_car_room.wav` | Quicker car behind, give it room. |
+| 179 | `179_attarde_devant.wav` | Attardé devant, attention en le doublant. | `179_lapped_car_ahead.wav` | Lapped car ahead, careful passing it. |
+| 180 | `180_dans_la_seconde.wav` | Tu es dans la seconde, à toi de jouer ! | `180_within_a_second.wav` | You're within a second, go for it! |
+| 181 | `181_moins_une_seconde.wav` | Moins d'une seconde devant, tu es dans le coup. | `181_under_a_second.wav` | Under a second to the car ahead, you're in range. |
+| 182 | `182_il_est_dans_ta_seconde.wav` | Il est dans ta seconde, attention derrière ! | `182_he_is_within_a_second.wav` | He's within a second behind, watch your mirrors! |
+| 183 | `183_moins_une_seconde_derriere.wav` | Il est à moins d'une seconde derrière. | `183_under_a_second_behind.wav` | He's under a second behind. |
+| 184 | `184_ecart_stable.wav` | Écart stable. | `184_gap_stable.wav` | Gap is stable. |
+| 185 | `185_tu_creuses.wav` | Tu creuses l'écart, continue ! | `185_pulling_away.wav` | You're pulling away, keep it up! |
+| 186 | `186_il_s_echappe.wav` | Il s'échappe devant. | `186_he_is_pulling_away.wav` | He's pulling away ahead. |
+| 187 | `187_il_est_passe.wav` | Il est passé. On reste calme, on va le reprendre. | `187_he_got_by.wav` | He got by. Stay calm, we'll get him back. |
+| 188 | `188_dommage_remobilise.wav` | Dommage. On se remobilise, il est encore à portée. | `188_shame_regroup.wav` | Shame. Regroup, he's still within reach. |
+| 189 | `189_place_perdue_concentre.wav` | Place perdue. Reste concentré. | `189_position_lost_focus.wav` | Position lost. Stay focused. |
+| 190 | `190_rien_derriere.wav` | Rien derrière, tu peux tenter. | `190_nothing_behind.wav` | Nothing behind, you can have a go. |
+| 191 | `191_tete_a_queue_devant.wav` | Tête-à-queue devant ! | `191_spin_ahead.wav` | Car spinning ahead! |
+| 192 | `192_contresens_devant.wav` | Voiture à contresens devant ! | `192_wrong_way_ahead.wav` | Car going the wrong way ahead! |
+| 194 | `194_voiture_arretee_devant.wav` | Voiture arrêtée devant ! | `194_stopped_car_ahead.wav` | Stopped car ahead! |
+| 195 | `195_elle_est_a_gauche.wav` | Elle est à gauche. | `195_on_the_left.wav` | It's on the left. |
+| 196 | `196_elle_est_a_droite.wav` | Elle est à droite. | `196_on_the_right.wav` | It's on the right. |
+| 197 | `197_en_pleine_trajectoire.wav` | En pleine trajectoire ! | `197_on_the_racing_line.wav` | Right on the racing line! |
+| 198 | `198_hors_de_la_piste.wav` | Hors de la piste. | `198_off_the_track.wav` | Off the track. |
+| 199 | `199_passe_a_gauche.wav` | Passe à gauche. | `199_go_left.wav` | Go left. |
+| 200 | `200_passe_a_droite.wav` | Passe à droite. | `200_go_right.wav` | Go right. |
+| 201 | `201_accrochage_devant.wav` | Accrochage devant, prudence ! | `201_contact_ahead.wav` | Contact between cars ahead, careful! |
+| 202 | `202_il_arrive_a_gauche.wav` | Il arrive à gauche ! | `202_coming_up_left.wav` | Coming up on your left! |
+| 203 | `203_il_arrive_a_droite.wav` | Il arrive à droite ! | `203_coming_up_right.wav` | Coming up on your right! |
+| 204 | `204_tu_es_passe.wav` | C'est bon, tu es passé, rabats-toi. | `204_you_are_clear.wav` | You're clear, you can move over. |
+| 205 | `205_contact.wav` | Contact ! | `205_contact.wav` | Contact! |
+| 206 | `206_gros_choc.wav` | Gros choc ! On regarde les dégâts. | `206_big_hit.wav` | Big hit! We're checking the damage. |
+| 207 | `207_pas_de_degats.wav` | Pas de dégâts, c'est bon, continue. | `207_no_damage.wav` | No damage, you're fine, carry on. |
+| 208 | `208_degats_legers.wav` | Dégâts légers, tu peux continuer. | `208_light_damage.wav` | Light damage, you can carry on. |
+| 209 | `209_degats_moyens.wav` | Dégâts moyens, la voiture est touchée. On surveille. | `209_moderate_damage.wav` | Moderate damage, the car's hurt. We'll keep an eye on it. |
+| 210 | `210_gros_degats.wav` | Gros dégâts. Rentre aux stands. | `210_heavy_damage.wav` | Heavy damage. Box, box. |
+| 211 | `211_suspension_touchee.wav` | Suspension touchée. Rentre doucement aux stands. | `211_suspension_damage.wav` | Suspension damage. Bring it back to the pits carefully. |
+| 212 | `212_crevaison.wav` | Crevaison ! Rentre doucement aux stands. | `212_puncture.wav` | Puncture! Bring it back to the pits slowly. |
+| 213 | `213_tete_a_queue_freins.wav` | Tête-à-queue ! Reste sur les freins, voitures en approche. | `213_spun_brakes.wav` | You've spun! Stay on the brakes, cars coming. |
+| 214 | `214_tete_a_queue_libre.wav` | Tête-à-queue. C'est libre, repars quand tu es prêt. | `214_spun_clear.wav` | You've spun. It's clear, go when you're ready. |
+| 215 | `215_attends_voiture.wav` | Voiture qui arrive, attends ! | `215_car_coming_wait.wav` | Car coming, wait! |
+| 216 | `216_cest_libre_vas_y.wav` | C'est libre, vas-y. | `216_clear_go.wav` | It's clear, go now. |
+| 217 | `217_attention_reprise.wav` | Attention en reprenant la piste, voiture qui arrive ! | `217_careful_rejoining.wav` | Careful rejoining, car coming! |
+| 218 | `218_tu_es_a_contresens.wav` | Tu es à contresens ! Fais demi-tour quand c'est libre. | `218_you_are_wrong_way.wav` | You're facing the wrong way! Turn around when it's clear. |
+| 219 | `219_tu_es_arrete.wav` | Tu es arrêté sur la piste, attention aux voitures. | `219_you_are_stopped.wav` | You're stopped on track, watch the traffic. |
+| 220 | `220_on_tente_undercut.wav` | On tente l'undercut. | `220_going_for_undercut.wav` | We're going for the undercut. |
+| 221 | `221_on_reste_overcut.wav` | On reste dehors, on fait l'overcut. | `221_stay_out_overcut.wav` | Stay out, we'll do the overcut. |
+| 222 | `222_on_profite_neutralisation.wav` | On profite de la neutralisation. | `222_use_neutralisation.wav` | Let's use the neutralisation. |
+| 223 | `223_on_reste_dehors_neutralisation.wav` | On reste dehors, l'arrêt ne vaut pas le coup. | `223_stay_out_not_worth.wav` | Stay out, a stop isn't worth it. |
+| 224 | `224_menace_undercut.wav` | La voiture derrière peut tenter l'undercut, pousse ce tour ! | `224_undercut_threat.wav` | The car behind could try the undercut, push this lap! |
+| 225 | `225_il_rentre_on_couvre.wav` | Il rentre, on couvre. | `225_he_pits_we_cover.wav` | He's pitting, we cover. |
+| 226 | `226_plus_d_arret.wav` | Plus d'arrêt prévu, on va jusqu'au bout. | `226_no_more_stops.wav` | No more stops, we go to the end. |
+| 227 | `227_on_gagne_environ.wav` | On gagne environ | `227_gains_us_about.wav` | That gains us about |
 
 ## Numbers
 

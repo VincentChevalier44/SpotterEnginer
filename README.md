@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.2.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.3.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -333,11 +333,18 @@ Like SuperHUD, each of CSP's 4 app desktops keeps its own overlays.
 | DRS available, enabled, "enabled in N laps", disabled | AdvancedIA. **Off by default**: AdvancedIA already has its beep and its panel |
 | Penalties of your direct rivals (two places ahead and behind): +N s, DT, SG, cut, disqualification; car disqualified | AdvancedIA's sanctions |
 | Car left, car right, three wide, still there, clear | Car positions. A car counts as alongside from 1.3 m of lateral offset (not a car in your tow), after 0.25 s of overlap (not a brush); "clear" after 0.6 s of free lane, only if the side call was heard, and without cutting the engineer off. The side is checked against CSP's lateral track position; left and right are swapped automatically after repeated disagreement |
-| Gaps ahead and behind in one message, every N laps, with *"You're closing."* or *"He's closing on you."*; under 10 s, "9.3 seconds" as a single clip; above, to the second | Timing at checkpoints |
+| Gaps ahead and behind in one message, every N laps, with *"You're closing."*, *"He's closing on you."*, *"He's pulling away ahead."*, *"You're pulling away, keep it up!"* or, in a fight, *"Gap is stable."*; under 10 s, "9.3 seconds" as a single clip; above, to the second | Timing at checkpoints |
 | Backmarker ahead, faster traffic behind | Timing |
 | Practice and qualifying: *"Car on a flying lap behind, let it through."* (name and measured gap written), while you are on an out-lap or a cool-down lap, only once the car is seen really closing in | AdvancedIA 1.51 (`fastCar` announcement), checked by Timing; setting **Faster traffic behind** |
 | Pit exit clear, or traffic when rejoining | Exit point learnt on every car |
-| Stopped car ahead, AI mistake ahead | AdvancedIA's accidents and mistakes, plus speed |
+| Live gaps (new in 1.3.0, setting **Live gaps**): *"You're within a second, go for it!"* when the car ahead comes within a second (with *"Nothing behind, you can have a go."* in the same transmission when nobody is within 1.5 s behind), *"He's within a second behind, watch your mirrors!"* when the car behind does; once per car, again only after the gap has gone back above 1.4 s. From lap 2, never near the line (the gaps of the lap are said there) nor under neutralisation | Timing |
+| Hazards ahead: called within 600 m as in 1.2.0, and from 1.3.0 earlier at high speed (11 s at your closing speed, up to 900 m): stopped car, car spinning, car going the wrong way, then its side and where to go: *"Stopped car ahead! It's on the left. Go right."*, *"Right on the racing line!"*, *"Off the track."* (then priority 2). The same car is not called again within 45 s. With **Anticipation** off: from 600 m only, as in 1.2.0 | AdvancedIA's state of every car (incident, spin, stopped, wrong way, on track), CSP's lateral track position |
+| *"Contact between cars ahead, careful!"*: two cars ahead (within 700 m) touch and one loses at least 25 km/h within 1.2 s; a light rub says nothing. Never "debris": AC does not simulate any | AC collisions (`collidedWith`) and speeds |
+| AI mistake ahead | AdvancedIA's mistakes |
+| *"Coming up on your left!"* (1.3.0, **Anticipation**): a car less than 19 m behind, one lane over, at least 8 km/h faster and still at least 0.8 s from being alongside (closer, *"Car left."* follows at once and is enough). Not on the first lap of a race (tight pack), never below 60 km/h | Car positions |
+| *"You're clear, you can move over."* instead of *"Clear."* when the car that was alongside is now behind you (overtake completed) | Car positions |
+| *"Nothing behind, you can have a go."* when you come within 0.6 s of the car ahead and nobody is within 1.5 s behind (once per attack, at most every 90 s) | Timing |
+| Your emergencies (new in 1.3.0, section **Emergencies**): *"Contact!"* (name written) when a contact with a car costs you at least 6 km/h or damage, at most every 15 s; after a spin, *"You've spun! Stay on the brakes, cars coming."* or *"You've spun. It's clear, go when you're ready."*, then *"Car coming, wait!"* and *"It's clear, go now."* until you are back above 50 km/h; *"You're stopped on track, watch the traffic."*; *"You're facing the wrong way! Turn around when it's clear."*; *"Careful rejoining, car coming!"* when you come back from off the track with a car less than 3 s away. Never on the grid, at the lights or under a red flag | AC collisions and speeds, AdvancedIA's state of your car (spin, wrong way, on track) |
 | Track limits | AC's cut counter (AdvancedIA does not track them for the player) |
 
 AdvancedIA's announcements are also written as text on the radio of the Spotter overlay (setting **AdvancedIA announcements on the radio**).
@@ -363,13 +370,16 @@ The 32 kinds of AdvancedIA announcement and the 40 states of its panel were revi
 
   *"Nice job."* only for an overtake on track: a place gained during a rival's stop or from a retirement does not count. One call per crossing of the line. A call that could not be said (busy radio) is said at the next crossing; a position already said is said again if it changes again, even within three minutes.
 
+  **Live position** (new in 1.3.0, setting **Live position**): a place gained on track is said straight away, once held for 2.5 s, with a motivating tone (*"You're P4. Great move, well done!"*); a place lost to a car that passed you on track too (*"You're P5. He got by. Stay calm, we'll get him back."*). A place taken or lost at a stop is left to the line. The same key and the same 40 s delay as the call at the line: never both.
+
   Nothing before the end of lap 2, under neutralisation or in the pit lane. On the out-lap, the position alone (*"You're P8."*). On the last lap, the spotter says it (see [Spotter](#spotter)); if the Spotter role or the **Flags and neutralisations** section is off, the engineer says it instead.
 - **Fuel**: measured consumption, laps of fuel against the need (up to the planned stop or the finish), *"Save fuel, lift and coast."*, target plus or minus N laps.
 - **Tyres**:
   - warm-up phase (core below the optimum), overheating (core or surface);
   - abnormal wear: one tyre clearly more worn, flat spot, blisters, graining, puncture.
 - **Brakes**: overheating, bias advice when front and rear diverge (cars with adjustable bias).
-- **Damage**: a hit recorded on the bodywork.
+- **Damage**: a hit recorded on the bodywork. From 1.3.0, after a contact or a big hit (*"Big hit! We're checking the damage."*, at least 40 km/h lost against a wall), the engineer gives a damage report 3.5 s later: *"No damage, you're fine, carry on."*, *"Light damage, you can carry on."*, *"Moderate damage, the car's hurt. We'll keep an eye on it."*, *"Heavy damage. Box, box."* or *"Suspension damage. Bring it back to the pits carefully."* (section **Emergencies**).
+- **Puncture** (1.3.0, section **Emergencies**): *"Puncture! Bring it back to the pits slowly."* once per tyre, instead of "abnormal tyre wear".
 - **Conditions**: rain expected in N minutes, rain getting heavier, grip dropping or rising.
 - **Wind into braking**: tailwind or headwind at the start of a big braking zone.
 - **End-of-race debrief** (new in 1.2.0, section **End-of-race debrief**): as soon as you cross the finish line of a race (even while AdvancedIA pauses its bridge for the finish) the spotter says *"Chequered flag, race over! You're P2."* Five seconds later the engineer sums it up in one transmission:
@@ -420,6 +430,12 @@ The stop lap is the one of the engineer's plan, computed inside AdvancedIA's reg
 - **Box**: only on the lap of the plan, *"Box next lap."* then *"Box, box, this lap."* Once said, the box lap no longer changes until the stop, even if the recomputed plan moves by a lap (never "box this lap" then "box next lap"); the window is not called again between the box and the stop, nor in the pit lane.
 - **Backmarkers**: a car ahead on track is only called a backmarker if AC's classification also puts it behind you (AC's lap counter can be one lap apart from one car to another).
 - **Pit lane closed** (under neutralisation): no "box".
+- **Strategy explained** (new in 1.3.0, setting **Strategy explained**, section **Strategy calls**): the engineer decides alone, there is no button, and says why.
+  - **Undercut decided**: when the undercut on the car ahead pays and stopping this lap stays in the window, at most 3 laps before the optimal lap and within the gain plus half the tolerance of the best plan: *"We're going for the undercut. Box, box, this lap."* (gain written). The box is committed like any other (never "box this lap" then "box next lap"), and the pit plan published for AdvancedIA follows it. Otherwise *"Undercut is on."* as before.
+  - **Overcut**: *"Car ahead is pitting. Stay out, we'll do the overcut."* when staying out pays.
+  - **Cover**: the car behind pits and threatens the undercut: *"He's pitting, we cover. Box, box, this lap."* if stopping now stays in the window at the plan's cost; *"The car behind could try the undercut, push this lap!"* when the threat appears.
+  - **Neutralisation**: *"Let's use the neutralisation. Box, box, this lap. That gains us about 12 seconds."*, or, once 5 s in, *"Stay out, a stop isn't worth it."* when a stop is still planned later.
+  - **No more stops**: *"No more stops, we go to the end."* once, when the plan no longer needs the stop it had.
 - **Regulatory reminder**: AdvancedIA reminds you of the mandatory stop at the opening and at the end of the window. That reminder is not said when a plan will call the box. Without a plan (Engineer role, strategy or **Strategy calls** off, or no plan yet), *"The pit window is closing soon, time to box."* is still said at the end of the window, so that a mandatory stop is never forgotten.
 - **Settings**: the window, the optimal lap and the "box" calls depend on the setting **Window and "box" on the radio** (section **Strategy calls**, tab **Strategy**) and on the Engineer role, even with the Spotter role off. Without a plan, the window opening and the end-of-window reminder come from the spotter, section **Flags and neutralisations**.
 
@@ -473,7 +489,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 160 calls, 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 842 files in all. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 225 calls (23 of them alternative wordings), 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 842 files in all. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).
@@ -491,6 +507,7 @@ The clips are in `vox/FR` and `vox/EN`: 160 calls, 100 numbers (0 to 99), 100 du
 - **Regenerating**: `python tools/generer_voix.py` makes the missing clips; `--force` redoes clips 35 and up, the numbers, durations, positions and the radio tone; `--tout` redoes everything, original clips 01 to 34 included. It needs a connection, since edge-tts uses Microsoft Edge's speech service.
 - **Composed calls**: calls are chains of clips. Gaps are read in one go: *"Gap ahead:"* then "9.3 seconds" in a single clip (singular below 2 s in French, « 1,5 seconde »), said 10 % faster. The sentence goes from 2.8 s in five clips to 1.9 s in two. The full list and the texts are in `vox/VOICE_CLIPS.md`.
 - **Two original clips stay reserved, never said**: no. 12 (*"Black and white flag, track limits warning."*) and no. 20 (*"One more strike and you're disqualified"*, for track limits). Neither AC nor AdvancedIA gives the player's count of track-limit offences; saying them would claim a sanction that nothing proves. Cuts have their own clip (no. 93), and AdvancedIA's final warning its own (no. 125).
+- **Varied wording and tone** (new in 1.3.0, setting **Varied wording**, tab **Radio & voice**): the most frequent calls have two to four wordings (*"Nice job."*, *"Great move, well done!"*, *"Nice one, keep it going!"*…), never the same one twice in a row. Each clip has a tone (calm, urgent, motivating, disappointed) chosen by the situation: urgent for hazards and emergencies, motivating for a place gained or an attack, disappointed but supportive for a place lost or damage, calm for managing a gap. The tone is in the wording and in the delivery (edge-tts speed and pitch: urgent +14 % and +4 Hz, motivating +7 % and +3 Hz, calm −4 % and −2 Hz, disappointed −6 % and −4 Hz), with the same voice; edge-tts offers no emotional styles for these voices. The same instruction said with another wording still counts as a repeat (180 s).
 - **A missing clip blocks nothing**: the call is then written on the overlay radio, preceded by the radio tone if it is set.
 - **Positions in French**: edge-tts mispronounces « P7 » in French. The spoken text is therefore written « Pé 7 »; the text written on the radio stays « Tu es P7. ».
 
@@ -529,9 +546,10 @@ Group **Traffic and position**:
 | Section | Settings (default) |
 |---|---|
 | Side by side (on) | "Still there" (on), Swap left and right (off; only if sides are called the wrong way) |
-| Traffic (on) | Backmarkers ahead (on), Faster traffic behind (on), Hazards ahead (on), Flash understood (on) |
+| Traffic (on) | Backmarkers ahead (on), Faster traffic behind (on), Hazards ahead (on), Anticipation (on), Flash understood (on) |
+| Emergencies (on) | — |
 | Pit exit (on) | — |
-| Gaps (on) | Gaps every … laps (2) [1–5], Gap decimals (1) [0–2], "Closing" threshold (s) (0.3) [0.1–1.5] |
+| Gaps (on) | Live gaps (on), Gaps every … laps (2) [1–5], Gap decimals (1) [0–2], "Closing" threshold (s) (0.3) [0.1–1.5] |
 
 #### Engineer tab
 
@@ -539,7 +557,7 @@ Role switch **Engineer on** (pace, fuel, tyres, strategy). Groups **Race**, **Ca
 
 | Section | Settings (default) |
 |---|---|
-| Pace and calls (on) | Pace every … laps (3) [1–10], Push / hold (on), Position and advice (on) |
+| Pace and calls (on) | Pace every … laps (3) [1–10], Push / hold (on), Position and advice (on), Live position (on) |
 | End-of-race debrief (on) | — |
 | Fuel (on) | Fuel margin (L) (1.0) [0–5], Fuel effect (s/L) (0.03) [0.005–0.08] |
 | Driving advice (on) | Reported loss (s) (0.15) [0.05–0.6], per mini sector over 3 laps |
@@ -563,7 +581,7 @@ Group **Radio**:
 
 | Section | Settings (default) |
 |---|---|
-| Strategy calls (on) | Window and "box" on the radio (on), Undercut / overcut (on), Car ahead pitting (on) |
+| Strategy calls (on) | Window and "box" on the radio (on), Undercut / overcut (on), Strategy explained (on), Car ahead pitting (on) |
 
 #### Radio and voice tab
 
@@ -573,7 +591,7 @@ Groups **Levels** and **Voice**:
 |---|---|
 | Volumes (always on) | Master volume (170 %) [0–200 %], Spotter volume (100 %) [0–200 %], Engineer volume (100 %) [0–200 %]; **Test the voice** |
 | Car sound during radio (switch **Lower the car during the radio**, on) | Car sound during the radio (85 %) [10–100 %] |
-| Voice and language (always on) | Language (FR), Radio tone (on); **Mute the radio** |
+| Voice and language (always on) | Language (FR), Radio tone (on), Varied wording (on); **Mute the radio** |
 | Message pacing (always on) | Minimum gap between two information calls (s) (12) [0–60], Same message not repeated for (s) (180) [0–600; 0: off] |
 | Radio log (always on) | Latest messages: spoken (green dot) or only written |
 
@@ -615,6 +633,9 @@ Buttons **Recenter** and **Reset**. A desktop never set up shows no overlay.
 | Rain expected | Estimated from CSP's weather transition towards rain. |
 | Effect of temperatures on wear | Measured through the real wear, plus an adjustable projection (**Wear vs track**, applied to the track and to half of the air). |
 | Left and right | If an installation showed them swapped: setting **Swap left and right**. |
+| Tone of the voice | Wording and delivery (speed, pitch) only: edge-tts has no emotional styles for these voices. |
+| Contacts and damage | AC gives a collision flag and hits per zone in km/h, not the real damage to the car: the report follows the rise of those values, and a light rub is not called. AC simulates no debris, so none is ever announced. |
+| Hazards ahead | A slow car is left to AdvancedIA (white flag): a low speed judged here would be wrong in every hairpin. |
 | Abnormal wear | A gap of more than 30 % between the virtual km of the two tyres of an axle (AC data). A track that wears one side more than the other can trigger it: said only once per session for the same side. The journal names the tyre and the defect behind each call. |
 | Faster traffic behind | In practice and qualifying, a car is "arriving" when the time gap measured at the same place on the track (not metres or km/h, which change at every braking zone) shrinks by at least 0.1 s per second over 3 s (or 0.3 s per second over 1 s), and the gap would be gone within 15 s. Called under 2 s; the flying-lap call under 3 s, within 6 s of AdvancedIA's announcement, otherwise only written in the journal. When you are down to walking pace (spin, off), a car less than 150 m behind and at least 40 km/h faster is called at once. In a race, a car about to lap you is called under 2 s, as before. |
 
@@ -639,7 +660,8 @@ Everything was tested outside the game, on a simulated CSP host. The in-app upda
 12. **Restart (AdvancedIA 1.50)**: "Restart position: N" after a red flag, "Take your place back" if a car classified behind you is ahead.
 13. **Radio**: the opening tone comes before each message without noticeably delaying "car left"; the radio effect stays intelligible at full throttle.
 14. **Position**: "You're P5" only when your place changes, and "This is the last lap! You're P7…" only once.
-15. **Repetitions**: after a race, no call said several times within a minute (check in the CSP log: `[LuaFMOD]` lines of the `vox` clips). Do not update the app during a race: CSP reloads it, and the states in progress are announced again.
+15. **New in 1.3.0**: a stopped or spinning car is called several seconds before you reach it, with its side; "coming up on your left" only when a car really comes alongside; "contact" only for a real hit, then the damage report; after a spin, "car coming, wait" then "it's clear, go now"; a place gained on track is said at once; the wording changes from one call to the next.
+16. **Repetitions**: after a race, no call said several times within a minute (check in the CSP log: `[LuaFMOD]` lines of the `vox` clips). Do not update the app during a race: CSP reloads it, and the states in progress are announced again.
 
 ## Session log
 

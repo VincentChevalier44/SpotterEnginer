@@ -8,6 +8,7 @@ local Strategist=require('src/strategist')
 local Position=require('src/position')
 local Debrief=require('src/debrief')
 local Voice=require('src/voice')
+local Emergency=require('src/emergency')
 local M={}
 local GAP,PACE=Position.GAP,Position.PACE
 -- Annonce de position : validité dans la file, délai minimal entre deux (s).
@@ -45,14 +46,53 @@ local function positionDue(e,ctx,me)
 end
 -- Annonce de position : position, « Bien joué » si une voiture a été dépassée en piste depuis la ligne précédente,
 -- puis la consigne. État nouveau : jamais écarté comme une redite (src/voice.lua, fresh).
-local function positionCall(e,ctx,me,prio,parts,gained)
+local function positionCall(e,ctx,me,prio,parts,gained,tone)
  local pos=me.position
  local out={{pos=pos}}
  if gained then out[#out+1]='posGained' end
  for k=1,#(parts or {}) do out[#out+1]=parts[k] end
- local ok=say(ctx,'position',math.min(prio or 4,4),out,{ttl=POSITION_TTL,cooldown=POSITION_COOLDOWN,fresh=true})
+ local ok=say(ctx,'position',math.min(prio or 4,4),out,{ttl=POSITION_TTL,cooldown=POSITION_COOLDOWN,fresh=true,tone=tone or (gained and 'motivating' or nil)})
  if ok then e.posBefore=e.posSaid; e.posSaid=pos; e.posQueuedAt=ctx.real end
  return ok
+end
+-- Place gagnée ou perdue en piste, dite tout de suite (1.3.0, réglage « Position en direct ») et non plus à la ligne
+-- suivante : place changée et tenue LIVE_POS s ; gagnée sur une voiture qui n'est pas passée par la voie des stands
+-- (« P5, superbe dépassement ! »), perdue au profit d'une voiture passée devant en piste (« P6. Il est passé, on reste
+-- calme »). Une place prise ou perdue à un arrêt ou à un abandon n'est pas dite ici (la ligne la dira). En course à partir
+-- du tour 2, hors voie des stands et neutralisation ; même clé et même délai que l'annonce à la ligne (jamais les deux).
+local LIVE_POS=2.5
+M.LIVE_POS=LIVE_POS
+-- Une voiture passée devant le joueur en piste depuis ahead (ensemble des voitures devant), sans arrêt entre-temps.
+local function passedBy(F,me,ahead,pitted)
+ local pos=tonumber(me.position) or 0
+ for i=0,F.count-1 do
+  local c=F.cars[i]
+  if i~=F.player and c.valid and c.position>0 and c.position<pos and not ahead[i] and not pitted[i] and not c.retired and not c.pitlane then return true end
+ end
+ return false
+end
+local function livePosition(e,ctx,me)
+ local F=ctx.F; local d=ctx.link.d; local cfg=ctx.cfg
+ if not F.isRace or not cfg.positionCalls or not cfg.positionLive or me.laps<2 or me.pitlane or me.finished or d and (d.neutral or d.red) then e.livePos=nil; return end
+ local pos=tonumber(me.position) or 0
+ if pos<=0 then return end
+ local lp=e.livePos
+ if not lp then lp={pos=pos,ahead={},cand=nil}; e.livePos=lp; Position.aheadOf(F,me,lp.ahead); return end
+ if pos==lp.pos then lp.cand=nil; Position.aheadOf(F,me,lp.ahead); return end
+ lp.cand=lp.cand or ctx.now
+ if ctx.now-lp.cand<LIVE_POS and ctx.now>=lp.cand then return end
+ local gained=pos<lp.pos and Position.overtook(F,me,lp.ahead,e.pitted)
+ local lost=pos>lp.pos and passedBy(F,me,lp.ahead,e.pitted)
+ lp.pos=pos; lp.cand=nil; Position.aheadOf(F,me,lp.ahead)
+ if pos==e.posSaid then return end
+ if gained then positionCall(e,ctx,me,4,nil,true,'motivating')
+ elseif lost then positionCall(e,ctx,me,4,{'posLost'},false,'frustrated') end
+end
+M.livePosition=livePosition
+-- Annonce de cette clé entendue il y a moins de s secondes (doublon avec le spotter : écarts vivants).
+local function heardRecently(ctx,key,s)
+ local v=ctx.say.voice; local at=v and v.started[key]
+ return at~=nil and ctx.real-at<s and ctx.real>=at
 end
 -- Rythme et consignes, à la fin de chaque tour du joueur.
 local function pace(e,ctx,lapDone)
@@ -112,7 +152,11 @@ local function pace(e,ctx,lapDone)
   if ahead~=e.attackCar or not ga or ga>=GAP.chase then e.attackState=nil; e.attackCar=ahead end
   local hybrid=F.me.kers or F.me.p2p>0 or F.me.drsPresent
   if ga and ga<GAP.attack then
-   if e.attackState~='close' then e.attackState='close'; call('attack',3,{hybrid and 'overtake' or 'push'},{ttl=10,cooldown=180}) end
+   -- Déjà dit par le spotter (« tu es dans la seconde », 1.3.0) : l'attaque n'est pas redite à la ligne.
+   if e.attackState~='close' then
+    e.attackState='close'
+    if not heardRecently(ctx,'inSecond',60) then call('attack',3,{hybrid and 'overtake' or 'push'},{ttl=10,cooldown=180,tone='motivating'}) end
+   end
   elseif ga and ga<GAP.chase and mine and pa and pa-mine>PACE.chase then
    if e.attackState~='chase' then
     e.attackState='chase'
@@ -125,8 +169,9 @@ local function pace(e,ctx,lapDone)
    if diff>PACE.compare then call('paceCmp',5,{'closing',{text=string.format('(%s s%s)',U.fixed(diff,1,Say.mark(ctx.say)),Say.note(ctx.say,'perLap'))}},{ttl=12,cooldown=300})
    elseif diff<-PACE.compare then call('paceCmp',5,{'losingTime',{n=-diff,dec=1,unit='s'},{text=Say.note(ctx.say,'perLap')}},{ttl=12,cooldown=300}) end
   end
-  if gb and gb<GAP.defend and pb and mine and mine-pb>PACE.defend then call('defend',4,{'hesClosing','defend'},{ttl=10,cooldown=300})
-  elseif ga and gb and ga>GAP.hold and gb>GAP.hold then call('hold',5,{'hold'},{ttl=10,cooldown=600}) end
+  if gb and gb<GAP.defend and pb and mine and mine-pb>PACE.defend then
+   if not heardRecently(ctx,'heInSecond',60) then call('defend',4,{'hesClosing','defend'},{ttl=10,cooldown=300,tone=gb<1 and 'urgent' or nil}) end
+  elseif ga and gb and ga>GAP.hold and gb>GAP.hold then call('hold',5,{'hold'},{ttl=10,cooldown=600,tone='calm'}) end
  end
  if due then
   -- Pas de consigne cette ligne : la position, avec un conseil seulement s'il est justifié. Voiture devant
@@ -236,7 +281,8 @@ local function tyres(e,ctx,dt)
  local worn=defect and e.defectFor>=1
  if (worn or side and not e.wearSides[side]) and not e.wearSaid then
   e.wearSaid=true; if side then e.wearSides[side]=true end
-  say(ctx,'wear',3,{'abnormalWear'},{ttl=10})
+  -- Crevaison : dite comme une urgence (1.3.0, src/emergency.lua), pas comme une usure anormale.
+  if not (worn and why=='crevaison' and cfg.emergencies) then say(ctx,'wear',3,{'abnormalWear'},{ttl=10}) end
   if ctx.journal then
    local w=worn and t[defect]
    ctx.journal(w and string.format('usure anormale : %s, pneu %s (méplat %.2f, cloques %.2f, grains %.2f, %.1f km virtuels)',why,TYRE_NAMES[defect],w.flat,w.blister,w.grain,w.vkm)
@@ -290,7 +336,8 @@ end
 local function damage(e,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local dmg=F.me.damage
  local sum=0; for k=1,5 do sum=sum+dmg[k] end
- if e.damage and cfg.damage and sum-e.damage>=20 then say(ctx,'damage',2,{'aeroDamage'},{ttl=10,cooldown=30}) end
+ -- Contact suivi par les urgences (1.3.0, src/emergency.lua : bilan des dégâts) : pas de « dégâts aéro » en plus.
+ if e.damage and cfg.damage and sum-e.damage>=20 and not Emergency.busy(ctx.emergency,ctx) then say(ctx,'damage',2,{'aeroDamage'},{ttl=10,cooldown=30}) end
  e.damage=sum
 end
 -- Conditions : pluie à venir (transition de la météo vers un temps de pluie), pluie qui s'intensifie, adhérence.
@@ -387,6 +434,7 @@ function M.step(e,ctx,dt)
  -- Voitures passées par la voie des stands depuis la ligne du joueur (« Bien joué » : dépassements en piste seulement).
  for i=0,F.count-1 do if F.cars[i].pitlane then e.pitted[i]=true end end
  Debrief.step(e.debrief,F,ctx.timing,ctx.link.d)
+ livePosition(e,ctx,me)
  -- Ligne d'arrivée passée : plus aucun appel de course (« undercut possible » dit sur la ligne le 10/11/2026), le bilan
  -- seulement.
  if me.finished and F.isRace then debrief(e,ctx); return end

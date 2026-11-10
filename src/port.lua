@@ -240,13 +240,15 @@ local names={}
 local dims={}
 local wetTypes={[0]=true,true,true,true,true,true,true,true,true,true,true,true,true,true,true}
 function M.newFrame()
- local F={cars={},me={tyres={{},{},{},{}},brakes={0,0,0,0},damage={0,0,0,0,0}},count=0,player=-1,valid=false,clock=0}
+ local F={cars={},me={tyres={{},{},{},{}},brakes={0,0,0,0},damage={0,0,0,0,0},susp={0,0,0,0},hit=-1},count=0,player=-1,valid=false,clock=0}
  for i=0,Layout.maxCars-1 do F.cars[i]={index=i,valid=false,name='',x=0,z=0,lookX=0,lookZ=1,kmh=0,spline=0,laps=0} end
  return F
 end
 function M.forgetNames() names={}; dims={} end
 -- Roues et dégâts de la voiture du joueur : fonctions de module appelées par pcall (aucune fermeture par image).
 local function readDamage(me,car) for k=0,4 do me.damage[k+1]=num(car.damage[k]) end end
+-- Suspensions (0 à 1, 1.3.0 : bilan des dégâts après un contact, src/emergency.lua).
+local function readSuspension(me,car) for k=0,3 do me.susp[k+1]=num(car.suspensionDamage[k]) end end
 local function readWheels(me,car)
  for k=0,3 do
   local w=car.wheels[k]; local t=me.tyres[k+1]
@@ -296,6 +298,8 @@ function M.read(F,dt)
    c.lapMs=num(car.lapTimeMs); c.lastMs=num(car.previousLapTimeMs); c.bestMs=num(car.bestLapTimeMs)
    c.ai=car.isAIControlled==true; c.retired=car.isRetired==true; c.finished=car.isRaceFinished==true
    c.flashing=car.flashingLightsActive==true; c.user=car.isUserControlled==true
+   -- Collision en cours (1.3.0, accrochages devant, src/hazards.lua) : 0 mur, indice + 1 d'une voiture, -1 rien.
+   c.hit=num(car.collidedWith,-1)
    -- Dimensions et nom lus une fois par voiture et par session.
    local dim=dims[i]; if not dim then local a=car.aabbSize; dim={a and num(a.z,4.6) or 4.6,a and num(a.x,1.9) or 1.9}; dims[i]=dim end
    c.len=dim[1]; c.wid=dim[2]
@@ -321,6 +325,8 @@ function M.read(F,dt)
   local l=car.look; me.lookX=l.x; me.lookZ=l.z
   local okd=pcall(readDamage,me,car)
   if not okd then for k=1,5 do me.damage[k]=0 end end
+  if not pcall(readSuspension,me,car) then for k=1,4 do me.susp[k]=0 end end
+  me.hit=num(car.collidedWith,-1)
   pcall(readWheels,me,car)
  end
  return true

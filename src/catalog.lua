@@ -195,6 +195,82 @@ local list={
  {'debriefOther',159,'159_bilan_progresser',"On continue de progresser, chaque course compte.",'159_debrief_keep_going',"We keep improving, every race counts."},
  {'debriefDnf',160,'160_bilan_abandon',"Pas classé cette fois, on repart de l'avant.",'160_debrief_dnf',"Not classified this time, we go again."},
  {'debriefDq',161,'161_bilan_disqualifie',"Disqualifié. On en reparlera au débrief.",'161_debrief_dq',"Disqualified. We'll talk about it at the debrief."},
+ -- Radio vivante (1.3.0) : variantes d'une même annonce (of : clip de base du groupe, même sens, autre formulation) et
+ -- ton de chaque clip (tone : neutral, calm, urgent, motivating, frustrated ; neutral sans précision). Une variante est
+ -- un vrai clip (texte dit = texte écrit) ; src/say.lua choisit selon le ton demandé, jamais la même deux fois de suite.
+ -- Le ton donne aussi la prosodie du clip (tools/generer_voix.py : débit et hauteur), jamais un style SSML.
+ {'posGained_b',162,'162_bien_joue_superbe',"Superbe dépassement, bravo !",'162_great_move',"Great move, well done!",of='posGained',tone='motivating'},
+ {'posGained_c',163,'163_bien_joue_continue',"Joli coup, continue comme ça !",'163_nice_one',"Nice one, keep it going!",of='posGained',tone='motivating'},
+ {'posGained_d',164,'164_bien_joue_manoeuvre',"Bien vu, belle manœuvre.",'164_clean_move',"Good job, clean move.",of='posGained'},
+ {'goodPace_b',165,'165_bon_rythme_garde',"C'est un bon rythme, garde ça.",'165_good_pace_keep',"That's a good pace, keep it there.",of='goodPace'},
+ {'goodPace_c',166,'166_tres_bon_tour',"Très bon tour, tu es dans le coup !",'166_great_lap',"Great lap, you're right on it!",of='goodPace',tone='motivating'},
+ {'push_b',167,'167_attaque_allez',"Allez, c'est le moment, attaque !",'167_push_come_on',"Come on, now's the time, push!",of='push',tone='motivating'},
+ {'push_c',168,'168_il_faut_pousser',"Il faut pousser maintenant.",'168_need_to_push',"We need to push now.",of='push'},
+ {'hold_b',169,'169_tranquille_gere',"Tranquille, gère l'écart, pas de risque.",'169_easy_manage',"Easy now, manage the gap, no risks.",of='hold',tone='calm'},
+ {'hold_c',170,'170_position_controle',"On gère, la position est sous contrôle.",'170_under_control',"We're managing it, position is under control.",of='hold',tone='calm'},
+ {'defend_b',171,'171_il_attaque_protege',"Il attaque, protège ta position !",'171_protect_position',"He's attacking, protect your position!",of='defend',tone='urgent'},
+ {'defend_c',172,'172_couvre_interieur',"Couvre l'intérieur aux freinages.",'172_cover_inside',"Cover the inside into the braking zones.",of='defend'},
+ {'closing_b',173,'173_tu_reviens_bien',"Tu reviens bien, continue !",'173_reeling_in',"You're reeling him in, keep going!",of='closing',tone='motivating'},
+ {'closing_c',174,'174_ecart_fond',"L'écart fond.",'174_gap_coming_down',"The gap is coming down.",of='closing'},
+ {'hesClosing_b',175,'175_il_te_reprend',"Il te reprend du temps.",'175_taking_time',"He's taking time out of you.",of='hesClosing'},
+ {'hesClosing_c',176,'176_il_revient_fort',"Il revient fort derrière !",'176_coming_back_hard',"He's coming back hard behind you!",of='hesClosing',tone='urgent'},
+ {'clear_b',177,'177_cest_degage',"C'est dégagé.",'177_all_clear',"All clear.",of='clear'},
+ {'fasterBehind_b',178,'178_voiture_rapide_place',"Voiture rapide derrière, laisse-lui la place.",'178_quicker_car_room',"Quicker car behind, give it room.",of='fasterBehind'},
+ {'backmarker_b',179,'179_attarde_devant',"Attardé devant, attention en le doublant.",'179_lapped_car_ahead',"Lapped car ahead, careful passing it.",of='backmarker'},
+ -- Écarts et positions vivants : dans la seconde, écart stable, qui se creuse, place perdue en piste.
+ {'inSecond',180,'180_dans_la_seconde',"Tu es dans la seconde, à toi de jouer !",'180_within_a_second',"You're within a second, go for it!",tone='motivating'},
+ {'inSecond_b',181,'181_moins_une_seconde',"Moins d'une seconde devant, tu es dans le coup.",'181_under_a_second',"Under a second to the car ahead, you're in range.",of='inSecond'},
+ {'heInSecond',182,'182_il_est_dans_ta_seconde',"Il est dans ta seconde, attention derrière !",'182_he_is_within_a_second',"He's within a second behind, watch your mirrors!",tone='urgent'},
+ {'heInSecond_b',183,'183_moins_une_seconde_derriere',"Il est à moins d'une seconde derrière.",'183_under_a_second_behind',"He's under a second behind.",of='heInSecond'},
+ {'gapStable',184,'184_ecart_stable',"Écart stable.",'184_gap_stable',"Gap is stable.",tone='calm'},
+ {'pullingAway',185,'185_tu_creuses',"Tu creuses l'écart, continue !",'185_pulling_away',"You're pulling away, keep it up!",tone='motivating'},
+ {'escaping',186,'186_il_s_echappe',"Il s'échappe devant.",'186_he_is_pulling_away',"He's pulling away ahead."},
+ {'posLost',187,'187_il_est_passe',"Il est passé. On reste calme, on va le reprendre.",'187_he_got_by',"He got by. Stay calm, we'll get him back.",tone='frustrated'},
+ {'posLost_b',188,'188_dommage_remobilise',"Dommage. On se remobilise, il est encore à portée.",'188_shame_regroup',"Shame. Regroup, he's still within reach.",of='posLost',tone='frustrated'},
+ {'posLost_c',189,'189_place_perdue_concentre',"Place perdue. Reste concentré.",'189_position_lost_focus',"Position lost. Stay focused.",of='posLost'},
+ {'clearBehind',190,'190_rien_derriere',"Rien derrière, tu peux tenter.",'190_nothing_behind',"Nothing behind, you can have a go."},
+ -- Dangers devant, annoncés selon le temps pour les atteindre (src/hazards.lua) : nature, puis côté et conseil.
+ {'spinAhead',191,'191_tete_a_queue_devant',"Tête-à-queue devant !",'191_spin_ahead',"Car spinning ahead!",tone='urgent'},
+ {'wrongWay',192,'192_contresens_devant',"Voiture à contresens devant !",'192_wrong_way_ahead',"Car going the wrong way ahead!",tone='urgent'},
+ {'stoppedAhead_b',194,'194_voiture_arretee_devant',"Voiture arrêtée devant !",'194_stopped_car_ahead',"Stopped car ahead!",of='stoppedAhead',tone='urgent'},
+ {'onLeft',195,'195_elle_est_a_gauche',"Elle est à gauche.",'195_on_the_left',"It's on the left.",tone='urgent'},
+ {'onRight',196,'196_elle_est_a_droite',"Elle est à droite.",'196_on_the_right',"It's on the right.",tone='urgent'},
+ {'onMiddle',197,'197_en_pleine_trajectoire',"En pleine trajectoire !",'197_on_the_racing_line',"Right on the racing line!",tone='urgent'},
+ {'offTrack',198,'198_hors_de_la_piste',"Hors de la piste.",'198_off_the_track',"Off the track."},
+ {'passLeft',199,'199_passe_a_gauche',"Passe à gauche.",'199_go_left',"Go left.",tone='urgent'},
+ {'passRight',200,'200_passe_a_droite',"Passe à droite.",'200_go_right',"Go right.",tone='urgent'},
+ -- Accrochage entre deux voitures devant (contact suivi d'une forte perte de vitesse) : jamais « débris », qu'AC ne
+ -- simule pas.
+ {'tangleAhead',201,'201_accrochage_devant',"Accrochage devant, prudence !",'201_contact_ahead',"Contact between cars ahead, careful!",tone='urgent'},
+ -- Voiture qui arrive à côté depuis l'arrière, avant le côte à côte ; dépassement fini (la voiture est derrière).
+ {'incomingLeft',202,'202_il_arrive_a_gauche',"Il arrive à gauche !",'202_coming_up_left',"Coming up on your left!",tone='urgent'},
+ {'incomingRight',203,'203_il_arrive_a_droite',"Il arrive à droite !",'203_coming_up_right',"Coming up on your right!",tone='urgent'},
+ {'clearPassed',204,'204_tu_es_passe',"C'est bon, tu es passé, rabats-toi.",'204_you_are_clear',"You're clear, you can move over."},
+ -- Urgences du joueur (src/emergency.lua) : contact, choc, bilan des dégâts, crevaison, tête-à-queue et reprise.
+ {'contact',205,'205_contact',"Contact !",'205_contact',"Contact!",tone='urgent'},
+ {'wallHit',206,'206_gros_choc',"Gros choc ! On regarde les dégâts.",'206_big_hit',"Big hit! We're checking the damage.",tone='urgent'},
+ {'damageNone',207,'207_pas_de_degats',"Pas de dégâts, c'est bon, continue.",'207_no_damage',"No damage, you're fine, carry on.",tone='calm'},
+ {'damageLight',208,'208_degats_legers',"Dégâts légers, tu peux continuer.",'208_light_damage',"Light damage, you can carry on.",tone='calm'},
+ {'damageMedium',209,'209_degats_moyens',"Dégâts moyens, la voiture est touchée. On surveille.",'209_moderate_damage',"Moderate damage, the car's hurt. We'll keep an eye on it.",tone='frustrated'},
+ {'damageHeavy',210,'210_gros_degats',"Gros dégâts. Rentre aux stands.",'210_heavy_damage',"Heavy damage. Box, box.",tone='urgent'},
+ {'damageSuspension',211,'211_suspension_touchee',"Suspension touchée. Rentre doucement aux stands.",'211_suspension_damage',"Suspension damage. Bring it back to the pits carefully.",tone='urgent'},
+ {'puncture',212,'212_crevaison',"Crevaison ! Rentre doucement aux stands.",'212_puncture',"Puncture! Bring it back to the pits slowly.",tone='urgent'},
+ {'spunYou',213,'213_tete_a_queue_freins',"Tête-à-queue ! Reste sur les freins, voitures en approche.",'213_spun_brakes',"You've spun! Stay on the brakes, cars coming.",tone='urgent'},
+ {'spunClear',214,'214_tete_a_queue_libre',"Tête-à-queue. C'est libre, repars quand tu es prêt.",'214_spun_clear',"You've spun. It's clear, go when you're ready.",tone='calm'},
+ {'waitTraffic',215,'215_attends_voiture',"Voiture qui arrive, attends !",'215_car_coming_wait',"Car coming, wait!",tone='urgent'},
+ {'goNow',216,'216_cest_libre_vas_y',"C'est libre, vas-y.",'216_clear_go',"It's clear, go now."},
+ {'rejoinCareful',217,'217_attention_reprise',"Attention en reprenant la piste, voiture qui arrive !",'217_careful_rejoining',"Careful rejoining, car coming!",tone='urgent'},
+ {'youWrongWay',218,'218_tu_es_a_contresens',"Tu es à contresens ! Fais demi-tour quand c'est libre.",'218_you_are_wrong_way',"You're facing the wrong way! Turn around when it's clear.",tone='urgent'},
+ {'stoppedYou',219,'219_tu_es_arrete',"Tu es arrêté sur la piste, attention aux voitures.",'219_you_are_stopped',"You're stopped on track, watch the traffic.",tone='urgent'},
+ -- Stratégie argumentée (src/strategist.lua) : l'ingénieur décide seul et dit pourquoi.
+ {'undercutGo',220,'220_on_tente_undercut',"On tente l'undercut.",'220_going_for_undercut',"We're going for the undercut.",tone='motivating'},
+ {'overcutStay',221,'221_on_reste_overcut',"On reste dehors, on fait l'overcut.",'221_stay_out_overcut',"Stay out, we'll do the overcut."},
+ {'scBoxGain',222,'222_on_profite_neutralisation',"On profite de la neutralisation.",'222_use_neutralisation',"Let's use the neutralisation.",tone='motivating'},
+ {'stayOutNeutral',223,'223_on_reste_dehors_neutralisation',"On reste dehors, l'arrêt ne vaut pas le coup.",'223_stay_out_not_worth',"Stay out, a stop isn't worth it.",tone='calm'},
+ {'coverThreat',224,'224_menace_undercut',"La voiture derrière peut tenter l'undercut, pousse ce tour !",'224_undercut_threat',"The car behind could try the undercut, push this lap!",tone='urgent'},
+ {'coverStop',225,'225_il_rentre_on_couvre',"Il rentre, on couvre.",'225_he_pits_we_cover',"He's pitting, we cover."},
+ {'noMoreStops',226,'226_plus_d_arret',"Plus d'arrêt prévu, on va jusqu'au bout.",'226_no_more_stops',"No more stops, we go to the end.",tone='calm'},
+ {'weGain',227,'227_on_gagne_environ',"On gagne environ",'227_gains_us_about',"That gains us about"},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={
@@ -210,10 +286,20 @@ C.notes={
 }
 C.clips={}
 C.order={}
+-- Groupes de variantes (1.3.0) : clip de base, puis ses variantes, dans l'ordre du catalogue. Tons connus.
+C.groups={}
+C.tones={neutral=true,calm=true,urgent=true,motivating=true,frustrated=true}
 for k=1,#list do
  local r=list[k]
- C.clips[r[1]]={id=r[1],number=r[2],FR=r[3]..'.wav',textFR=r[4],EN=r[5]..'.wav',textEN=r[6],shipped=r[2]<=34}
+ local tone=r.tone or 'neutral'
+ assert(C.tones[tone],'ton inconnu : '..tostring(tone))
+ C.clips[r[1]]={id=r[1],number=r[2],FR=r[3]..'.wav',textFR=r[4],EN=r[5]..'.wav',textEN=r[6],shipped=r[2]<=34,tone=tone,of=r.of}
  C.order[k]=r[1]
+ if r.of then
+  assert(C.clips[r.of] and not C.clips[r.of].of,'variante sans clip de base : '..r[1])
+  local g=C.groups[r.of]; if not g then g={r.of}; C.groups[r.of]=g end
+  g[#g+1]=r[1]
+ end
 end
 -- Nombres 0 à C.maxNumber (dits « un », « deux »… dans la langue) : vox/<LANGUE>/num/NN.wav.
 local unitsFR={'zéro','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize'}
