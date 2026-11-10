@@ -18,6 +18,42 @@ local function fakePort(clock)
  p.stop=function() p.stopped=p.stopped+1 end
  return p
 end
+-- Radio instantanée (1.3.1) : une annonce de sécurité part dans l'image où la précédente finit (pas de blanc) ; une
+-- information garde le blanc ; le clip suivant d'une phrase est préparé pendant le clip en cours et seulement démarré ;
+-- une reprise après coupure et une information du spotter n'attendent pas infoGap ; une annonce périmée sans être dite
+-- ne consomme pas le délai de sa clé ; « entendue » seulement dite jusqu'au bout.
+function T.voice_instant_rules()
+ local now=0
+ local port=fakePort(function() return now end)
+ local prepared,started=0,0
+ port.prepare=function(path) prepared=prepared+1; return {path=path,t=1e9} end
+ port.start=function(h) started=started+1; h.t=now; port.log[#port.log+1]=h.path end
+ local v=Voice.new(port)
+ Voice.say(v,{key='a',role='spotter',prio=1,clips={'a1.wav','a2.wav'},text='a',ttl=5,once=true},now)
+ Voice.step(v,now)
+ check(port.log[1]=='a1.wav' and prepared==1,'second part prepared while the first plays')
+ now=1.0; Voice.step(v,now)
+ check(port.log[2]=='a2.wav' and started==1,'second part started from the prepared clip')
+ Voice.say(v,{key='b',role='spotter',prio=1,clips={'b.wav'},text='b',ttl=5,once=true},now)
+ now=2.0; Voice.step(v,now)
+ check(port.log[3]=='b.wav','safety call starts in the frame the previous one ends: '..tostring(port.log[3]))
+ now=3.0; Voice.step(v,now)
+ Voice.say(v,{key='c',role='engineer',prio=3,clips={'c.wav'},text='c',ttl=5},now)
+ Voice.step(v,now); check(port.log[4]==nil,'information keeps the short gap')
+ now=3.2; Voice.step(v,now); check(port.log[4]=='c.wav','then plays')
+ check(v.done.a and v.done.b and not v.done.c,'heard once said to the end only')
+ -- Information du spotter juste après une information : pas d'infoGap (elle n'est vraie que quelques secondes).
+ local v2=Voice.new(fakePort(function() return now end))
+ now=10; Voice.say(v2,{key='i1',role='engineer',prio=4,clips={'i1.wav'},text='i1',ttl=10},now); Voice.step(v2,now)
+ now=11.1; Voice.step(v2,now)
+ Voice.say(v2,{key='drs',role='spotter',prio=4,clips={'drs.wav'},text='drs',ttl=4},now)
+ for k=1,40 do now=11.1+k*0.1; Voice.step(v2,now) end
+ check(v2.done.drs,'spotter information not held by infoGap')
+ Voice.say(v2,{key='i2',role='engineer',prio=4,clips={'i2.wav'},text='i2',ttl=3},now)
+ for k=1,40 do now=15.1+k*0.1; Voice.step(v2,now) end
+ check(not v2.done.i2,'engineer information still held by infoGap (expired)')
+ check(v2.last.i2==nil,'expired without being said: its cooldown is not used')
+end
 function T.voice_priority_and_interruption()
  local now=0
  local port=fakePort(function() return now end)
@@ -101,8 +137,11 @@ function T.voice_ttl_cooldown_and_sequence()
  local port=fakePort(function() return now end)
  local v=Voice.new(port)
  check(Voice.say(v,{key='k',prio=3,clips={'1.wav','2.wav'},text='x',ttl=5,cooldown=30},now),'first')
+ -- Encore en file : remplacée par la valeur plus fraîche (1.3.1), même pendant son délai ; partie : délai de la clé.
+ check(Voice.say(v,{key='k',prio=3,clips={'1.wav','2.wav'},text='x',ttl=5,cooldown=30},0),'queued: replaced')
+ Voice.step(v,0)
  check(not Voice.say(v,{key='k',prio=3,clips={'1.wav'},text='x',ttl=5,cooldown=30},1),'cooldown')
- Voice.step(v,0); now=1.2; Voice.step(v,now); check(port.log[2]=='2.wav','second clip of the phrase')
+ now=1.2; Voice.step(v,now); check(port.log[2]=='2.wav','second clip of the phrase')
  Voice.say(v,{key='old',prio=5,clips={'old.wav'},text='old',ttl=1},now)
  now=5; Voice.step(v,now); Voice.step(v,now+0.5)
  for _,p in ipairs(port.log) do check(p~='old.wav','stale item dropped') end
@@ -453,8 +492,9 @@ function T.config_validation()
  local c=Config.load({volume=9,language='DE',gapEvery=2.4,sideBySide='oui'})
  check(c.volume==2,'bounded'); check(c.language=='FR','choice'); check(c.gapEvery==2,'step'); check(c.sideBySide==true,'bool default')
 end
--- Signal d'ouverture : une tonalité au début de chaque transmission (pas entre les clips d'une phrase), de nouveau
--- quand une annonce coupée est reprise ; item.clips n'est jamais modifié. Sans signal : la phrase seule.
+-- Signal d'ouverture : une tonalité au début de chaque transmission (pas entre les clips d'une phrase) ; jamais pour la
+-- priorité 1 ni pour une transmission qui suit la précédente de moins de 1 s (1.3.1, radio instantanée) ; item.clips
+-- n'est jamais modifié. Sans signal : la phrase seule.
 function T.voice_opening_tone()
  local now=0
  local port=fakePort(function() return now end)
@@ -470,7 +510,18 @@ function T.voice_opening_tone()
  now=now+0.2; Voice.step(v,now)
  Voice.say(v,{key='side',role='spotter',prio=1,clips={'left.wav'},text='left',ttl=2,once=true,chirp='tone.wav'},now)
  for t=now+0.1,now+6,0.1 do now=t; Voice.step(v,now) end
- check(table.concat(port.log,' ')=='tone.wav tone.wav left.wav tone.wav c.wav','cut, side call, replay with its tone: '..table.concat(port.log,' '))
+ check(table.concat(port.log,' ')=='c.wav left.wav c.wav','right after the previous one: no tone; side call (priority 1): no tone; replay chained: '..table.concat(port.log,' '))
+ -- Nouvelle transmission plus d'une seconde après : avec la tonalité ; priorité 1 seule : sans.
+ port.log={}
+ for t=now+0.1,now+2,0.1 do now=t; Voice.step(v,now) end
+ Voice.say(v,{key='p3',role='engineer',prio=3,clips={'d.wav'},text='p3',ttl=30,chirp='tone.wav'},now)
+ for t=now+0.1,now+3,0.1 do now=t; Voice.step(v,now) end
+ check(table.concat(port.log,' ')=='tone.wav d.wav','new transmission: tone: '..table.concat(port.log,' '))
+ port.log={}
+ for t=now+0.1,now+2,0.1 do now=t; Voice.step(v,now) end
+ Voice.say(v,{key='s2',role='spotter',prio=1,clips={'left.wav'},text='left',ttl=2,once=true,chirp='tone.wav'},now)
+ for t=now+0.1,now+3,0.1 do now=t; Voice.step(v,now) end
+ check(table.concat(port.log,' ')=='left.wav','priority 1: never a tone: '..table.concat(port.log,' '))
  port.log={}
  Voice.say(v,{key='x',role='engineer',prio=3,clips={'x.wav'},text='x',ttl=30},now)
  for t=now+0.1,now+3,0.1 do now=t; Voice.step(v,now) end

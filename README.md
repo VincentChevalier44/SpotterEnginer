@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.3.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.3.1. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -76,7 +76,7 @@ Install AdvancedIA first (see its [README](https://github.com/VincentChevalier44
 ### With Content Manager
 
 1. Close Assetto Corsa.
-2. Download `SpotterEnginer-1.2.0.zip` (or the latest one) from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
+2. Download the latest `SpotterEnginer-<version>.zip` from the [Releases page](https://github.com/VincentChevalier44/SpotterEnginer/releases). A `.sha256` file is published next to it to check the download.
 3. Drag the zip onto the Content Manager window and confirm the installation, or extract it straight into the `assettocorsa` root folder.
 
 The package already has the right structure (`apps/lua/SpotterEnginer/…`). It holds only what the game loads (entry point, manifest, icon, `src/`, `sounds/`, `vox/`, `fonts/`) plus the user notes (`README.md`, `CHANGELOG.md`, `COMPATIBILITY.md`, `LICENSE`).
@@ -157,7 +157,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.2.0). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.1). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -339,12 +339,12 @@ Like SuperHUD, each of CSP's 4 app desktops keeps its own overlays.
 | Pit exit clear, or traffic when rejoining | Exit point learnt on every car |
 | Live gaps (new in 1.3.0, setting **Live gaps**): *"You're within a second, go for it!"* when the car ahead comes within a second (with *"Nothing behind, you can have a go."* in the same transmission when nobody is within 1.5 s behind), *"He's within a second behind, watch your mirrors!"* when the car behind does; once per car, again only after the gap has gone back above 1.4 s. From lap 2, never near the line (the gaps of the lap are said there) nor under neutralisation | Timing |
 | Hazards ahead: called within 600 m as in 1.2.0, and from 1.3.0 earlier at high speed (11 s at your closing speed, up to 900 m): stopped car, car spinning, car going the wrong way, then its side and where to go: *"Stopped car ahead! It's on the left. Go right."*, *"Right on the racing line!"*, *"Off the track."* (then priority 2). The same car is not called again within 45 s. With **Anticipation** off: from 600 m only, as in 1.2.0 | AdvancedIA's state of every car (incident, spin, stopped, wrong way, on track), CSP's lateral track position |
-| *"Contact between cars ahead, careful!"*: two cars ahead (within 700 m) touch and one loses at least 25 km/h within 1.2 s; a light rub says nothing. Never "debris": AC does not simulate any | AC collisions (`collidedWith`) and speeds |
+| *"Contact between cars ahead, careful!"* (with **Anticipation**): two cars ahead (within 700 m) touch and one loses at least 25 km/h within 1.2 s beyond the braking it was already doing; a light rub, or a touch under braking, says nothing; never right after the hazard call of one of the two cars, nor for the car of AdvancedIA's yellow zone. Never "debris": AC does not simulate any | AC collisions (`collidedWith`) and speeds |
 | AI mistake ahead | AdvancedIA's mistakes |
 | *"Coming up on your left!"* (1.3.0, **Anticipation**): a car less than 19 m behind, one lane over, at least 8 km/h faster and still at least 0.8 s from being alongside (closer, *"Car left."* follows at once and is enough). Not on the first lap of a race (tight pack), never below 60 km/h | Car positions |
 | *"You're clear, you can move over."* instead of *"Clear."* when the car that was alongside is now behind you (overtake completed) | Car positions |
 | *"Nothing behind, you can have a go."* when you come within 0.6 s of the car ahead and nobody is within 1.5 s behind (once per attack, at most every 90 s) | Timing |
-| Your emergencies (new in 1.3.0, section **Emergencies**): *"Contact!"* (name written) when a contact with a car costs you at least 6 km/h or damage, at most every 15 s; after a spin, *"You've spun! Stay on the brakes, cars coming."* or *"You've spun. It's clear, go when you're ready."*, then *"Car coming, wait!"* and *"It's clear, go now."* until you are back above 50 km/h; *"You're stopped on track, watch the traffic."*; *"You're facing the wrong way! Turn around when it's clear."*; *"Careful rejoining, car coming!"* when you come back from off the track with a car less than 3 s away. Never on the grid, at the lights or under a red flag | AC collisions and speeds, AdvancedIA's state of your car (spin, wrong way, on track) |
+| Your emergencies (new in 1.3.0, section **Emergencies**): *"Contact!"* (name written) when a contact with a car costs you at least 6 km/h more than your braking was already taking off, or damage, at most every 15 s; after a spin, *"You've spun! Stay on the brakes, cars coming."* or *"You've spun. It's clear, go when you're ready."*, then *"Car coming, wait!"* and *"It's clear, go now."* until you are back above 50 km/h; *"You're stopped on track, watch the traffic."*; *"You're facing the wrong way! Turn around when it's clear."*; *"Careful rejoining, car coming!"* when you come back from off the track with a car less than 3 s away. Never on the grid, at the lights or under a red flag | AC collisions and speeds, AdvancedIA's state of your car (spin, wrong way, on track) |
 | Track limits | AC's cut counter (AdvancedIA does not track them for the player) |
 
 AdvancedIA's announcements are also written as text on the radio of the Spotter overlay (setting **AdvancedIA announcements on the radio**).
@@ -378,7 +378,7 @@ The 32 kinds of AdvancedIA announcement and the 40 states of its panel were revi
   - warm-up phase (core below the optimum), overheating (core or surface);
   - abnormal wear: one tyre clearly more worn, flat spot, blisters, graining, puncture.
 - **Brakes**: overheating, bias advice when front and rear diverge (cars with adjustable bias).
-- **Damage**: a hit recorded on the bodywork. From 1.3.0, after a contact or a big hit (*"Big hit! We're checking the damage."*, at least 40 km/h lost against a wall), the engineer gives a damage report 3.5 s later: *"No damage, you're fine, carry on."*, *"Light damage, you can carry on."*, *"Moderate damage, the car's hurt. We'll keep an eye on it."*, *"Heavy damage. Box, box."* or *"Suspension damage. Bring it back to the pits carefully."* (section **Emergencies**).
+- **Damage**: a hit recorded on the bodywork. From 1.3.0, after a contact or a big hit (*"Big hit! We're checking the damage."*: against a wall, damage recorded, or at least 30 km/h lost beyond your braking with the brake pedal released), the engineer gives a damage report 3.5 s later: *"No damage, you're fine, carry on."*, *"Light damage, you can carry on."*, *"Moderate damage, the car's hurt. We'll keep an eye on it."*, *"Heavy damage. Box, box."* or *"Suspension damage. Bring it back to the pits carefully."* (section **Emergencies**).
 - **Puncture** (1.3.0, section **Emergencies**): *"Puncture! Bring it back to the pits slowly."* once per tyre, instead of "abnormal tyre wear".
 - **Conditions**: rain expected in N minutes, rain getting heavier, grip dropping or rising.
 - **Wind into braking**: tailwind or headwind at the start of a big braking zone.
@@ -455,7 +455,7 @@ The stop lap is the one of the engineer's plan, computed inside AdvancedIA's reg
 
 An AdvancedIA decision is read, and its call starts, in the same game frame: the bridge, race control and the radio run in that order every frame.
 
-- **Interruption**: a priority 1 call (side by side, SC, red flag, double yellow, negative delta, penalty, "Go", box this lap) cuts off any less urgent call in progress. A priority 2 call (green, yellow, slow car, slippery track, VSC ending, SC coming in, blue flag, clear) cuts off an information call.
+- **Interruption**: a priority 1 call (side by side, SC, red flag, double yellow, negative delta, penalty, "Go", box this lap) cuts off any less urgent call in progress. A priority 2 call (green, yellow, slow car, slippery track, VSC ending, SC coming in, blue flag, clear) cuts off an information call. From 1.3.1, a side-by-side call (priority 1, about an instant) also cuts off a priority 1 call that is not one (a long red-flag message no longer swallows "car left"); the red flag is said again after. Safety calls (priorities 1 and 2) never wait for the short gap between two messages.
 - **Resuming**: the call cut off is said again right after if it is still true (a gap, a green). A call about an instant (side by side, clear, lights, delta) never is: it would be wrong afterwards.
 - **Withdrawal**: at the end of a neutralisation or a red flag, the delta, the VSC ending, the SC coming in and the stop advised under neutralisation are withdrawn, and cut off if they are being said. The green goes out at once.
   - AC's native green flag, which AdvancedIA sets a few seconds after its own green, is never called: it used to be a second *"Green flag"* about 4 s after the real one (seen in the CSP log of 4 November 2026). Likewise, an AdvancedIA penalty or disqualification, which it then applies through AC's native penalty, is called only once.
@@ -477,7 +477,7 @@ An AdvancedIA decision is read, and its call starts, in the same game frame: the
 
 So that you are never flooded with messages (tab **Radio & voice**, section **Message pacing**):
 
-- **Information spaced out**: gaps, pace, fuel, weather and advice (priorities 4 and 5) wait at least 12 s after the previous one and 2 s of radio silence. Information that gets too old while waiting is dropped.
+- **Information spaced out**: gaps, pace, fuel, weather and advice (priorities 4 and 5) wait at least 12 s after the previous one and 2 s of radio silence. Information that gets too old while waiting is dropped, and its delay is not used up (it can be said as soon as it is true again). From 1.3.1, spotter information (DRS, flash understood: true for a few seconds only) and a call replayed after an interruption only wait for the 2 s of silence. A call counts as heard only once said to the end (or after 0.5 s of voice).
 - **No repetition**: the same engineer message is not said again within 180 s, more than a lap. The spotter is never concerned: a second slow car or a second backmarker is always called.
 - **Once per state**: fuel short (said again only when half a lap more is missing), cold or hot tyres, hot brakes, bias, push or defend: said when the situation appears, not on every lap it lasts.
   - **Cold tyres**: said again only after a minute at temperature (tyres hovering around the threshold do not restart the call).
@@ -489,12 +489,12 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 225 calls (23 of them alternative wordings), 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 842 files in all. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 225 calls (23 of them alternative wordings), 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 972 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).
 - **Radio effect**: every voice goes through a radio band (300 to 3,400 Hz, present mids, light saturation), at a "light" strength chosen by ear to stay clear at full speed. The level is measured after the effect.
-- **Opening tone**: a short digital tone (two notes, 85 ms, then 45 ms of silence) comes before each transmission, so the driver is not startled. It never separates the clips of one sentence. A call resumed after an interruption is a new transmission, so it gets its tone again. Setting **Radio tone** (tab **Radio & voice**); the same sound is used for messages without a voice clip. File: `sounds/radio.wav`, rebuilt by `tools/generer_voix.py --force`.
+- **Opening tone**: a short digital tone (two notes, 85 ms, then 45 ms of silence) comes before each transmission, so the driver is not startled. From 1.3.1, never before a priority 1 call (side by side, red flag, stopped car ahead: they start at once), nor before a transmission that follows the previous one by less than 1 s (*"Car left… still there… clear"* in one go). It never separates the clips of one sentence. A call resumed after an interruption is a new transmission, so it gets its tone again. Setting **Radio tone** (tab **Radio & voice**); the same sound is used for messages without a voice clip. File: `sounds/radio.wav`, rebuilt by `tools/generer_voix.py --force`.
 - **Same voice as the original clips**: edge-tts, `fr-FR-HenriNeural` and `en-US-GuyNeural`, like the `generer_voix.py` script of the FIA voices. Clips 01 to 34 say exactly their original texts.
 - **Format**: MP3 VBR (LAME V9), 24 kHz mono, named `.wav` like the original clips. AC's audio engine (FMOD) recognises the format from the content, but this is to be confirmed in game.
   - The voice is kept up to 7 kHz: that is the band of "high definition" voice, while the source has only 1 % of its energy above 8 kHz.
@@ -637,7 +637,7 @@ Buttons **Recenter** and **Reset**. A desktop never set up shows no overlay.
 | Contacts and damage | AC gives a collision flag and hits per zone in km/h, not the real damage to the car: the report follows the rise of those values, and a light rub is not called. AC simulates no debris, so none is ever announced. |
 | Hazards ahead | A slow car is left to AdvancedIA (white flag): a low speed judged here would be wrong in every hairpin. |
 | Abnormal wear | A gap of more than 30 % between the virtual km of the two tyres of an axle (AC data). A track that wears one side more than the other can trigger it: said only once per session for the same side. The journal names the tyre and the defect behind each call. |
-| Faster traffic behind | In practice and qualifying, a car is "arriving" when the time gap measured at the same place on the track (not metres or km/h, which change at every braking zone) shrinks by at least 0.1 s per second over 3 s (or 0.3 s per second over 1 s), and the gap would be gone within 15 s. Called under 2 s; the flying-lap call under 3 s, within 6 s of AdvancedIA's announcement, otherwise only written in the journal. When you are down to walking pace (spin, off), a car less than 150 m behind and at least 40 km/h faster is called at once. In a race, a car about to lap you is called under 2 s, as before. |
+| Faster traffic behind | In practice and qualifying, a car is "arriving" when the time gap measured at the same place on the track (not metres or km/h, which change at every braking zone) shrinks by at least 0.1 s per second over 3 s (or 0.3 s per second over 1 s), and the gap would be gone within 15 s. Called under 2 s; the flying-lap call under 3 s, within 6 s of AdvancedIA's announcement, otherwise only written in the journal. When you are down to walking pace (spin, off), a car less than 150 m behind and at least 40 km/h faster is called at once. In a race, a car about to lap you is called under 2 s only when AdvancedIA's blue flags are not announced (setting **Blue flags**); otherwise the blue flag says it. Never under neutralisation, red flag or restart, and at most every 15 s. |
 
 ## What to check in your first session
 
@@ -658,7 +658,7 @@ Everything was tested outside the game, on a simulated CSP host. The in-app upda
 10. **First laps**: no strategy call (window, optimal lap, box, undercut, fuel to the stop) before two clean laps; the opening of the regulatory window is said without an optimal lap.
 11. **F1 rules (AdvancedIA 1.49 and later)**: "change compound" at the pit lane entry (even outside the lap planned by the engineer), then "stop validated" or "stop not counted"; the compounds are written on the radio.
 12. **Restart (AdvancedIA 1.50)**: "Restart position: N" after a red flag, "Take your place back" if a car classified behind you is ahead.
-13. **Radio**: the opening tone comes before each message without noticeably delaying "car left"; the radio effect stays intelligible at full throttle.
+13. **Radio**: "car left" and the other safety calls start without the opening tone, at once; the other messages keep it; the radio effect stays intelligible at full throttle.
 14. **Position**: "You're P5" only when your place changes, and "This is the last lap! You're P7…" only once.
 15. **New in 1.3.0**: a stopped or spinning car is called several seconds before you reach it, with its side; "coming up on your left" only when a car really comes alongside; "contact" only for a real hit, then the damage report; after a spin, "car coming, wait" then "it's clear, go now"; a place gained on track is said at once; the wording changes from one call to the next.
 16. **Repetitions**: after a race, no call said several times within a minute (check in the CSP log: `[LuaFMOD]` lines of the `vox` clips). Do not update the app during a race: CSP reloads it, and the states in progress are announced again.
@@ -688,7 +688,7 @@ SpotterEnginer writes its session log to `Documents/Assetto Corsa/logs/SpotterEn
 
 **The update is refused.** Read the message in the UPDATE block (Diagnostics tab): *Update AdvancedIA first* means the new SpotterEnginer needs a newer AdvancedIA (see [Compatibility guard](#compatibility-guard)).
 
-**A clip is missing.** The call is written on the overlay radio instead. The **Home** tab shows the clips present; `python tools/generer_voix.py` makes the missing ones.
+**A clip is missing.** The call is written on the overlay radio instead. The **Home** tab shows the clips present; reinstall the version (zip from the Releases page). From the repository, `python tools/generer_voix.py` makes the missing ones.
 
 ## Development and tests
 

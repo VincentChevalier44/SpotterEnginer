@@ -5,10 +5,10 @@ local M={}
 -- laneMin : écart latéral minimal d'une voiture à côté (deux voitures côte à côte ont leurs centres à 1,8 m au moins ;
 -- en dessous, c'est une voiture devant ou derrière dans l'aspiration). confirm : recouvrement tenu avant l'annonce
 -- (rien pour un frôlement) ; release : voie libre tenue avant « dégagé » (pas de dégagé qui clignote).
-M.defaults={length=4.7,width=1.95,laneMax=4.2,laneMin=1.3,enter=0,leave=0.8,confirm=0.25,release=0.6,stillEvery=3.5,stillMax=2,minKmh=40}
+M.defaults={length=4.7,laneMax=4.2,laneMin=1.3,enter=0,leave=0.8,confirm=0.25,release=0.6,stillEvery=3.5,stillMax=2,minKmh=40}
 function M.new()
- return {left=false,right=false,leftSince=-1,rightSince=-1,leftCar=-1,rightCar=-1,stillLeft=0,stillRight=0,
-  stillAtL=0,stillAtR=0,nearLeft=nil,nearRight=nil,list={},count=0,candL=nil,candR=nil,freeL=nil,freeR=nil}
+ return {left=false,right=false,leftCar=-1,rightCar=-1,stillLeft=0,stillRight=0,
+  stillAtL=0,stillAtR=0,list={},count=0,candL=nil,candR=nil,freeL=nil,freeR=nil}
 end
 -- Voitures proches : coordonnées longitudinales (avant +) et latérales (gauche +) dans le repère du joueur.
 -- Renvoie les events à annoncer (table réutilisée) : 'left','right','three','clearLeft','clearRight','clear','stillLeft','stillRight'.
@@ -55,7 +55,6 @@ function M.step(p,me,cars,count,playerIndex,now,cfg)
   end
  end
  p.count=n
- p.nearLeft=bestL; p.nearRight=bestR
  local wasL,wasR=p.left,p.right
  -- Sous minKmh (épingle, départ) : l'état est tenu tel quel, ni nouvelle annonce ni « dégagé », ni « toujours là ».
  local slow=me.kmh<cfg.minKmh
@@ -64,14 +63,14 @@ function M.step(p,me,cars,count,playerIndex,now,cfg)
  -- Côté tenu après confirm s de recouvrement ; libéré après release s sans recouvrement.
  if overlapL then
   p.freeL=nil
-  if not wasL then p.candL=p.candL or now; if now-p.candL>=confirm then p.left=true; p.candL=nil; p.leftSince=now; p.stillLeft=0; p.stillAtL=now; p.leftCar=idL end end
+  if not wasL then p.candL=p.candL or now; if now-p.candL>=confirm then p.left=true; p.candL=nil; p.stillLeft=0; p.stillAtL=now; p.leftCar=idL end end
  else
   p.candL=nil
   if wasL then p.freeL=p.freeL or now; if now-p.freeL>=release then p.left=false; p.freeL=nil; p.leftCar=-1 end end
  end
  if overlapR then
   p.freeR=nil
-  if not wasR then p.candR=p.candR or now; if now-p.candR>=confirm then p.right=true; p.candR=nil; p.rightSince=now; p.stillRight=0; p.stillAtR=now; p.rightCar=idR end end
+  if not wasR then p.candR=p.candR or now; if now-p.candR>=confirm then p.right=true; p.candR=nil; p.stillRight=0; p.stillAtR=now; p.rightCar=idR end end
  else
   p.candR=nil
   if wasR then p.freeR=p.freeR or now; if now-p.freeR>=release then p.right=false; p.freeR=nil; p.rightCar=-1 end end

@@ -130,26 +130,80 @@ function M.voiceFiles(root)
  return set,count
 end
 -- Lecture d'un clip : événement audio créé pour un passage (il devient invalide après), à niveau constant quelle que
--- soit la caméra, sur le canal principal du jeu. Renvoie l'événement ou nil.
-function M.play(path,volume)
+-- soit la caméra, sur le canal principal du jeu. CSP réutilise le fichier déjà chargé pour un même chemin.
+-- Radio instantanée (1.3.1) :
+-- - préparer (prepare) charge l'événement sans le démarrer : le clip suivant d'une phrase est préparé pendant le clip en
+--   cours et ne coûte plus qu'un start() à la jointure ;
+-- - préchargement (warm, warmStep) : les clips de sécurité de la langue (côte à côte, drapeaux, dangers…) sont chargés à
+--   l'avance, WARM_PER_FRAME par image, et gardés prêts (non démarrés) ; un clip préchargé servi est rechargé ensuite ;
+-- - fin du clip vue TAIL s avant sa fin réelle (blanc de fin des clips) par sa position dans sa durée (getDuration,
+--   getTimelinePosition), et dès que l'événement n'est plus valide (lu jusqu'au bout).
+-- TAIL sous le plus court blanc de fin des clips (20 ms mesurés) : jamais une fin de mot coupée.
+M.TAIL=0.012
+local WARM_PER_FRAME=2
+local warmed,warmQueue,warmQueued,warmHead={},{},{},1
+local function newEvent(path,volume)
  if not ac.AudioEvent or not callable(ac.AudioEvent.fromFile) then return nil end
  local ok,ev=pcall(ac.AudioEvent.fromFile,{filename=path,use3D=false,loop=false},false)
  if not ok or not ev then return nil end
- local started=pcall(function()
-  ev.cameraInteriorMultiplier=1; ev.cameraExteriorMultiplier=1; ev.cameraTrackMultiplier=1; ev.volume=volume or 1
-  if ev.setVolumeChannel and ac.AudioChannel then ev:setVolumeChannel(ac.AudioChannel.Main) end
-  ev:start()
- end)
- if not started then pcall(function() ev:dispose() end); return nil end
- return {ev=ev,at=M.clock()}
+ return ev
 end
-local function isPlaying(ev) return ev:isPlaying() end
+local function configure(ev,volume)
+ ev.cameraInteriorMultiplier=1; ev.cameraExteriorMultiplier=1; ev.cameraTrackMultiplier=1; ev.volume=volume or 1
+ if ev.setVolumeChannel and ac.AudioChannel then ev:setVolumeChannel(ac.AudioChannel.Main) end
+end
+-- Clips à précharger (chemins absolus) ; déjà prêts ou en file : rien de plus.
+-- File bornée : un chemin n'y est qu'une fois (warmQueued), lue par un index (jamais table.remove en tête).
+local function enqueue(p)
+ if warmed[p] or warmQueued[p] then return end
+ warmQueued[p]=true; warmQueue[#warmQueue+1]=p
+end
+function M.warm(paths) for _,p in ipairs(paths) do enqueue(p) end end
+function M.warmStep()
+ for _=1,WARM_PER_FRAME do
+  local p=warmQueue[warmHead]
+  if not p then
+   if warmHead>1 then for k=#warmQueue,1,-1 do warmQueue[k]=nil end; warmHead=1 end
+   return
+  end
+  warmQueue[warmHead]=nil; warmHead=warmHead+1; warmQueued[p]=nil
+  if not warmed[p] then warmed[p]=newEvent(p) or false end
+ end
+end
+function M.prepare(path,volume)
+ local ev=warmed[path]
+ if ev then warmed[path]=nil; enqueue(path) else ev=newEvent(path) end
+ if not ev then return nil end
+ if not pcall(configure,ev,volume) then pcall(function() ev:dispose() end); return nil end
+ return {ev=ev,path=path,at=M.clock()}
+end
+function M.start(h)
+ h.ev:start(); h.at=M.clock()
+end
+function M.play(path,volume)
+ local h=M.prepare(path,volume)
+ if not h then return nil end
+ if not pcall(M.start,h) then pcall(function() h.ev:dispose() end); return nil end
+ return h
+end
+local function state(ev)
+ local p=ev:isPlaying()
+ local d=ev.getDuration and ev:getDuration() or -1
+ local t=ev.getTimelinePosition and ev:getTimelinePosition() or -1
+ local valid=not ev.isValid or ev:isValid()
+ return p,d,t,valid
+end
 function M.playing(h)
  if not h or not h.ev then return false end
- local ok,p=pcall(isPlaying,h.ev)
+ local ok,p,d,t,valid=pcall(state,h.ev)
+ if ok and p then
+  h.seen=true
+  if type(d)=='number' and type(t)=='number' and d>M.TAIL*2 and t>=0 and t>=d-M.TAIL then return false end
+  return true
+ end
  -- Juste après start(), FMOD peut ne pas encore dire « en lecture » : 0,3 s de grâce, seulement tant que la lecture
- -- n'a pas été vue (un clip plus court, comme le signal radio de 0,13 s, n'attend pas la fin de la grâce).
- if ok and p then h.seen=true; return true end
+ -- n'a pas été vue et que l'événement reste valide (un clip lu jusqu'au bout ne l'est plus).
+ if ok and valid==false then return false end
  return not h.seen and M.clock()-h.at<0.3
 end
 function M.stop(h) if h and h.ev then pcall(function() h.ev:stop() end); pcall(function() h.ev:dispose() end); h.ev=nil end end
@@ -206,13 +260,28 @@ function M.journalOpen()
  end)
  return ok and journal.path~=nil,continued
 end
+-- Journal tamponné (1.3.1) : les lignes sont gardées en mémoire et écrites une fois par seconde (journalFlush, appelé
+-- par l'app), jamais sur le chemin d'une annonce de sécurité.
+local pending,pendingBytes={},0
 function M.journalWrite(text)
  if not journal.path or type(text)~='string' or text=='' then return false end
- local full=journal.bytes+#text>journal.max
- if full then text='=== journal limité à '..journal.max..' octets pour ce lancement ===\n' end
+ if journal.bytes+pendingBytes+#text>journal.max then
+  pending[#pending+1]='=== journal limité à '..journal.max..' octets pour ce lancement ===\n'
+  M.journalFlush(); journal.path=nil
+  return false
+ end
+ pending[#pending+1]=text; pendingBytes=pendingBytes+#text
+ return true
+end
+function M.journalFlush()
+ if #pending==0 then return true end
+ local text=table.concat(pending)
+ for k=#pending,1,-1 do pending[k]=nil end
+ pendingBytes=0
+ if not journal.path then return false end
  local ok=pcall(function() local f=io.open(journal.path,'a'); f:write(text); f:close() end)
  if ok then journal.bytes=journal.bytes+#text else journal.failures=journal.failures+1 end
- if full or journal.failures>=3 then journal.path=nil end
+ if journal.failures>=3 then journal.path=nil end
  return ok
 end
 function M.clockText()
@@ -253,7 +322,7 @@ local function readWheels(me,car)
  for k=0,3 do
   local w=car.wheels[k]; local t=me.tyres[k+1]
   t.core=num(w.tyreCoreTemperature); t.inner=num(w.tyreInsideTemperature); t.mid=num(w.tyreMiddleTemperature)
-  t.outer=num(w.tyreOutsideTemperature); t.opt=num(w.tyreOptimumTemperature,80); t.pressure=num(w.tyrePressure)
+  t.outer=num(w.tyreOutsideTemperature); t.opt=num(w.tyreOptimumTemperature,80)
   t.wear=num(w.tyreWear); t.vkm=num(w.tyreVirtualKM); t.grain=num(w.tyreGrain); t.blister=num(w.tyreBlister)
   t.flat=num(w.tyreFlatSpot); t.blown=w.isBlown==true; t.dirty=num(w.tyreDirty)
   local disc=num(w.discTemperature); me.brakes[k+1]=disc>0 and disc or num(w.brakeTemperature)
@@ -267,16 +336,16 @@ function M.read(F,dt)
  if not F.paused and not F.replay and dt>0 and dt<1 then F.clock=F.clock+dt end
  F.dt=dt
  F.session=num(sim.currentSessionIndex,-1); F.sessionType=num(sim.raceSessionType,-1)
- F.timed=sim.isTimedRace==true; F.timeLeft=num(sim.sessionTimeLeft)/1000; F.leaderLaps=num(sim.leaderLapCount)
+ F.timed=sim.isTimedRace==true; F.timeLeft=num(sim.sessionTimeLeft)/1000
  F.fuelRate=num(sim.fuelConsumptionRate,1)
  F.trackLength=num(sim.trackLengthM,5000); F.pitSpeed=num(sim.pitsSpeedLimit,80)
  F.ambient=num(sim.ambientTemperature,20); F.road=num(sim.roadTemperature,25); F.grip=num(sim.roadGrip,1)
- F.rain=num(sim.rainIntensity); F.wetness=num(sim.rainWetness); F.water=num(sim.rainWater)
- F.windKmh=num(sim.windSpeedKmh); F.windDir=num(sim.windDirectionDeg)
+ F.rain=num(sim.rainIntensity); F.wetness=num(sim.rainWetness)
+ F.windKmh=num(sim.windSpeedKmh)
  -- Vent dans le repère du jeu (x, z) : composante dans l'axe de la voiture = vent arrière (> 0) ou de face (< 0).
  local wv=sim.windVelocityKmh
  if wv then F.windX=num(wv.x); F.windZ=num(wv.y) else F.windX=0; F.windZ=0 end
- F.allowedOut=num(sim.allowedTyresOut,2); F.started=sim.isSessionStarted~=false; F.finishedSession=sim.isSessionFinished==true
+ F.started=sim.isSessionStarted~=false; F.finishedSession=sim.isSessionFinished==true
  local wc=sim.weatherConditions
  if wc then F.weatherNow=num(wc.currentType,-1); F.weatherNext=num(wc.upcomingType,-1); F.transition=num(wc.transition) else F.weatherNow=-1; F.weatherNext=-1; F.transition=0 end
  F.rainComing=F.weatherNext>=0 and wetTypes[F.weatherNext]==true and not (F.weatherNow>=0 and wetTypes[F.weatherNow]==true)
@@ -295,14 +364,14 @@ function M.read(F,dt)
    local l=car.look; c.lookX=l.x; c.lookZ=l.z
    c.kmh=num(car.speedKmh); c.spline=num(car.splinePosition); c.laps=num(car.lapCount)
    c.position=num(car.racePosition); c.pitlane=car.isInPitlane==true; c.inPit=car.isInPit==true
-   c.lapMs=num(car.lapTimeMs); c.lastMs=num(car.previousLapTimeMs); c.bestMs=num(car.bestLapTimeMs)
+   c.lastMs=num(car.previousLapTimeMs); c.bestMs=num(car.bestLapTimeMs)
    c.ai=car.isAIControlled==true; c.retired=car.isRetired==true; c.finished=car.isRaceFinished==true
-   c.flashing=car.flashingLightsActive==true; c.user=car.isUserControlled==true
+   c.user=car.isUserControlled==true
    -- Collision en cours (1.3.0, accrochages devant, src/hazards.lua) : 0 mur, indice + 1 d'une voiture, -1 rien.
    c.hit=num(car.collidedWith,-1)
    -- Dimensions et nom lus une fois par voiture et par session.
-   local dim=dims[i]; if not dim then local a=car.aabbSize; dim={a and num(a.z,4.6) or 4.6,a and num(a.x,1.9) or 1.9}; dims[i]=dim end
-   c.len=dim[1]; c.wid=dim[2]
+   local dim=dims[i]; if not dim then local a=car.aabbSize; dim={a and num(a.z,4.6) or 4.6}; dims[i]=dim end
+   c.len=dim[1]
    if not names[i] then local okn,n=pcall(ac.getDriverName,i); names[i]=okn and type(n)=='string' and n or ('#'..(i+1)) end
    c.name=names[i]
    if c.user and F.player<0 then F.player=i end
@@ -314,19 +383,20 @@ function M.read(F,dt)
  local me=F.me
  if okMe and car then
   me.fuel=num(car.fuel); me.maxFuel=num(car.maxFuel,me.maxFuel or 100); me.fuelPerLapAC=num(car.fuelPerLap)
-  me.fuelMap=num(car.fuelMap); me.fuelMaps=num(car.fuelMaps)
-  me.brakeBias=num(car.brakeBias); me.hasBias=car.hasUserBrakeBias==true; me.compound=num(car.compoundIndex)
-  me.kmh=num(car.speedKmh); me.gas=num(car.gas); me.brake=num(car.brake); me.gear=num(car.gear)
-  me.drsPresent=car.drsPresent==true; me.drsAvailable=car.drsAvailable==true; me.drsActive=car.drsActive==true
-  me.kers=car.kersPresent==true; me.kersCharge=num(car.kersCharge); me.p2p=num(car.p2pStatus); me.p2pLeft=num(car.p2pActivations)
+  me.fuelMaps=num(car.fuelMaps)
+  me.hasBias=car.hasUserBrakeBias==true; me.compound=num(car.compoundIndex)
+  me.kmh=num(car.speedKmh); me.brake=num(car.brake)
+  me.drsPresent=car.drsPresent==true
+  me.kers=car.kersPresent==true; me.p2p=num(car.p2pStatus)
   me.wheelsOut=num(car.wheelsOutside); me.lapValid=car.isLapValid~=false; me.cuts=num(car.lapCutsCount)
-  me.engineLife=num(car.engineLifeLeft,1000); me.gearbox=num(car.gearboxDamage); me.lapMs=num(car.lapTimeMs)
-  me.sector=num(car.currentSector); me.penalty=num(car.currentPenaltyType)
+  me.sector=num(car.currentSector)
   local l=car.look; me.lookX=l.x; me.lookZ=l.z
   local okd=pcall(readDamage,me,car)
   if not okd then for k=1,5 do me.damage[k]=0 end end
   if not pcall(readSuspension,me,car) then for k=1,4 do me.susp[k]=0 end end
   me.hit=num(car.collidedWith,-1)
+  -- Vitesse de lacet (rad/s, 1.3.1 : tête-à-queue du joueur, src/emergency.lua).
+  local okY,yaw=pcall(function() return car.localAngularVelocity.y end); me.yaw=okY and num(yaw) or 0
   pcall(readWheels,me,car)
  end
  return true

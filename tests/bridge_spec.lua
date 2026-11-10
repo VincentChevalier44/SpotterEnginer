@@ -564,7 +564,7 @@ function T.zone_green_is_immediate_and_single()
  r.e.panel.decided='none'; r.run(9.02,12)
  local greens,yellows=0,0
  for _,e in ipairs(r.voice.log) do
-  if e.key=='zoneGreen' or e.key=='restart' or e.key=='green' then greens=greens+1 end
+  if e.key=='zoneGreen' or e.key=='restart' then greens=greens+1 end
   if e.key=='zone' then yellows=yellows+1 end
  end
  check(greens==1 and yellows==1,'one yellow and one green per zone: '..yellows..' / '..greens)
@@ -697,7 +697,7 @@ function T.no_stopped_car_on_the_grid()
  r.e.incidents.standing='grid'
  local F=r.ctx.F; F.cars[2].kmh=0; F.cars[2].spline=F.cars[1].spline+0.03
  r.ctx.timing=Timing.new(); r.step(2); r.step(3)
- check(not queued(r.voice,'stopped'),'no stopped car call on the grid')
+ check(not queued(r.voice,'hazard'),'no stopped car call on the grid')
 end
 function T.delta_does_not_chatter()
  -- Au ras du delta (-0,08 à +0,15 s) pendant 30 s de VSC : au plus un « delta négatif », jamais d'alternance.
@@ -737,8 +737,11 @@ function T.acai_events_have_their_clips()
  local q2=queued(r.voice,'restart'); check(q2 and q2.text:find('derrière la voiture de sécurité',1,true),'restart behind SC: '..tostring(q2 and q2.text))
  check(not queued(r.voice,'neutral'),'no duplicate SC call with the restart')
  r.voice.queue={}
- -- Place rendue dans le délai.
- r.e.penalties.giveBack=3; r.step(6); r.e.penalties.giveBack=0; r.step(7)
+ -- Place rendue dans le délai : la voiture due (emplacement 3, indice 2) est devant le joueur, à 200 m ; dette effacée
+ -- sans que la voiture soit devant (entrée des stands, échéance) : rien (1.3.1).
+ r.e.penalties.giveBack=3; r.step(6); r.ctx.F.cars[2].spline=0.6; r.e.penalties.giveBack=0; r.step(7)
+ local q0=queued(r.voice,'giveBack'); check(not (q0 and q0.text:find('Place rendue',1,true)),'debt cleared without the car ahead: no place given back')
+ r.e.penalties.giveBack=3; r.step(7.5); r.ctx.F.cars[2].spline=0.15; r.e.penalties.giveBack=0; r.step(7.6)
  local q3=queued(r.voice,'giveBack'); check(q3 and q3.text:find('Place rendue',1,true),'give back done')
  -- Piste mouillée.
  r.e.weather.wet=true; r.step(8); local q4=queued(r.voice,'trackState'); check(q4 and q4.text:find('humide',1,true),'track wet')
@@ -889,13 +892,18 @@ end
 -- Course : voiture qui prend un tour, 4 % plus rapide seulement, moins de 2 s derrière : annoncée (règle de course
 -- inchangée, pas de mesure de rapprochement exigée).
 function T.faster_behind_lapping_car_in_race()
- local r=rig(); r.ctx.cfg.hazards=false; r.ctx.cfg.backmarkers=false
- local F=r.ctx.F
- F.cars[2].position=1; F.cars[0].position=3
- local sim=track(r)
- sim.place(1,3.5); sim.place(2,4.5-0.016,1.04); sim.place(0,3.0)
- sim.run(5)
- check(count(r.voice,'fasterBehind')==1,'lapping car called, got '..count(r.voice,'fasterBehind'))
+ -- Drapeaux bleus d'AdvancedIA annoncés (réglage) : la voiture qui prend un tour leur est laissée (1.3.1 : jamais « garde
+ -- ta ligne » puis « laisse passer »).
+ for _,blue in ipairs({false,true}) do
+  local r=rig(); r.ctx.cfg.hazards=false; r.ctx.cfg.backmarkers=false; r.ctx.cfg.blueFlags=blue
+  local F=r.ctx.F
+  F.cars[2].position=1; F.cars[0].position=3
+  local sim=track(r)
+  sim.place(1,3.5); sim.place(2,4.5-0.016,1.04); sim.place(0,3.0)
+  sim.run(5)
+  local n=count(r.voice,'fasterBehind')
+  check(n==(blue and 0 or 1),'lapping car (blue flags '..tostring(blue)..'), got '..n)
+ end
 end
 -- Essais et qualifications (AdvancedIA 1.51, 'fastCar') : « voiture en tour lancé derrière, laisse-la passer », dit
 -- seulement si la voiture arrive vraiment dans les 6 s, avec le nom et l'écart mesuré ; sinon rien (journal seulement).

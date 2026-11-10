@@ -24,10 +24,14 @@ M.SIDE=0.3
 M.OFF=1.05
 -- Accrochage : contact entre deux voitures devant (à moins de TANGLE.range m), dont l'une a perdu TANGLE.loss km/h au
 -- moins TANGLE.wait s plus tard (frottement sans conséquence : rien) ; une annonce au plus toutes les TANGLE.again s.
-M.TANGLE={range=700,loss=25,wait=1.2,again=30}
-local MIN_TRACK=500
-function M.new() return {said={},hits={},pending={},tangleAt=-1e9} end
-function M.reset(h) h.said={}; h.hits={}; h.pending={}; h.tangleAt=-1e9 end
+-- Perte jugée EN PLUS de la décélération d'avant le contact (1.3.1, comme le contact du joueur : un frottement au
+-- freinage perdait 120 km/h en 1,2 s par le seul freinage) ; vitesses relevées toutes les TANGLE.sample s.
+M.TANGLE={range=700,loss=25,wait=1.2,again=30,sample=0.2}
+-- Même voiture : ni accrochage ni erreur dits dans les QUIET s qui suivent son danger (une seule transmission par
+-- incident), ni pour la voiture de la zone jaune d'AdvancedIA tant qu'elle dure.
+M.QUIET=10
+local MIN_TRACK=U.MIN_TRACK
+function M.new() return {said={},hits={},pending={},tangleAt=-1e9,kA={},tA={},kB={},tB={}} end
 -- Nature du danger d'une voiture (clé du clip, priorité) ou nil.
 function M.kind(c,lc,me,d)
  local grid=d and (d.red or d.standing=='grid' or d.standing=='lights')
@@ -38,8 +42,10 @@ function M.kind(c,lc,me,d)
 end
 -- Côté de la voiture et conseil (parties), vu du joueur : hors piste, à gauche (passe à droite), à droite (passe à
 -- gauche), en pleine trajectoire ; inconnu (pas de piste de CSP) : rien.
+-- onTrack d'AdvancedIA n'est écrit que pendant un incident (faux hors incident, 1.3.1 : une voiture arrêtée en pleine
+-- piste était dite « hors de la piste » avant qu'AdvancedIA voie l'incident) : lu seulement avec incident.
 function M.where(ctx,c,lc)
- if lc and lc.onTrack==false then return {'offTrack'},true end
+ if lc and lc.incident and lc.onTrack==false then return {'offTrack'},true end
  local lat=ctx.trackLateral and ctx.trackLateral(c.x,c.y or 0,c.z)
  if not lat then return {},false end
  if math.abs(lat)>M.OFF then return {'offTrack'},true end
@@ -48,18 +54,20 @@ function M.where(ctx,c,lc)
  return {'onMiddle'},false
 end
 local Say=require('src/say')
-local function say(ctx,key,prio,parts,opts) return Say.say(ctx.say,'spotter',key,prio,parts,ctx.real,opts) end
+local say=Say.as('spotter')
 -- Accrochages : collisions entre deux voitures (c.hit : indice + 1 de l'autre voiture), jugées TANGLE.wait s plus tard.
 local function tangles(h,ctx,me,length)
  local F=ctx.F
  for i=0,F.count-1 do
   local c=F.cars[i]
   local other=c.valid and (c.hit or -1)>0 and c.hit-1 or -1
+  if c.valid and (not h.tA[i] or ctx.now-h.tA[i]>=M.TANGLE.sample or ctx.now<h.tA[i]) then h.tB[i]=h.tA[i]; h.kB[i]=h.kA[i]; h.tA[i]=ctx.now; h.kA[i]=c.kmh end
   if other>=0 and other~=F.player and i~=F.player and h.hits[i]~=other then
-   local ahead=U.wrap(c.spline-me.spline)*length
+   local ahead=U.ahead(me,c,length)
    if ahead>30 and ahead<M.TANGLE.range then
     local o=F.cars[other]
-    h.pending[#h.pending+1]={a=i,b=other,ka=c.kmh,kb=o and o.kmh or 0,at=ctx.now}
+    local function rate(j,k) local t0=h.tB[j]; return t0 and ctx.now>t0 and math.max(0,((h.kB[j] or k)-k)/(ctx.now-t0)) or 0 end
+    h.pending[#h.pending+1]={a=i,b=other,ka=c.kmh,kb=o and o.kmh or 0,ra=rate(i,c.kmh),rb=o and rate(other,o.kmh) or 0,at=ctx.now}
    end
   end
   h.hits[i]=c.valid and other or -1
@@ -70,7 +78,11 @@ local function tangles(h,ctx,me,length)
   elseif ctx.now-p.at>=M.TANGLE.wait then
    table.remove(h.pending,k)
    local a,b=F.cars[p.a],F.cars[p.b]
-   local lost=math.max(p.ka-(a and a.kmh or p.ka),p.kb-(b and b.kmh or p.kb))
+   local dt=ctx.now-p.at
+   local lost=math.max(p.ka-(a and a.kmh or p.ka)-p.ra*dt,p.kb-(b and b.kmh or p.kb)-p.rb*dt)
+   local d=ctx.link.d
+   local quiet=function(i) local s=h.said[i]; return s and ctx.now-s.at<M.QUIET and ctx.now>=s.at or d and d.zone and d.zoneCar==i end
+   if quiet(p.a) or quiet(p.b) then lost=0 end
    local ahead=a and U.wrap(a.spline-me.spline)*length or -1
    if lost>=M.TANGLE.loss and ahead>20 and ctx.now-h.tangleAt>M.TANGLE.again then
     h.tangleAt=ctx.now
@@ -80,21 +92,21 @@ local function tangles(h,ctx,me,length)
   end
  end
 end
--- Chaque image (spotter actif, réglage Voitures arrêtées devant). Anticipation coupée : danger annoncé au dernier moment
+-- Chaque image (spotter actif, réglage Dangers devant). Anticipation coupée : danger annoncé au dernier moment
 -- (règle de la 1.2.0 : de FROM à NEAR m), et sans les accrochages.
-M.LATE={lead=0,near=600}
 function M.step(h,ctx)
  local F=ctx.F; local me=F.cars[F.player]; local d=ctx.link.d
  local early=ctx.cfg.anticipation
- local lead=early and M.LEAD or M.LATE.lead; local near=early and M.NEAR or M.LATE.near
+ local lead=early and M.LEAD or 0; local near=M.NEAR
  if not me or not me.valid or me.pitlane or me.kmh<40 or not F.started then return end
  local length=math.max(MIN_TRACK,F.trackLength or 0)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  if i~=F.player and c.valid and not c.pitlane then
-   local ahead=U.wrap(c.spline-me.spline)*length
+  local lc=Link.car(ctx.link,i)
+  -- Voiture de sécurité d'AdvancedIA : jamais un danger (elle roule lentement devant la file par nature).
+  if i~=F.player and c.valid and not c.pitlane and not (lc and lc.safety) then
+   local ahead=U.ahead(me,c,length)
    if ahead>M.FROM and ahead<M.RANGE then
-    local lc=Link.car(ctx.link,i)
     local kind,prio=M.kind(c,lc,me,d)
     if kind then
      local closing=(kind=='wrongWay' and me.kmh+c.kmh or me.kmh-c.kmh)/3.6

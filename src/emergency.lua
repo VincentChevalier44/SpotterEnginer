@@ -14,18 +14,33 @@ local M={}
 -- suspension ; again : délai entre deux « contact » (mêlée du départ : une annonce, pas une toutes les 4 s) ; noneAgain :
 -- délai entre deux « pas de dégâts » après un contact avec une voiture (toujours dit après un gros choc). TRAFFIC : voitures qui arrivent derrière (s avant d'être sur le joueur), libre après clear s sans voiture,
 -- portée (m). STOP : arrêt sur la piste (km/h, tenu hold s), épisode fini au-dessus de done km/h pendant doneFor s.
-M.CONTACT={measure=0.4,loss=6,wall=40,rise=3,report=3.5,light=6,medium=25,heavy=60,suspension=0.1,keep=6,again=15,noneAgain=60}
+M.CONTACT={measure=0.4,loss=6,wall=30,rise=3,report=3.5,light=6,medium=25,heavy=60,suspension=0.1,keep=6,again=15,noneAgain=60,
+ sample=0.2,braking=0.3}
+-- Perte de vitesse d'un contact (1.3.1, en jeu le 10/11/2026 : cinq « gros choc » en 90 s sans aucun choc) : AC signale un
+-- contact avec la piste (collidedWith 0) sur un vibreur ou quand la voiture frotte le sol, souvent au freinage ; la
+-- vitesse perdue pendant la mesure était celle du freinage (43 à 47 km/h en 0,4 s). Seule compte la perte EN PLUS du
+-- rythme de décélération d'avant le contact (relevé toutes les CONTACT.sample s) ; contre un mur, une perte de vitesse
+-- sans dégâts ne compte que pédale de frein sous CONTACT.braking pendant la mesure (un choc réel fait des dégâts, ou
+-- arrête la voiture sans qu'elle freine).
 M.TRAFFIC={eta=4,rejoinEta=3,clear=1,range=400,minKmh=40,every=0.25}
-M.STOP={kmh=8,hold=2,done=50,doneFor=2}
-local MIN_TRACK=500
+M.STOP={kmh=8,hold=2,done=50,doneFor=2,moved=50}
+-- Sortie de piste : roues hors des limites (AC) ou hors piste vu par AdvancedIA pendant un incident (son onTrack n'est
+-- écrit que pendant un incident : faux sinon ; 1.3.1, « attention en reprenant la piste » à chaque sortie des stands),
+-- tenue OFF_HOLD s.
+M.OFF_HOLD=0.3
+-- Tête-à-queue du joueur (1.3.1) : spin d'AdvancedIA (publié faux en 1.58, ses compteurs sont des durées), ou vitesse de
+-- lacet au-delà de SPIN.yaw rad/s tenue SPIN.hold s (une épingle serrée reste sous 1 rad/s, un tête-à-queue dépasse 2).
+M.SPIN={yaw=2.0,hold=0.3}
+local MIN_TRACK=U.MIN_TRACK
 function M.new()
- return {contactAt=-1e9,noneAt=-1e9,hit=-1,kmhPrev=0,dmgBase=nil,suspBase=nil,contact=nil,reportUntil=-1e9,blown={},spinWas=false,wrongWas=false,
-  stranded=false,stopFor=0,doneFor=0,waiting=false,freeFor=0,checkAt=-1e9,traffic=false,off=false,onFor=0,rejoinSaid=false}
+ return {contactAt=-1e9,noneAt=-1e9,aT=nil,aK=0,bT=nil,bK=0,prevAt=nil,hit=-1,kmhPrev=0,dmgBase=nil,suspBase=nil,contact=nil,reportUntil=-1e9,blown={},spinWas=false,wrongWas=false,
+  stranded=false,stopFor=0,doneFor=0,waiting=false,freeFor=0,checkAt=-1e9,traffic=false,off=false,onFor=0,rejoinSaid=false,
+  offFor=0,moved=false,yawFor=0}
 end
 function M.reset(em) U.refill(em,M.new()) end
-local function sum(t,a,b) local s=0; for k=a,b do s=s+(tonumber(t[k]) or 0) end; return s end
-local function spotter(ctx,key,prio,parts,opts) return Say.say(ctx.say,'spotter',key,prio,parts,ctx.real,opts) end
-local function engineer(ctx,key,prio,parts,opts) return Say.say(ctx.say,'engineer',key,prio,parts,ctx.real,opts) end
+local sum=U.sum
+local spotter=Say.as('spotter')
+local engineer=Say.as('engineer')
 -- Voiture qui arrive derrière le joueur sur la piste en moins de eta s.
 function M.arriving(ctx,eta)
  local F=ctx.F; local me=F.cars[F.player]
@@ -51,31 +66,42 @@ function M.verdict(rise,susp,announced)
 end
 local function contacts(em,ctx,me)
  local F=ctx.F; local cfg=ctx.cfg; local C=M.CONTACT
- local dmg=sum(F.me.damage,1,4); local susp=sum(F.me.susp or {},1,4)
+ local dmg=sum(F.me.damage,1,5); local susp=sum(F.me.susp or {},1,4)
  local hit=F.me.hit or -1
+ -- Vitesse relevée toutes les CONTACT.sample s hors contact : (bT, bK) a entre une et deux périodes d'âge.
+ if not em.contact and (not em.aT or ctx.now-em.aT>=C.sample or ctx.now<em.aT) then em.bT=em.aT; em.bK=em.aK; em.aT=ctx.now; em.aK=me.kmh end
  if not em.contact and not me.pitlane and (hit>=0 and em.hit<0 or hit>0 and hit~=em.hit) then
-  em.contact={at=ctx.now,kmh0=math.max(em.kmhPrev,me.kmh),dmg0=em.dmgBase or dmg,susp0=em.suspBase or susp,car=hit>0 and hit-1 or -1,
-   measured=false,announced=false}
+  -- Vitesse de référence : celle de l'image d'avant le contact (t0) ; décélération d'avant le contact (km/h par s,
+  -- freinage), prolongée de t0 jusqu'à la mesure : perte attendue sans aucun choc.
+  local t0=em.prevAt or ctx.now
+  local kmh0=em.prevAt and em.kmhPrev or me.kmh
+  local rate=em.bT and t0>em.bT and math.max(0,(em.bK-kmh0)/(t0-em.bT)) or 0
+  em.contact={at=ctx.now,t0=t0,rate=rate,kmh0=kmh0,dmg0=em.dmgBase or dmg,susp0=em.suspBase or susp,car=hit>0 and hit-1 or -1,
+   measured=false,announced=false,expected=0,brake=0}
  end
  em.hit=hit
  local c=em.contact
- if not c then em.kmhPrev=me.kmh; em.dmgBase=dmg; em.suspBase=susp; return end
+ if not c then em.kmhPrev=me.kmh; em.prevAt=ctx.now; em.dmgBase=dmg; em.suspBase=susp; return end
  if ctx.now<c.at or ctx.now-c.at>C.keep+C.report then em.contact=nil; return end
  local rise=dmg-c.dmg0
+ if not c.measured then c.brake=math.max(c.brake,tonumber(F.me.brake) or 0) end
  if not c.measured and ctx.now-c.at>=C.measure then
   c.measured=true
-  local loss=c.kmh0-me.kmh
+  c.expected=c.rate*math.max(0,ctx.now-c.t0)
+  local loss=c.kmh0-me.kmh-c.expected
   if c.car>=0 and (loss>=C.loss or rise>=C.rise) and (ctx.now-em.contactAt>=C.again or ctx.now<em.contactAt) then
    em.contactAt=ctx.now
    local other=F.cars[c.car]
    c.announced=true
    spotter(ctx,'contact',2,{'contact',{text='('..(other and other.name or '?')..')'}},{ttl=2,once=true,tone='urgent'})
-  elseif c.car<0 and (loss>=C.wall or rise>=C.light) then
+  elseif c.car<0 and (loss>=C.wall and c.brake<C.braking or rise>=C.light) then
    c.announced=true
    engineer(ctx,'damage',2,{'wallHit'},{ttl=4,tone='urgent'})
   end
-  if ctx.journal and (c.announced or rise>0) then
-   ctx.journal(string.format('contact %s : perte %.0f km/h, dégâts +%.0f',c.car>=0 and ('avec '..((F.cars[c.car] or {}).name or '?')) or 'mur',loss,rise))
+  -- Journal : contacts annoncés, avec dégâts, ou perte notable en plus du freinage (diagnostic en jeu, jamais chaque vibreur).
+  if ctx.journal and (c.announced or rise>0 or loss>=C.loss) then
+   ctx.journal(string.format('contact %s : perte %.0f km/h en plus du freinage (%.0f attendus), frein %.0f %%, dégâts +%.0f%s',
+    c.car>=0 and ('avec '..((F.cars[c.car] or {}).name or '?')) or 'mur',loss,c.expected,c.brake*100,rise,c.announced and '' or ', non annoncé'))
   end
  end
  if c.measured and ctx.now-c.at>=C.report then
@@ -94,8 +120,7 @@ local function puncture(em,ctx,me)
  local t=ctx.F.me.tyres
  for k=1,4 do
   local b=t[k] and t[k].blown==true
-  if me.pitlane then em.blown[k]=false
-  elseif b and not em.blown[k] then
+  if b and not em.blown[k] then
    em.blown[k]=true
    engineer(ctx,'puncture',1,{'puncture'},{ttl=8,tone='urgent',cooldown=60})
   elseif not b then em.blown[k]=false end
@@ -106,8 +131,12 @@ local function stranded(em,ctx,me,dt)
  local F=ctx.F; local d=ctx.link.d
  local lc=Link.car(ctx.link,F.player)
  local held=d and (d.red or d.standing=='grid' or d.standing=='lights')
- local running=F.started and not held and not me.pitlane and not me.finished
- local spin=running and lc and lc.spin and lc.incident or false
+ -- Arrêt sur la piste jugé seulement après avoir roulé au-dessus de STOP.moved km/h depuis le départ ou la sortie des
+ -- stands (jamais au départ arrêté ni à une sortie lente de la voie).
+ if me.pitlane or not F.started then em.moved=false elseif me.kmh>M.STOP.moved then em.moved=true end
+ local running=F.started and not held and not me.pitlane and not me.finished and em.moved
+ em.yawFor=running and math.abs(tonumber(F.me.yaw) or 0)>M.SPIN.yaw and em.yawFor+dt or 0
+ local spin=running and (lc and lc.spin and lc.incident or em.yawFor>=M.SPIN.hold) or false
  local wrong=running and lc and lc.wrong or false
  em.stopFor=running and me.kmh<M.STOP.kmh and em.stopFor+dt or 0
  if ctx.now-em.checkAt>=M.TRAFFIC.every or ctx.now<em.checkAt then em.checkAt=ctx.now; em.traffic=M.arriving(ctx,M.TRAFFIC.eta) end
@@ -134,7 +163,9 @@ local function stranded(em,ctx,me,dt)
  end
  em.spinWas=spin; em.wrongWas=wrong
  -- Retour sur la piste après une sortie (hors épisode) : voiture qui arrive, une fois par sortie.
- local off=running and not em.stranded and (lc and lc.onTrack==false or (F.me.wheelsOut or 0)>=4)
+ local wide=lc and lc.incident and lc.onTrack==false or (F.me.wheelsOut or 0)>=4
+ em.offFor=running and not em.stranded and wide and em.offFor+dt or 0
+ local off=em.offFor>=M.OFF_HOLD
  if off then
   em.off=true; em.onFor=0
   if not em.rejoinSaid and me.kmh<120 and M.arriving(ctx,M.TRAFFIC.rejoinEta) then
@@ -150,7 +181,7 @@ function M.step(em,ctx,dt)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid then return end
  if not ctx.cfg.emergencies then
-  em.hit=F.me.hit or -1; em.contact=nil; em.kmhPrev=me.kmh; em.dmgBase=sum(F.me.damage,1,4); em.suspBase=sum(F.me.susp or {},1,4)
+  em.hit=F.me.hit or -1; em.contact=nil; em.kmhPrev=me.kmh; em.dmgBase=sum(F.me.damage,1,5); em.suspBase=sum(F.me.susp or {},1,4)
   em.stranded=false; em.stopFor=0
   return
  end

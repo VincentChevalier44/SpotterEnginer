@@ -10,11 +10,10 @@ local Link=require('src/link')
 local Say=require('src/say')
 local M={}
 function M.new()
- return {data=SD.new(),car=nil,plan=nil,model=nil,race=nil,duel=nil,rejoin=nil,solvedLap=-1,solvedAt=-1e9,neutral=false,
+ return {data=SD.new(),car=nil,plan=nil,model=nil,duel=nil,rejoin=nil,solvedLap=-1,solvedAt=-1e9,neutral=false,
   announcedWindow=nil,boxSaid={},lastPit={},rivalPit={},costMs=0,status='learning',neutralBox=false,targetPrev=nil,ready=false,pitDueSeen=false,boxLap=false,stopDone=false,
-  stayOutSaid=false,hadStop=false,noMoreSaid=false}
+  stayOutSaid=false,hadStop=false,noMoreSaid=false,exitAt=-1e9,windowAt=-1e9}
 end
-function M.reset(t) local car=t.car; local n=M.new(); for k,v in pairs(n) do t[k]=v end; t.car=car end
 -- Retard sur le leader en tours, en continu (tours + fraction) : stable quand le leader passe la ligne avant le joueur
 -- (les tours entiers du leader feraient croire le joueur attardé pendant ce temps). 0 pour le leader ou sans leader.
 local function behindLeader(F,me)
@@ -34,6 +33,8 @@ local function totalLaps(F,me,pace)
   -- Course au temps : le tour en cours compte (fraction déjà faite), puis les tours que permet le temps restant.
   return me.laps+math.max(1,math.floor(F.timeLeft/pace+(me.spline or 0))+1)+(F.additional and 1 or 0)
  end
+ -- Temps écoulé (1.3.1) : le tour en cours, et le tour de plus s'il existe (un tour de moins avant).
+ if F.timed and pace and pace>0 then return me.laps+1+(F.additional and 1 or 0) end
  return F.laps>0 and F.laps or me.laps+1
 end
 -- Arrêts obligatoires encore dus et fenêtre (tours), d'après les règles d'AdvancedIA.
@@ -147,7 +148,7 @@ local function solve(t,ctx)
  if F.isRace and #rivals>0 then traffic=function(n1) return S.rejoin(m,meInfo,rivals,done,n1,lossAt(n1)) end end
  local plan=S.solve(m,race,traffic)
  local loss=lossAt(plan.optimal and plan.optimal-done or 1)
- t.plan=plan; t.model=m; t.race=race; t.pace=p; t.loss=loss
+ t.plan=plan; t.model=m; t.loss=loss
  t.rejoin=plan.optimal and plan.detail and plan.detail[plan.optimal-done] or nil
  -- Duels avec les voisins au classement : toujours calculés (overlay Stratégie), annoncés selon le réglage.
  t.duel=nil
@@ -168,7 +169,7 @@ local function solve(t,ctx)
   end
   local a=me.position>1 and rival(me.position-1,true) or nil
   local b=rival(me.position+1,false)
-  local out=S.duels(m,done,{km0F=m.km0F,km0R=m.km0R,age0=m.age0},a,b,loss)
+  local out=S.duels(m,done,{km0F=m.km0F,km0R=m.km0R,age0=m.age0},a,b,loss,nil,total-done)
   out.ahead=a; out.behind=b
   t.duel=out
  end
@@ -182,7 +183,7 @@ local function solve(t,ctx)
 end
 M.solve=solve
 M.rules=rules
-local function say(ctx,key,prio,parts,opts) return Say.say(ctx.say,'engineer',key,prio,parts,ctx.real,opts) end
+local say=Say.as('engineer')
 -- Chaque image. Renvoie vrai quand un nouveau calcul a été fait.
 function M.step(t,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local d=ctx.link.d
@@ -200,7 +201,7 @@ function M.step(t,ctx)
  local tyres=F.me.tyres
  local kmF=(tyres[1].vkm+tyres[2].vkm)*0.5; local kmR=(tyres[3].vkm+tyres[4].vkm)*0.5
  local lapDone=SD.update(t.data,{now=ctx.now,laps=me.laps,lapTime=me.lastMs/1000,fuel=F.me.fuel,kmF=kmF,kmR=kmR,
-  pit=me.pitlane,road=F.road,ambient=F.ambient,neutral=d and (d.neutral or d.red) or false,valid=F.me.lapValid},t.car and t.car.curves or {})
+  pit=me.pitlane,road=F.road,ambient=F.ambient,neutral=Link.neutralised(d),valid=F.me.lapValid},t.car and t.car.curves or {})
  -- Arrêts de toutes les voitures : perte de voie mesurée, âge des pneus des rivaux.
  for i=0,F.count-1 do
   local c=F.cars[i]
@@ -212,7 +213,7 @@ function M.step(t,ctx)
     -- « on reste dehors, on fait l'overcut ». Voiture directement derrière qui rentre et peut passer devant par l'undercut :
     -- « il rentre, on couvre, box ce tour-ci » si l'arrêt ce tour-ci reste dans la fenêtre et coûte peu (M.cover).
     if F.isRace and c.position==me.position-1 and cfg.strategyOn and cfg.rivalPitVoice then
-     local over=cfg.strategyTalk and t.duel and t.duel.overcut
+     local over=cfg.strategyTalk and t.duel and t.duel.overcut and M.duelTalk(t,ctx)
      say(ctx,'rivalPitted',3,over and {'rivalPitted','overcutStay'} or {'rivalPitted'},{ttl=8})
     elseif F.isRace and c.position==me.position+1 and cfg.strategyOn and cfg.strategyTalk then M.cover(t,ctx) end
    end
@@ -225,7 +226,8 @@ function M.step(t,ctx)
  -- arrêts obligatoires dus change (décision d'AdvancedIA : arrêt validé, ou non compté faute de changement de composé,
  -- parfois après la sortie des stands), et toutes les 30 s.
  local pitExit=t.wasPit and not me.pitlane; t.wasPit=me.pitlane
- -- Arrêt en cours : le « box » engagé est tenu (voir boxCalls).
+ if pitExit then t.exitAt=ctx.now end
+ -- Voie des stands : le « box » engagé est fait, il est libéré (voir boxCalls).
  if me.pitlane then t.boxLap=false end
  local due=d and d.pitDue or 0
  local dueChanged=t.pitDueSeen~=false and due~=t.pitDueSeen; t.pitDueSeen=due
@@ -248,6 +250,8 @@ end
 -- meilleur plan (s). Engagé comme un « box » (t.boxLap, jamais « box ce tour » puis « box au prochain tour ») : le plan
 -- publié pour AdvancedIA (pitplan) passe à ce tour.
 M.MOVE=3
+-- Gain d'arrêt sous neutralisation exigé après « on reste dehors » (s).
+M.STAY_SWITCH=3
 function M.stopNow(t,ctx,extra,maxSpline)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local plan=t.plan; local d=ctx.link.d
  if not (cfg.boxCalls and F.isRace and t.ready and plan and plan.ok and plan.optimal and plan.window and plan.costs and plan.costs[1] and plan.cost) then return false end
@@ -266,6 +270,20 @@ function M.cover(t,ctx)
  if ctx.journal then ctx.journal('stratégie : couverture de l\'undercut, box ce tour') end
  return true
 end
+-- Undercut, overcut et menace dits (1.3.1, revue de la 1.3.0) : jamais dans la voie des stands, sous neutralisation
+-- (l'arrêt y est jugé à part), un « box » engagé ou un arrêt sous neutralisation dit, sans arrêt prévu, ni avec l'arrêt
+-- prévu plus de DUEL_LAPS tours plus tard (le duel du modèle ne vaut que près de l'arrêt).
+M.DUEL_LAPS=4
+function M.duelTalk(t,ctx)
+ local F=ctx.F; local me=F.cars[F.player]; local d=ctx.link.d; local plan=t.plan
+ if not me or me.pitlane or me.finished or Link.neutralised(d) or t.boxLap or t.neutralBox then return false end
+ if not (plan and plan.ok and plan.optimal) then return false end
+ return plan.optimal-(me.laps+1)<=M.DUEL_LAPS
+end
+-- Fenêtre : pas dans les 10 s qui suivent la sortie des stands (AdvancedIA décide parfois de l'arrêt après la sortie :
+-- fenêtre fantôme, puis « plus d'arrêt ») ; redite au plus toutes les WINDOW_AGAIN s, sauf si l'arrêt avance.
+M.EXIT_HOLD=10
+M.WINDOW_AGAIN=90
 -- Annonces de la stratégie : fenêtre (à son premier calcul fiable et quand elle bouge de 2 tours), undercut / overcut.
 function M.announce(t,ctx,lapDone)
  local plan=t.plan; local cfg=ctx.cfg
@@ -273,26 +291,35 @@ function M.announce(t,ctx,lapDone)
  if not plan or not plan.ok or not ctx.F.isRace or not t.ready then return end
  -- Entre un « box » et l'arrêt, et dans la voie des stands : pas de fenêtre réannoncée (elle contredirait le box).
  local me=ctx.F.cars[ctx.F.player]
- local quietWindow=t.boxLap or (me and me.pitlane)
+ local now=ctx.now or 0
+ local exitAt=t.exitAt or -1e9; local windowAt=t.windowAt or -1e9
+ local justOut=now-exitAt<M.EXIT_HOLD and now>=exitAt
+ local quietWindow=t.boxLap or (me and me.pitlane) or justOut
  -- Fenêtre et tour optimal : appels d'arrêt du plan (réglage « Box » et fenêtre) ; coupés, les rappels d'AdvancedIA
  -- restent dits par le spotter (une seule référence des stands, voir plannedLap dans src/spotter.lua).
  if cfg.boxCalls and plan.window and not quietWindow then
   local w=plan.window; local a=t.announcedWindow
   -- Le début de la fenêtre avance avec la course une fois dedans : seuls le tour optimal et la fermeture comptent.
-  if not a or math.abs((a[3] or 0)-plan.optimal)>=2 or math.abs(a[2]-w[2])>=2 then
-   t.announcedWindow={w[1],w[2],plan.optimal}
-   say(ctx,'window',4,{'pitWindow',{n=w[1]},'toLap',{n=w[2]},'optimalLap',{n=plan.optimal}},{ttl=20})
+  local moved=not a or math.abs((a[3] or 0)-plan.optimal)>=2 or math.abs(a[2]-w[2])>=2
+  local earlier=a and plan.optimal<(a[3] or 0)
+  if moved and (not a or earlier or now-windowAt>=M.WINDOW_AGAIN or now<windowAt) then
+   t.announcedWindow={w[1],w[2],plan.optimal}; t.windowAt=now
+   -- Fenêtre d'un seul tour : le tour d'arrêt seul (jamais « du tour 18 au tour 18 »).
+   local parts=w[1]==w[2] and {'optimalLap',{n=plan.optimal}} or {'pitWindow',{n=w[1]},'toLap',{n=w[2]},'optimalLap',{n=plan.optimal}}
+   say(ctx,'window',4,parts,{ttl=20})
   end
  end
- if lapDone and t.duel and cfg.duels then
+ if lapDone and t.duel and cfg.duels and M.duelTalk(t,ctx) then
   local du=t.duel
   -- Stratégie commentée (1.3.0) : l'undercut est décidé quand l'arrêt ce tour-ci coûte moins que ce qu'il fait gagner
   -- (« on tente l'undercut, box ce tour-ci », gain écrit) ; sinon dit comme une possibilité, comme avant.
   if du.undercut and not t.wasUndercut then
-   local gain=du.undercutGap or 0
-   if cfg.strategyTalk and M.stopNow(t,ctx,gain+cfg.tolerance*0.5,0.3) then
-    say(ctx,'box',2,{'undercutGo','boxThisLap',{text=string.format('(+%s s)',U.fixed(gain,1,Say.mark(ctx.say)))}},{ttl=15,tone='motivating'})
-    if ctx.journal then ctx.journal(string.format('stratégie : undercut décidé, box T%d (gain %.1f s)',t.boxLap,gain)) end
+   -- Marge à la ressortie (joueur devant du rival après les deux arrêts), écrite ; gain sur la situation actuelle
+   -- (undercutGain) pour juger le coût toléré de l'arrêt avancé.
+   local margin=du.undercutGap or 0
+   if cfg.strategyTalk and M.stopNow(t,ctx,math.max(0,du.undercutGain or 0)+cfg.tolerance*0.5,0.3) then
+    say(ctx,'box',2,{'undercutGo','boxThisLap',{text=Say.note(ctx.say,'undercutMargin',U.fixed(margin,1,Say.mark(ctx.say)))}},{ttl=15,tone='motivating'})
+    if ctx.journal then ctx.journal(string.format('stratégie : undercut décidé, box T%d (devant de %.1f s après les arrêts, gain %.1f s)',t.boxLap,margin,du.undercutGain or 0)) end
    else say(ctx,'duel',3,{'undercut'},{ttl=15}) end
   end
   if du.overcut and not t.wasOvercut then say(ctx,'duel',3,{cfg.strategyTalk and 'overcutStay' or 'overcut'},{ttl=15}) end
@@ -303,7 +330,7 @@ function M.announce(t,ctx,lapDone)
  end
  -- Plus d'arrêt à faire alors qu'un arrêt était prévu (1.3.0) : dit une fois par course.
  if plan.optimal then t.hadStop=true
- elseif t.hadStop and not t.noMoreSaid and cfg.strategyTalk and cfg.boxCalls and not (me and me.pitlane) then
+ elseif t.hadStop and not t.noMoreSaid and cfg.strategyTalk and cfg.boxCalls and not (me and me.pitlane) and not t.boxLap and not justOut then
   t.noMoreSaid=true; say(ctx,'noMore',4,{'noMoreStops'},{ttl=20})
  end
 end
@@ -327,8 +354,13 @@ function M.boxCalls(t,ctx)
  local d=ctx.link.d
  -- Seul l'arrêt fait maintenant profite de la neutralisation (perte de voie réduite) ; le reste du plan, non.
  local cheap=t.model and t.model.pitLane*(1-cfg.neutralFactor) or 0
- if d and d.neutral and cfg.neutralBox and plan.costs[1] and plan.cost and plan.costs[1]-cheap-plan.cost<=cfg.tolerance and L~=lap and not t.neutralBox and me.spline<0.7 then
-  t.neutralBox=true
+ -- Après « on reste dehors », un arrêt sous la même neutralisation demande un gain net (STAY_SWITCH s) : jamais « on
+ -- reste dehors » puis « box » pour un écart de calcul.
+ if d and d.neutral and cfg.neutralBox and plan.costs[1] and plan.cost and plan.costs[1]-cheap-plan.cost<=cfg.tolerance and L~=lap and not t.neutralBox and me.spline<0.7
+  and (not t.stayOutSaid or plan.cost-(plan.costs[1]-cheap)>=M.STAY_SWITCH) then
+  -- Engagé comme tout « box » (1.3.1) : jamais « box au prochain tour » ensuite dans le même tour, et le plan publié
+  -- pour AdvancedIA passe à ce tour.
+  t.neutralBox=true; t.boxLap=lap; t.boxSaid[lap..'n']=true; t.boxSaid[lap..'t']=true
   -- Stratégie commentée (1.3.0) : pourquoi, et ce que l'arrêt fait gagner sur le plan.
   local gain=plan.cost-(plan.costs[1]-cheap)
   if cfg.strategyTalk then

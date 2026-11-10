@@ -69,4 +69,10 @@ function U.refill(t,fresh,keep)
  for _,k in ipairs(keep or {}) do t[k]=kept[k] end
  return t
 end
+-- Longueur de piste minimale pour les distances (m) : jamais une division par une piste inconnue.
+U.MIN_TRACK=500
+-- Distance sur la piste (m) de b devant a (négative : derrière), par la position sur le tour.
+function U.ahead(a,b,length) return U.wrap(b.spline-a.spline)*length end
+-- Somme des valeurs t[a..b] (absentes : 0).
+function U.sum(t,a,b) local s=0; for k=a,b do s=s+(tonumber(t[k]) or 0) end; return s end
 return U

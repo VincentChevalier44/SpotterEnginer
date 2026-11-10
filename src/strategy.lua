@@ -274,26 +274,46 @@ function M.duel(m,done,a,b,horizon,loss)
  return gap
 end
 -- État de l'undercut / overcut sur la voiture devant (gap > 0 : elle est devant de gap s) et de la menace d'undercut de
--- la voiture derrière. Renvoie {undercut=bool, gain, overcut=bool, threat=bool}.
-function M.duels(m,done,me,ahead,behind,loss,horizon)
+-- la voiture derrière (1.3.1 : trois scénarios cohérents, revue de la 1.3.0). R : tours restants (horizon borné, rien
+-- au-delà de l'arrivée). Arrêt du rival inconnu (pas de plan d'AdvancedIA) : il répond au tour suivant (cas prudent).
+--   undercut : le joueur s'arrête au tour en cours (done+1), le rival à son arrêt (ou done+2) ; marge finale undercutGap
+--             (joueur devant > 0), gain sur la situation actuelle undercutGain ; possible au-delà de DUEL_MARGIN s ;
+--   overcut  : le rival s'arrête d'abord (son arrêt, ou done+1), le joueur au tour suivant ; même seuil ;
+--   menace   : le rival derrière s'arrête au tour en cours, le joueur répond au tour suivant ; menace s'il passe devant.
+-- Même modèle de voiture pour les deux (rythme de base égal) : seuls les pneus et la perte de l'arrêt comptent.
+M.DUEL_MARGIN=1.0
+function M.duels(m,done,me,ahead,behind,loss,horizon,R)
  horizon=horizon or 8
+ local last=R and R>0 and done+R or nil
+ local function cap(h) h=math.min(h,horizon+2); if last then h=math.min(h,last-done) end; return h end
  local out={}
  if ahead and ahead.gap and ahead.gap<6 then
-  local rivalStop=ahead.stop>=0 and ahead.stop or done+horizon
-  local A={gap=-ahead.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=done+1}
-  local B={gap=0,km0F=ahead.km0F,km0R=ahead.km0R,age0=ahead.age0,stop=rivalStop}
-  out.undercutGap=M.duel(m,done,A,B,math.max(rivalStop-done+2,3),loss)
-  out.undercut=out.undercutGap>0.2
-  local A2={gap=-ahead.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=rivalStop+2}
-  local B2={gap=0,km0F=ahead.km0F,km0R=ahead.km0R,age0=ahead.age0,stop=ahead.stop>=0 and ahead.stop or done+1}
-  out.overcutGap=M.duel(m,done,A2,B2,math.max(rivalStop-done+4,4),loss)
-  out.overcut=not out.undercut and out.overcutGap>0.2
+  local rivalStop=ahead.stop>=0 and ahead.stop or done+2
+  if not last or rivalStop<last then
+   local A={gap=-ahead.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=done+1}
+   local B={gap=0,km0F=ahead.km0F,km0R=ahead.km0R,age0=ahead.age0,stop=rivalStop}
+   local h=cap(math.max(rivalStop-done+2,3))
+   if h>=2 then
+    out.undercutGap=M.duel(m,done,A,B,h,loss)
+    out.undercutGain=out.undercutGap+ahead.gap
+    out.undercut=out.undercutGap>M.DUEL_MARGIN
+   end
+  end
+  local first=ahead.stop>=0 and ahead.stop or done+1
+  if not last or first+1<last then
+   local A2={gap=-ahead.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=first+1}
+   local B2={gap=0,km0F=ahead.km0F,km0R=ahead.km0R,age0=ahead.age0,stop=first}
+   local h=cap(math.max(first-done+3,4))
+   if h>=2 then
+    out.overcutGap=M.duel(m,done,A2,B2,h,loss)
+    out.overcut=not out.undercut and out.overcutGap>M.DUEL_MARGIN
+   end
+  end
  end
- if behind and behind.gap and behind.gap<6 then
-  -- Le rival derrière s'arrête au prochain tour, le joueur reste en piste : passe-t-il devant ?
-  local A={gap=behind.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=-1}
+ if behind and behind.gap and behind.gap<6 and (not last or done+2<last) then
+  local A={gap=behind.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=done+2}
   local B={gap=0,km0F=behind.km0F,km0R=behind.km0R,age0=behind.age0,stop=done+1}
-  local g=M.duel(m,done,A,B,4,loss)
+  local g=M.duel(m,done,A,B,cap(4),loss)
   out.threatGap=g
   out.threat=g<0
  end

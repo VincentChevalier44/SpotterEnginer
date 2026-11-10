@@ -13,7 +13,7 @@ C.maxNumber=99
 C.maxTenths=99
 -- Signal d'ouverture de la radio (dossier de l'app).
 C.toneFile='sounds/radio.wav'
--- id = {numéro, fichier FR, texte FR, fichier EN, texte EN}
+-- id = {numéro, fichier FR, texte FR, fichier EN, texte EN} ; numéros 114 et 193 libres (clips retirés, jamais réutilisés).
 local list={
  {'green',1,'01_vert',"Drapeau vert, la piste est claire, on relance.",'01_green',"Green flag, track is clear, push."},
  {'yellow',2,'02_jaune_simple',"Drapeau jaune, lève le pied, interdiction de dépasser.",'02_yellow_single',"Yellow flag, slow down, no overtaking."},
@@ -53,7 +53,7 @@ local list={
  {'drsOff',32,'32_drs_desactive',"DRS désactivé par la direction de course.",'32_drs_disabled',"DRS disabled by race control."},
  {'rain',33,'33_pluie_intense',"La pluie s'intensifie, on prépare les pneus pluie pour le prochain arrêt.",'33_rain_intensifying',"Rain is intensifying, we're getting wet tires ready for the next stop."},
  {'overtake',34,'34_mode_depassement',"Mode dépassement disponible.",'34_overtake_mode',"Overtake mode is available."},
- -- À enregistrer : spotter
+ -- Spotter
  {'fcy',35,'35_fcy','Full course yellow, ralentis et respecte ton delta.','35_fcy','Full course yellow, slow down and keep your delta.'},
  {'carLeft',36,'36_voiture_gauche','Voiture à gauche.','36_car_left','Car left.'},
  {'carRight',37,'37_voiture_droite','Voiture à droite.','37_car_right','Car right.'},
@@ -72,7 +72,7 @@ local list={
  {'rivalPenalty',50,'50_penalite_adversaire','Pénalité pour la voiture','50_rival_penalty','Penalty for the car'},
  {'wordAhead',51,'51_devant','devant.','51_ahead','ahead.'},
  {'wordBehind',52,'52_derriere','derrière.','52_behind','behind.'},
- -- À enregistrer : ingénieur
+ -- Ingénieur
  {'push',53,'53_attaque','Attaque maintenant, c\'est le moment.','53_push_now','Push now, this is the moment.'},
  {'hold',54,'54_garde_position','Garde ta position, gère l\'écart.','54_hold_station','Hold station, manage the gap.'},
  {'liftCoast',55,'55_lift_and_coast','Économise le carburant, lift and coast.','55_lift_and_coast','Save fuel, lift and coast.'},
@@ -279,6 +279,7 @@ C.notes={
  sidesFlipped={FR='Côtés gauche / droite inversés automatiquement (piste de CSP).',EN='Left / right swapped automatically (CSP track position).'},
  perLap={FR='/tour',EN='/lap'},
  coverUndercut={FR="(couvrir l'undercut)",EN='(cover the undercut)'},
+ undercutMargin={FR='(devant de %s s après les arrêts)',EN='(ahead by %s s after the stops)'},
  neutralised={FR='(neutralisation)',EN='(neutralised)'},
  debriefPlaces={FR='(départ P%d → arrivée P%d)',EN='(start P%d → finish P%d)'},
  debriefBest={FR='(meilleur tour %s)',EN='(best lap %s)'},
@@ -336,6 +337,13 @@ C.maxPosition=require('src/bridge_layout').maxCars
 function C.positionFile(n) return string.format('pos/%02d.wav',n) end
 function C.positionText(lang,n) return lang=='FR' and ('Tu es P'..n..'.') or ("You're P"..n..'.') end
 function C.positionSpoken(lang,n) return lang=='FR' and ('Tu es Pé '..n..'.') or ("You're P"..n..'.') end
+-- Clips de sécurité préchargés au lancement et au changement de langue (1.3.1, src/port.lua : radio instantanée) :
+-- côte à côte, drapeaux et neutralisations, départ, box, dangers devant, urgences, virgule des écarts.
+C.hot={'carLeft','carRight','threeWide','clearLeft','clearRight','clear','clear_b','stillThere','incomingLeft','incomingRight',
+ 'clearPassed','yellow','yellow2','red','sc','vsc','fcy','scCall','go','jumpStart','boxThisLap','stoppedAhead','stoppedAhead_b',
+ 'spinAhead','wrongWay','onLeft','onRight','onMiddle','offTrack','passLeft','passRight','tangleAhead','contact','waitTraffic',
+ 'goNow','spunYou','rejoinCareful','deltaNeg','blue','point'}
+for _,id in ipairs(C.hot) do assert(C.clips[id],'clip préchargé inconnu : '..id) end
 -- Nombre de fichiers attendus dans vox (toutes langues) : annonces, nombres, durées, positions.
 function C.fileCount() return (#C.order+C.maxNumber+1+C.maxTenths+1+C.maxPosition)*#C.languages end
 return C

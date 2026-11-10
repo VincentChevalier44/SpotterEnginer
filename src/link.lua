@@ -12,12 +12,11 @@
 -- Sans AdvancedIA connecté, SpotterEnginer ne dit rien et n'affiche que l'état de la liaison.
 local Layout=require('src/bridge_layout')
 local M={}
-M.layout=Layout
 -- Battement attendu au moins toutes les K.stale secondes (temps réel) ; au-delà : arrêté.
 M.stale=2.5
 function M.new(installed,hasBridge,release)
  return {state='waiting',reason='',installed=installed==true,hasBridge=hasBridge==true,release=release or '',
-  lastBeat=0,beatAt=-1,connectedSince=-1,changedAt=0,remoteVersion=0,remoteRelease='',serial=0,d=nil,cars=nil,everConnected=false}
+  lastBeat=0,beatAt=-1,remoteVersion=0,remoteRelease='',d=nil,cars=nil}
 end
 -- hello, data : structures partagées (ou nil si ac.connect a échoué) ; now : horloge réelle (s).
 local function readRelease(h) return h.release end
@@ -50,14 +49,11 @@ function M.step(k,hello,data,now)
  k.state=state; k.reason=reason
  k.d=(state=='connected' or state=='suspended') and data or nil
  k.cars=k.d and data.cars or nil
- if state~=before then k.changedAt=now end
- if state=='connected' then
-  if before~='connected' then k.connectedSince=now end
-  k.everConnected=true
- else k.connectedSince=-1 end
  return state~=before
 end
 function M.connected(k) return k.state=='connected' end
+-- Course neutralisée ou arrêtée (VSC, FCY, SC, drapeau rouge) d'après les données du pont (d : nil sans pont).
+function M.neutralised(d) return d~=nil and (d.neutral or d.red) or false end
 -- Données d'une voiture (indice d'AC), ou nil.
 function M.car(k,index)
  if not k.cars or not index or index<0 or index>=Layout.maxCars then return nil end

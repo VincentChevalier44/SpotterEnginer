@@ -7,6 +7,7 @@ local W=require('src/kit')
 local L=require('src/lang')
 local U=require('src/util')
 local Timing=require('src/timing')
+local Engineer=require('src/engineer')
 local Position=require('src/position')
 local Config=require('src/config')
 local M={}
@@ -96,10 +97,13 @@ local function gapRow(app,f,c,ov,y,label,i,ahead)
  return y+20
 end
 local function who(F,ov,mark,i,g) if i and i>=0 and F.cars[i] then return string.format('%s %s s',F.cars[i].name,U.fixed(g or 0,1,mark)) end return ov.none end
+-- Duel : possible (vert) ou non, avec la marge sur le rival après les arrêts ; « — » sans rival à moins de 6 s, ou trop
+-- près de l'arrivée (rien n'est calculé).
 local function duel(c,ov,mark,y,label,on,gap,x)
  W.text(label,x,y+2,10,c.label,'label')
+ if gap==nil then W.text(ov.none,x+70,y,11,c.group,'mono'); return end
  local col=on and c.ok or c.group
- W.text((on and ov.possible or ov.no)..(gap and (' '..U.gap(gap,1,mark)) or ''),x+70,y,11,col,'mono')
+ W.text((on and ov.possible or ov.no)..' '..U.gap(gap,1,mark),x+70,y,11,col,'mono')
 end
 -- Spotter : côte à côte, écarts devant et derrière, radio du spotter et de la direction de course.
 function M.draw.spotter(app,f,o)
@@ -129,11 +133,15 @@ function M.draw.spotter(app,f,o)
  return h
 end
 -- Ingénieur : carburant, pneus, freins, rythme, radio de l'ingénieur.
-local function tyreColor(t)
+-- Couleur d'un pneu, aux seuils de la radio (1.3.1, réglages Pneus froids / chauds : le cœur, et la surface au-delà de
+-- 1,6 fois le seuil chaud) : bleu froid, orange chaud, rouge très chaud (deux fois le seuil), vert dans la fenêtre.
+local function tyreColor(t,cfg)
  local c=W.colors()
  if t.core<=0 then return c.group end
- local d=t.core-t.opt
- if d<-15 then return c.flagBlue elseif d>20 then return c.danger elseif d>10 then return c.warn end
+ local cold,hot=cfg.tyreCold or 15,cfg.tyreHot or 12
+ local surface=((t.inner or t.core)+(t.mid or t.core)+(t.outer or t.core))/3
+ local over=math.max(t.core-t.opt-hot,surface-t.opt-hot*1.6)
+ if t.core<t.opt-cold then return c.flagBlue elseif over>hot then return c.danger elseif over>0 then return c.warn end
  return c.ok
 end
 function M.draw.engineer(app,f,o)
@@ -145,19 +153,18 @@ function M.draw.engineer(app,f,o)
  local h=t0+2+40+92+44+lines*15+12
  frameBox(app,o,f,h,L.t.roles.engineer,me and string.format('%s %d',ov.lap,me.laps+1) or '')
  local y=t0+2
- -- Carburant
- local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
+ -- Carburant : le calcul de la radio (src/engineer.lua, Engineer.fuelStatus : marge déduite, jusqu'au « box » engagé ou à
+ -- l'arrêt du plan prêt, sinon à l'arrivée).
+ local fs=Engineer.fuelStatus(app.engineer,F,app.cfg)
  W.text(ov.fuel,12,y+2,10,c.label,'label')
  W.text(string.format('%s L',U.fixed(F.me.fuel,1,L.mark())),86,y,14,c.text,'mono')
- if fpl and fpl>0 then
-  local laps=F.me.fuel/fpl
-  W.right(string.format(ov.fuelLaps,U.fixed(laps,1,L.mark())),f.w-14,y,13,c.text,'mono')
-  -- Deuxième ligne : consommation, marge à l'arrêt prévu ou à l'arrivée.
-  W.text(string.format('%s L%s',U.fixed(fpl,2,L.mark()),ov.perLap),86,y+20,11,c.muted,'mono')
-  if plan and plan.ok then
-   local spare=plan.fuelSpare/fpl
-   local col=spare<-0.2 and c.danger or spare<0.5 and c.warn or c.ok
-   W.right(string.format('%s %s %s',spare>=0 and ov.spare or ov.short,U.gap(spare,1,L.mark()),plan.optimal and ov.toStop or ov.toEnd),f.w-14,y+20,11,col,'mono')
+ if fs then
+  W.right(string.format(ov.fuelLaps,U.fixed(fs.laps,1,L.mark())),f.w-14,y,13,c.text,'mono')
+  -- Deuxième ligne : consommation, marge (en tours, marge de sécurité déduite) à l'arrêt ou à l'arrivée.
+  W.text(string.format('%s L%s',U.fixed(fs.fpl,2,L.mark()),ov.perLap),86,y+20,11,c.muted,'mono')
+  if fs.delta then
+   local col=fs.delta<-0.2 and c.danger or fs.delta<0.5 and c.warn or c.ok
+   W.right(string.format('%s %s %s',fs.delta>=0 and ov.spare or ov.short,U.gap(fs.delta,1,L.mark()),fs.toStop and ov.toStop or ov.toEnd),f.w-14,y+20,11,col,'mono')
   end
  end
  y=y+42
@@ -169,7 +176,7 @@ function M.draw.engineer(app,f,o)
   local col=(k-1)%2; local rw=math.floor((k-1)/2)
   local bx=86+col*(bw+6); local by=y+rw*30
   W.rect(bx,by,bw,26,c.block)
-  W.rect(bx,by,3,26,tyreColor(tt))
+  W.rect(bx,by,3,26,tyreColor(tt,app.cfg))
   W.text(string.format('%d°',math.floor(tt.core+0.5)),bx+8,by+5,13,c.text,'mono')
   W.right(string.format('%s km',U.fixed(tt.vkm,1,L.mark())),bx+bw-6,by+7,10,c.muted,'mono')
  end
@@ -181,13 +188,19 @@ function M.draw.engineer(app,f,o)
  else W.text(ov.none,86,y,12,c.group,'mono') end
  y=y+26
  -- Rythme : dernier tour, cible du modèle.
+ -- Rythme : dernier tour (rouge s'il n'était pas normal : invalide, stands, neutralisé), son écart à la cible du modèle
+ -- pour ce tour (vert en avance, orange en retard) ; cible du tour en cours, grise tant que le plan n'est pas prêt.
  local last=me and me.lastMs/1000 or 0
+ local normal=me and Engineer.normalLap(t,me)
  W.text(ov.last,12,y+2,10,c.label,'label')
- W.text(U.lapTime(last,L.mark()),86,y,13,c.text,'mono')
- if t.targetPrev or plan and plan.ok then
-  local target=plan and plan.ok and plan.target or t.targetPrev
-  W.text(ov.target,190,y+2,10,c.label,'label')
-  W.right(U.lapTime(target,L.mark()),f.w-14,y,13,c.cyanText,'mono')
+ W.text(U.lapTime(last,L.mark()),86,y,13,(last>0 and not normal) and c.danger or c.text,'mono')
+ if t.targetPrev and last>0 and normal then
+  local dl=last-t.targetPrev
+  W.text(U.gap(dl,1,L.mark()),158,y+1,12,dl<=0.05 and c.ok or dl<0.5 and c.warn or c.danger,'mono')
+ end
+ if plan and plan.ok and plan.target then
+  W.text(ov.target,214,y+2,10,c.label,'label')
+  W.right(U.lapTime(plan.target,L.mark()),f.w-14,y,13,t.ready and c.cyanText or c.muted,'mono')
  end
  y=y+24
  W.rect(12,y,f.w-24,1,c.rule); y=y+6
@@ -202,6 +215,10 @@ function M.draw.strategy(app,f,o)
  local status=t.status=='measured' and ov.measured or ov.estimated
  local t0=top(app,o)
  if not F.isRace then local h=t0+28; frameBox(app,o,f,h,L.t.home.strategy,''); W.text(ov.noRace,12,t0+2,12,c.muted); return h end
+ local me=F.cars[F.player]
+ -- Stratégie coupée (jamais « apprentissage » sans fin) ; course finie (jamais un plan périmé).
+ local off=not app.cfg.strategyOn and ov.stratOff or me and me.finished and ov.raceDone or nil
+ if off then local h=t0+28; frameBox(app,o,f,h,L.t.home.strategy,''); W.text(off,12,t0+2,13,c.muted); return h end
  if not plan or not plan.ok then
   local h=t0+28
   frameBox(app,o,f,h,L.t.home.strategy,status)
@@ -211,13 +228,25 @@ function M.draw.strategy(app,f,o)
  local h=t0+284
  frameBox(app,o,f,h,L.t.home.strategy,status)
  local y=t0+2
- -- Fenêtre et tour optimal.
- if plan.optimal then
+ -- Arrêt engagé (1.3.1) : « BOX CE TOUR » / « BOX AU PROCHAIN TOUR » en grand, le tour du « box » dit à la radio et
+ -- publié pour AdvancedIA (jamais l'optimum recalculé à côté) ; voie fermée ; sinon fenêtre et tour d'arrêt.
+ local d=app.link and app.link.d
+ local lap=me and me.laps+1 or 0
+ local L0=t.boxLap or plan.optimal
+ local banner=nil
+ if d and d.pitsClosed and L0 then banner={ov.pitsClosed,c.warn}
+ elseif t.ready and (t.neutralBox or t.boxLap and t.boxLap==lap) then banner={ov.boxThis,c.danger}
+ elseif t.ready and t.boxLap and t.boxLap==lap+1 then banner={ov.boxNext,c.warn} end
+ if banner then
+  W.rect(10,y-2,f.w-20,30,c.block)
+  local tw=W.width(banner[1],22,'display')
+  W.text(banner[1],(f.w-tw)/2,y,22,banner[2],'display')
+ elseif L0 then
   W.text(ov.window,12,y+6,11,c.label,'label')
   W.text(U.lapRange(plan.window[1],plan.window[2]),86,y,22,c.text,'display')
   W.text(ov.optimal,230,y+6,11,c.label,'label')
-  -- Tour optimal grisé tant que le plan n'est pas prêt (estimations des premiers tours, jamais annoncé).
-  W.right(string.format('T%d',plan.optimal),f.w-14,y-2,26,t.ready and c.cyan or c.muted,'display')
+  -- Tour d'arrêt grisé tant que le plan n'est pas prêt (estimations des premiers tours, jamais annoncé).
+  W.right(string.format('T%d',L0),f.w-14,y-2,26,t.ready and c.cyan or c.muted,'display')
  else W.text(ov.noStop,12,y+2,16,c.ok,'cond') end
  y=y+34
  local lapsLeft=plan.total-plan.done
@@ -229,7 +258,8 @@ function M.draw.strategy(app,f,o)
  -- Dégradation et adhérence : maintenant et au tour d'arrêt.
  local mark=L.mark()
  W.text(ov.deg,12,y+2,10,c.label,'label')
- W.text(string.format('%s → %s s%s',U.fixed(plan.degNow or 0,2,mark),U.fixed(plan.degAtStop or 0,2,mark),ov.perLap),110,y,12,c.text,'mono')
+ -- Perte au tour sur des pneus neufs, maintenant et au tour d'arrêt (pas un rythme de dégradation par tour).
+ W.text(string.format('+%s → +%s s %s',U.fixed(plan.degNow or 0,2,mark),U.fixed(plan.degAtStop or 0,2,mark),ov.vsNew),110,y,12,c.text,'mono')
  y=y+18
  if plan.gripNow then
   W.text(ov.grip,12,y+2,10,c.label,'label')
@@ -238,8 +268,11 @@ function M.draw.strategy(app,f,o)
  y=y+18
  W.text(ov.pitLoss,12,y+2,10,c.label,'label')
  W.text(string.format('%s s',U.fixed(t.loss or 0,1,mark)),110,y,12,c.text,'mono')
- W.text(ov.fuel,200,y+2,10,c.label,'label')
- W.right(string.format('%s L',U.gap(plan.fuelSpare or 0,1,mark)),f.w-14,y,12,(plan.fuelSpare or 0)<0 and c.danger or c.text,'mono')
+ local fs=Engineer.fuelStatus(app.engineer,F,app.cfg)
+ if fs and fs.delta then
+  W.text(ov.fuel,200,y+2,10,c.label,'label')
+  W.right(string.format('%s %s',U.gap(fs.delta,1,mark),ov.laps),f.w-14,y,12,fs.delta<-0.2 and c.danger or fs.delta<0.5 and c.warn or c.text,'mono')
+ end
  y=y+20
  -- Ressortie prévue au tour optimal.
  local r=t.rejoin

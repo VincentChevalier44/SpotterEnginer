@@ -67,7 +67,7 @@ function T.variants_follow_tone_and_never_repeat()
  s.vary=true; v.repeatGap=180
  Say.say(s,'engineer','hold',5,{'hold'},1,{ttl=30,tone='calm'})
  Voice.step(v,1); check(v.current and v.current.key=='hold','first hold said')
- v.current=nil; v.handle=nil
+ Voice.step(v,1.1); check(not v.current and v.done.hold,'heard once said to the end')
  Say.say(s,'engineer','hold2',5,{'hold'},30,{ttl=30,tone='calm'})
  v.infoAt=-1e9; v.endAt=-1e9
  Voice.step(v,30)
@@ -123,7 +123,7 @@ function T.car_coming_alongside()
   local ctx,v=scene({{x=2.6,z=-15,spline=0.5-15/4000,kmh=kmh}},{laps=laps,state='waiting'})
   ctx.cfg.sideBySide=true; ctx.cfg.gaps=false
   local s=Spotter.new()
-  at(ctx,1); Spotter.step(s,ctx)
+  for k=0,5 do at(ctx,1+k*0.1); Spotter.step(s,ctx) end
   return queued(v,'side:incoming')
  end
  local q=run(230,3)
@@ -223,6 +223,8 @@ end
 function T.spin_guided_rejoin()
  local ctx,v=scene({{spline=0.5-150/4000,kmh=200}},{kmh=5,me={spin=true,incident=true}})
  local em=Emergency.new()
+ -- Le joueur roulait (jamais un arrêt jugé avant d'avoir roulé, 1.3.1).
+ em.moved=true
  at(ctx,1); Emergency.step(em,ctx,0.1)
  local q=queued(v,'stranded'); check(q and q.prio==1 and q.text:find('Reste sur les freins',1,true),'spin, cars coming: '..tostring(q and q.text))
  v.queue={}
@@ -231,7 +233,8 @@ function T.spin_guided_rejoin()
  for k=1,15 do at(ctx,1+k*0.1); Emergency.step(em,ctx,0.1) end
  local g=queued(v,'stranded'); check(g and g.text:find('libre, vas-y',1,true),'go now once clear: '..tostring(g and g.text))
  local c2,v2=scene({{spline=0.9,kmh=200}},{kmh=5,me={spin=true,incident=true}})
- at(c2,1); Emergency.step(Emergency.new(),c2,0.1)
+ local e2=Emergency.new(); e2.moved=true
+ at(c2,1); Emergency.step(e2,c2,0.1)
  local q2=queued(v2,'stranded'); check(q2 and q2.text:find('repars quand',1,true),'spin, nobody coming: '..tostring(q2 and q2.text))
  local c3,v3=scene({{spline=0.49,kmh=0}},{kmh=0,d={neutral=false,red=false,standing='grid'}})
  local e3=Emergency.new()
@@ -300,7 +303,7 @@ function T.undercut_decided_and_published()
   return t,v,Strategist.pitplan(t,ctx,true)
  end
  local t,v,plan=run({8,12},true)
- local q=queued(v,'box'); check(q and q.text:find("On tente l'undercut",1,true) and q.text:find('Box, box, ce tour-ci',1,true) and q.text:find('+1,2 s',1,true),'undercut decided: '..tostring(q and q.text))
+ local q=queued(v,'box'); check(q and q.text:find("On tente l'undercut",1,true) and q.text:find('Box, box, ce tour-ci',1,true) and q.text:find('devant de 1,2 s',1,true),'undercut decided: '..tostring(q and q.text))
  check(t.boxLap==10 and plan:find('state=boxnow',1,true) and plan:find('lap=10',1,true),'box committed and published: '..plan)
  local t2,v2=run({11,14},true)
  check(not t2.boxLap and queued(v2,'duel') and queued(v2,'duel').text:find('Undercut possible',1,true),'outside the window: only possible')
@@ -321,5 +324,110 @@ function T.neutral_box_with_gain_or_stay_out()
  t2.ready=true; t2.model={pitLane=22}; t2.plan={ok=true,optimal=15,window={8,20},costs={[1]=130},cost=100,stops=1}
  Strategist.boxCalls(t2,c2); Strategist.boxCalls(t2,c2)
  check(count(v2,'stayOut')==1 and not queued(v2,'boxNeutral'),'not worth it: stay out, once')
+end
+-- Faux « gros choc » au freinage (1.3.0 en jeu le 10/11/2026 : cinq fois en 90 s, 43 à 47 km/h perdus, aucun dégât) :
+-- vibreur ou fond plat qui touche (collidedWith 0) pendant un gros freinage. La perte attendue du freinage en cours ne
+-- compte pas ; contre un mur sans dégâts, pas de choc pédale enfoncée. Un contact avec une voiture au freinage, avec une
+-- vraie perte en plus, reste annoncé ; un vrai choc contre un mur (dégâts) aussi.
+function T.braking_on_a_kerb_is_not_a_hit()
+ local function brakeRun(opts)
+  local ctx,v=scene(opts.cars or {})
+  local em=Emergency.new()
+  local me=ctx.F.cars[0]
+  local t,kmh=0,250
+  ctx.F.me.brake=1
+  -- Deux secondes de freinage à 110 km/h par seconde.
+  while t<2 do t=t+1/60; kmh=kmh-110/60; me.kmh=kmh; at(ctx,t); Emergency.step(em,ctx,1/60); Voice.step(v,t) end
+  ctx.F.me.hit=opts.hit
+  local tEnd=t+0.5
+  while t<tEnd do t=t+1/60; kmh=kmh-(110+(opts.extra or 0)*2.5)/60; me.kmh=kmh; if opts.damage then ctx.F.me.damage[1]=opts.damage end; at(ctx,t); Emergency.step(em,ctx,1/60); Voice.step(v,t) end
+  ctx.F.me.hit=-1
+  while t<tEnd+4 do t=t+1/60; at(ctx,t); Emergency.step(em,ctx,1/60); Voice.step(v,t) end
+  local said={}
+  for _,q in ipairs(v.log) do said[#said+1]=q.key..':'..q.text end
+  for _,q in ipairs(v.queue) do said[#said+1]=q.key..':'..q.text end
+  return table.concat(said,' | ')
+ end
+ local s1=brakeRun({hit=0})
+ check(s1=='','kerb under braking, no damage: silent ('..s1..')')
+ local s2=brakeRun({hit=0,extra=40})
+ check(s2=='','pedal down, no damage, even with a larger loss: silent ('..s2..')')
+ local s3=brakeRun({hit=0,damage=40})
+ check(s3:find('Gros choc',1,true) and s3:find('Dégâts moyens',1,true),'real hit with damage: called ('..s3..')')
+ local s4=brakeRun({hit=2,cars={{spline=0.501,kmh=150}},extra=2})
+ check(s4=='','touch with a car under braking, 1 km/h more: silent ('..s4..')')
+ local s5=brakeRun({hit=2,cars={{spline=0.501,kmh=150}},extra=20})
+ check(s5:find('Contact',1,true),'car contact costing 8 km/h more than the braking: called ('..s5..')')
+end
+-- Réalités du pont 1.58 (revue 1.3.1) : onTrack d'AdvancedIA faux hors incident, spin toujours faux. Sortie des stands
+-- avec une voiture derrière : jamais « attention en reprenant la piste » ; voiture arrêtée en pleine piste avant
+-- l'incident d'AdvancedIA : jamais « hors de la piste » ; tête-à-queue du joueur vu par sa vitesse de lacet.
+function T.bridge_realities_no_false_alarm()
+ local ctx,v=scene({{spline=0.5-60/4000,kmh=200}},{kmh=80,me={onTrack=false,incident=false}})
+ local em=Emergency.new()
+ ctx.F.cars[0].pitlane=true
+ for k=1,10 do at(ctx,k*0.1); Emergency.step(em,ctx,0.1) end
+ ctx.F.cars[0].pitlane=false
+ for k=11,60 do at(ctx,k*0.1); ctx.F.cars[0].kmh=60+k; Emergency.step(em,ctx,0.1) end
+ check(not queued(v,'rejoin'),'pit exit with a car behind, onTrack false outside an incident: silent')
+ local c2,v2=scene({{spline=0.5+300/4000,kmh=0,lc={incident=false,onTrack=false}}},{lateral=function() return 0 end})
+ at(c2,1); Hazards.step(Hazards.new(),c2)
+ local q=queued(v2,'hazard'); check(q and q.prio==1 and not q.text:find('Hors de la piste',1,true),'stopped car before the incident: on the line, priority 1: '..tostring(q and q.text))
+ local c3,v3=scene({{spline=0.5-150/4000,kmh=200}},{kmh=60,me={spin=false,incident=false}})
+ local e3=Emergency.new(); e3.moved=true
+ c3.F.me.yaw=3.0
+ for k=1,5 do at(c3,1+k*0.1); Emergency.step(e3,c3,0.1) end
+ local s3=queued(v3,'stranded'); check(s3 and s3.text:find('Tête-à-queue',1,true),'spin seen by the yaw rate: '..tostring(s3 and s3.text))
+ local c4,v4=scene({},{kmh=40,me={spin=false,incident=false}})
+ local e4=Emergency.new(); e4.moved=true
+ c4.F.me.yaw=0.9
+ for k=1,20 do at(c4,1+k*0.1); Emergency.step(e4,c4,0.1) end
+ check(not queued(v4,'stranded'),'tight hairpin (0.9 rad/s): no spin')
+end
+-- Revue 1.3.1 (lancée sur les vrais modules) : sous SC, « box ce tour-ci » puis « box au prochain tour » dans le même
+-- tour, et le plan publié sur le tour suivant ; « undercut possible » dans la voie des stands, sous SC, sans arrêt prévu.
+function T.neutral_box_committed_and_duels_gated()
+ local ctx,v=scene({},{laps=9,d={neutral=true,neutralFor=8,red=false,standing='none',pitsClosed=false}})
+ local me=ctx.F.cars[0]; me.spline=0.3
+ local t=Strategist.new()
+ t.ready=true; t.model={pitLane=22}; t.plan={ok=true,optimal=11,window={8,14},costs={[1]=101},cost=100,stops=1}
+ Strategist.boxCalls(t,ctx)
+ check(queued(v,'boxNeutral'),'neutral box said')
+ me.spline=0.65; Strategist.boxCalls(t,ctx)
+ local n=0; for _,q in ipairs(v.queue) do if q.key=='box' then n=n+1 end end
+ check(n==0,'no "box next lap" after the neutral box')
+ local s=Strategist.pitplan(t,ctx,true)
+ check(s:find('lap=10;',1,true) and s:find('state=boxnow',1,true),'pit plan on the current lap: '..s)
+ -- Duels : jamais dans la voie, sous neutralisation, ni sans arrêt prévu proche.
+ local function duelSaid(setup)
+  local c2,v2=scene({},{laps=9})
+  local t2=Strategist.new()
+  t2.ready=true; t2.plan={ok=true,optimal=11,window={8,14},costs={[1]=110},cost=100,stops=1}
+  t2.duel={undercut=true,undercutGap=2,undercutGain=3}
+  setup(c2,t2)
+  Strategist.announce(t2,c2,true)
+  return queued(v2,'duel') or queued(v2,'box')
+ end
+ check(duelSaid(function() end),'duel said near the stop')
+ check(not duelSaid(function(c) c.F.cars[0].pitlane=true end),'pit lane: no duel')
+ check(not duelSaid(function(c) c.link.d.neutral=true end),'neutralisation: no duel')
+ check(not duelSaid(function(c,t2) t2.plan.optimal=nil end),'no stop planned: no duel')
+ check(not duelSaid(function(c,t2) t2.plan.optimal=20 end),'stop far away: no duel')
+end
+-- Erreur d'une IA pendant l'arrêt du joueur : jamais dite comme nouvelle à la sortie de la voie (revue 1.3.1).
+function T.ai_mistake_during_stop_not_said_later()
+ local ctx,v=scene({{spline=0.5+200/4000,kmh=150,lc={mistakeId=1}}},{state='waiting'})
+ ctx.cfg.sideBySide=false; ctx.cfg.gaps=false; ctx.cfg.rivalPenalties=false
+ local s=Spotter.new()
+ at(ctx,1); Spotter.step(s,ctx)
+ ctx.F.cars[0].pitlane=true; ctx.F.cars[0].kmh=60
+ ctx.link.cars[1].mistakeId=2
+ at(ctx,2); Spotter.step(s,ctx)
+ ctx.F.cars[0].pitlane=false; ctx.F.cars[0].kmh=150
+ at(ctx,3); Spotter.step(s,ctx)
+ check(not queued(v,'mistake'),'mistake made during the stop: silent at the exit')
+ ctx.link.cars[1].mistakeId=3
+ at(ctx,4); Spotter.step(s,ctx)
+ check(queued(v,'mistake'),'a new mistake ahead is said')
 end
 return T

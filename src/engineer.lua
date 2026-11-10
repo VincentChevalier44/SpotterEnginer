@@ -9,6 +9,7 @@ local Position=require('src/position')
 local Debrief=require('src/debrief')
 local Voice=require('src/voice')
 local Emergency=require('src/emergency')
+local Link=require('src/link')
 local M={}
 local GAP,PACE=Position.GAP,Position.PACE
 -- Annonce de position : validité dans la file, délai minimal entre deux (s).
@@ -25,21 +26,22 @@ function M.reset(e)
  U.refill(e,M.new())
  e.strategist.car=car
 end
-local function say(ctx,key,prio,parts,opts) return Say.say(ctx.say,'engineer',key,prio,parts,ctx.real,opts) end
+local say=Say.as('engineer')
 -- Position à la ligne (« Tu es P5 »), quand elle a changé depuis la dernière entendue : une seule transmission par
 -- ligne, fusionnée avec la consigne (attaque, défends, garde ta position…) ou suivie d'un conseil tiré de la course
 -- (voiture devant rattrapable avant l'arrivée, pneus à ménager). Jamais avant la fin du tour 2 (départ), dans la voie
 -- des stands, sous neutralisation, course finie, ni au dernier tour quand le spotter la dit avec « Dernier tour ! ».
--- Une annonce mise en file mais jamais entendue (périmée, retirée) n'est pas comptée : redite à la ligne suivante.
+-- Une annonce mise en file mais jamais entendue (périmée, retirée, coupée tout de suite) n'est pas comptée : redite à la
+-- ligne suivante (entendue : dite jusqu'au bout, src/voice.lua v.done).
 local function positionDue(e,ctx,me)
  local F=ctx.F; local d=ctx.link.d; local v=ctx.say.voice
  if e.posQueuedAt and v then
-  local heard=v.started.position
+  local heard=v.done.position
   if heard and heard>=e.posQueuedAt then e.posQueuedAt=nil
   elseif not Voice.pending(v,'position') and not (v.current and v.current.key=='position') then e.posSaid=e.posBefore; e.posQueuedAt=nil end
  end
  if not ctx.cfg.positionCalls or me.laps<2 or me.pitlane or Position.finished(d) then return false end
- if d and (d.neutral or d.red) then return false end
+ if Link.neutralised(d) then return false end
  local pos=tonumber(me.position) or 0
  if pos<=0 or pos==e.posSaid then return false end
  return not (Position.lastLap(F,me,d,e.strategist.plan) and Position.spotterSaysLastLap(ctx.cfg))
@@ -61,19 +63,9 @@ end
 -- calme »). Une place prise ou perdue à un arrêt ou à un abandon n'est pas dite ici (la ligne la dira). En course à partir
 -- du tour 2, hors voie des stands et neutralisation ; même clé et même délai que l'annonce à la ligne (jamais les deux).
 local LIVE_POS=2.5
-M.LIVE_POS=LIVE_POS
--- Une voiture passée devant le joueur en piste depuis ahead (ensemble des voitures devant), sans arrêt entre-temps.
-local function passedBy(F,me,ahead,pitted)
- local pos=tonumber(me.position) or 0
- for i=0,F.count-1 do
-  local c=F.cars[i]
-  if i~=F.player and c.valid and c.position>0 and c.position<pos and not ahead[i] and not pitted[i] and not c.retired and not c.pitlane then return true end
- end
- return false
-end
 local function livePosition(e,ctx,me)
  local F=ctx.F; local d=ctx.link.d; local cfg=ctx.cfg
- if not F.isRace or not cfg.positionCalls or not cfg.positionLive or me.laps<2 or me.pitlane or me.finished or d and (d.neutral or d.red) then e.livePos=nil; return end
+ if not F.isRace or not cfg.positionCalls or not cfg.positionLive or me.laps<2 or me.pitlane or me.finished or Link.neutralised(d) then e.livePos=nil; return end
  local pos=tonumber(me.position) or 0
  if pos<=0 then return end
  local lp=e.livePos
@@ -82,7 +74,7 @@ local function livePosition(e,ctx,me)
  lp.cand=lp.cand or ctx.now
  if ctx.now-lp.cand<LIVE_POS and ctx.now>=lp.cand then return end
  local gained=pos<lp.pos and Position.overtook(F,me,lp.ahead,e.pitted)
- local lost=pos>lp.pos and passedBy(F,me,lp.ahead,e.pitted)
+ local lost=pos>lp.pos and Position.passedBy(F,me,lp.ahead,e.pitted)
  lp.pos=pos; lp.cand=nil; Position.aheadOf(F,me,lp.ahead)
  if pos==e.posSaid then return end
  if gained then positionCall(e,ctx,me,4,nil,true,'motivating')
@@ -104,15 +96,20 @@ local function pace(e,ctx,lapDone)
  Position.aheadOf(F,me,e.aheadAtLine)
  for k in pairs(e.pitted) do e.pitted[k]=nil end
  local d=ctx.link.d
- if me.laps<2 or e.lastLapPit or me.pitlane or d and (d.neutral or d.red) then
-  -- Tour de sortie des stands : la position seule (« tu ressors P8 »), sans consigne ni « bien joué ».
+ local plan=t.plan
+ if me.laps<2 or e.lastLapPit or me.pitlane or Link.neutralised(d) then
+  -- Tour de sortie des stands : la position seule (« tu ressors P8 »), sans consigne ni « bien joué ». Temps cible
+  -- repris du plan de maintenant (1.3.1 : celui d'avant l'arrêt, pneus usés, donnait « moins 1,5 s » au premier tour
+  -- lancé sur pneus neufs).
+  t.targetPrev=plan and plan.ok and t.ready and plan.target or nil
   if due then positionCall(e,ctx,me,4,nil,false) end
   return
  end
  local last=me.lastMs/1000
- local plan=t.plan
  -- Delta sur le temps cible du modèle (tour précédent) ; pas la ligne où la position est dite (une transmission).
- if cfg.pace and not due and t.targetPrev and last>0 and me.laps%cfg.paceEvery==0 then
+ -- Seulement sur un tour normal (1.3.1) : jamais un tour invalide, passé par les stands, neutralisé ou de sortie
+ -- (« plus 4,9 secondes » après un tête-à-queue).
+ if cfg.pace and not due and t.targetPrev and last>0 and me.laps%cfg.paceEvery==0 and M.normalLap(t,me) then
   local delta=last-t.targetPrev
   if math.abs(delta)>=0.3 and math.abs(delta)<5 then
    say(ctx,'target',5,{'targetDelta',delta>0 and 'plus' or 'minus',{n=math.abs(delta),dec=1,unit='s'}},{ttl=15})
@@ -160,7 +157,8 @@ local function pace(e,ctx,lapDone)
   elseif ga and ga<GAP.chase and mine and pa and pa-mine>PACE.chase then
    if e.attackState~='chase' then
     e.attackState='chase'
-    local per=string.format('(%s s%s)',U.gap(-(pa-mine),1,Say.mark(ctx.say)),Say.note(ctx.say,'perLap'))
+    -- Gain par tour sur la voiture chassée, positif (« +0,3 s/tour », comme « tu reviens »).
+    local per=string.format('(+%s s%s)',U.fixed(pa-mine,1,Say.mark(ctx.say)),Say.note(ctx.say,'perLap'))
     call('attack',4,{'push',{text=per}},{ttl=10,cooldown=240})
    end
   elseif cfg.pace and me.laps%cfg.paceEvery==0 and mine and pa and ga and ga<GAP.compare then
@@ -185,24 +183,44 @@ local function pace(e,ctx,lapDone)
   if positionCall(e,ctx,me,4,advice and {advice} or nil,gained) and advice=='posTyres' then e.posTyresSaid=true end
  end
 end
+-- Dernier tour du joueur normal pour le modèle (src/stratdata.lua) : ni invalide, ni aux stands, ni neutralisé, ni de
+-- sortie.
+function M.normalLap(t,me)
+ local r=t.data.records[#t.data.records]
+ return r~=nil and r.lap==me.laps and not (r.pit or r.neutral or r.invalid or r.out)
+end
+-- Carburant (1.3.1 : un seul calcul pour la radio et les deux overlays, qui affichaient sans la marge et sur le dernier
+-- calcul du plan) : consommation par tour (mesurée, sinon celle d'AC), tours de carburant marge déduite (have), besoin
+-- (target : jusqu'au « box » engagé ou à l'arrêt du plan prêt, sinon jusqu'à l'arrivée), écart (delta, en tours).
+-- nil : rien à juger (pas de consommation, pas de mesure).
+function M.fuelStatus(e,F,cfg)
+ local me=F.cars[F.player]; local t=e.strategist
+ if not me or not me.valid or F.fuelRate==0 then return nil end
+ local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
+ if not fpl or fpl<=0 then return nil end
+ local plan=t.plan
+ local total=plan and plan.total or F.laps
+ local stop=t.ready and plan and plan.ok and (t.boxLap or plan.optimal) or nil
+ local target=stop and stop-me.laps or (total and total>0 and total-me.laps) or nil
+ local have=(F.me.fuel-(cfg.fuelMargin or 0))/fpl
+ return {fpl=fpl,laps=F.me.fuel/fpl,have=have,target=target,delta=target and have-target or nil,toStop=stop~=nil}
+end
 -- Carburant : laps de carburant comparés au besoin (jusqu'à l'arrêt prévu ou l'arrivée), à chaque tour.
 local function fuel(e,ctx,lapDone)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local t=e.strategist
  if not cfg.fuel or not lapDone or not F.isRace or me.laps<1 or e.lastLapPit or me.pitlane then return end
  local d0=ctx.link.d
- if d0 and (d0.neutral or d0.red) then return end
- local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
- if not fpl or fpl<=0 then return end
+ if Link.neutralised(d0) then return end
+ local st=M.fuelStatus(e,F,cfg)
+ if not st or not st.target or st.target<=0 then return end
  local plan=t.plan
  local total=plan and plan.total or F.laps
- if not total or total<=0 then return end
- -- Tour d'arrêt du plan seulement s'il est prêt (premiers tours : estimations, voir Strategist.ready).
- local target=t.ready and plan and plan.ok and plan.optimal and (plan.optimal-me.laps) or (total-me.laps)
- if target<=0 then return end
- local have=(F.me.fuel-(cfg.fuelMargin or 0))/fpl
+ local have,delta=st.have,st.delta
  -- Premiers tours (mesures insuffisantes) : aucune consigne, sauf un manque immédiat (moins de deux tours).
  if not Strategist.dataReady(t) and not t.ready and have>=2 then return end
- local delta=have-target
+ -- Sans arrêt prévu (plan pas prêt, stratégie coupée, plan impossible) et loin du compte : c'est un arrêt qu'il faut,
+ -- pas du lift and coast (1.3.1 : « économise, moins 15 tours » dans une course qui demande un ravitaillement).
+ if not st.toStop and delta<-2 then return end
  -- Hystérésis : en manque sous -0,2 tour, sorti du manque seulement à +0,3 (pas d'alternance en suivant la consigne,
  -- et jamais « plus 0,0 tour »).
  local sign=delta<-0.2 and -1 or delta>=1 and 1 or 0
@@ -217,7 +235,8 @@ local function fuel(e,ctx,lapDone)
  elseif e.fuelSign==-1 and sign>=0 then
   e.fuelShortSaid=nil
   say(ctx,'fuel',4,{'fuelTarget','plus',{n=math.max(0,delta),dec=1},'laps'},{ttl=15})
- elseif me.laps%5==0 then
+ elseif me.laps%5==0 and math.abs(delta)>=0.3 then
+  -- Point régulier : jamais « plus 0 tour » ni « moins 0,1 » sans conseil (marge nulle : rien à dire).
   say(ctx,'fuel',5,{'fuelTarget',delta>=0 and 'plus' or 'minus',{n=math.abs(delta),dec=1},'laps'},{ttl=15})
  end
  if total-me.laps<=3 and delta>=0 and not e.fuelOkSaid and not (plan and plan.optimal) then e.fuelOkSaid=true; say(ctx,'fuelOk',4,{'fuelOk'},{ttl=15}) end
@@ -335,8 +354,9 @@ end
 -- Dégâts : choc enregistré par AC sur une zone de la carrosserie (aéro).
 local function damage(e,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local dmg=F.me.damage
- local sum=0; for k=1,5 do sum=sum+dmg[k] end
+ local sum=U.sum(dmg,1,5)
  -- Contact suivi par les urgences (1.3.0, src/emergency.lua : bilan des dégâts) : pas de « dégâts aéro » en plus.
+ -- Zones 1 à 5 d'AC, comme le bilan des urgences.
  if e.damage and cfg.damage and sum-e.damage>=20 and not Emergency.busy(ctx.emergency,ctx) then say(ctx,'damage',2,{'aeroDamage'},{ttl=10,cooldown=30}) end
  e.damage=sum
 end

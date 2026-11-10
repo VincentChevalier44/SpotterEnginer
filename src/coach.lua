@@ -9,7 +9,6 @@ function M.new()
  local c={seg=-1,segAt=0,minKmh=0,brakeAt=-1,braking=false,lap={},ref={},history={},lastAdvice=-1,laps=0}
  return c
 end
-function M.reset(c) local n=M.new(); for k,v in pairs(n) do c[k]=v end end
 local function segmentOf(spline) return math.floor((spline%1)*M.segments) end
 -- Chaque image : spline, kmh, brake (0..1), now (s), length (m du tour).
 function M.update(c,spline,kmh,brake,now,length)

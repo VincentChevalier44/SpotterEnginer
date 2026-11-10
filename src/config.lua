@@ -140,7 +140,6 @@ for _,tab in ipairs(M.tabs) do
   end
  end
 end
-M.gated=gated
 function M.effective(cfg,eff)
  if not eff then eff=setmetatable({},{__index=cfg,__newindex=function(_,k,v) cfg[k]=v end}) end
  for _,g in ipairs(gated) do for _,k in ipairs(g.keys) do rawset(eff,k,nil) end end

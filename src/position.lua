@@ -59,6 +59,16 @@ function M.overtook(F,me,ahead,pitted)
  end
  return false
 end
+-- Place perdue en piste : une voiture qui n'était pas devant l'est maintenant, sans être passée par la voie des stands
+-- (miroir de M.overtook).
+function M.passedBy(F,me,ahead,pitted)
+ local pos=tonumber(me.position) or 0
+ for i=0,F.count-1 do
+  local c=F.cars[i]
+  if i~=F.player and c.valid and c.position>0 and c.position<pos and not ahead[i] and not pitted[i] and not c.retired and not c.pitlane then return true end
+ end
+ return false
+end
 -- Conseil du dernier tour : voiture juste derrière (défends), voiture devant à portée (donne tout), sinon ramène la
 -- voiture. Les deux proches : la plus proche décide.
 function M.lastLapAdvice(ctx)

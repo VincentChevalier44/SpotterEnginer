@@ -83,7 +83,7 @@ local F=Port.newFrame()
 local installed,hasBridge,release=Port.detect()
 local link=Link.new(installed,hasBridge,release)
 local hello,data,bridgeWhy=Port.bridgeOpen()
-local voice=Voice.new({play=Port.play,playing=Port.playing,stop=Port.stop})
+local voice=Voice.new({play=Port.play,playing=Port.playing,stop=Port.stop,prepare=Port.prepare,start=Port.start})
 local files,present=Port.voiceFiles(appDir..'/vox')
 local chirpPath=appDir..'/'..Catalog.toneFile
 local chirp=nil
@@ -126,6 +126,7 @@ W.setFonts(app.fontDir)
 do local hook=rawget(_G,'SPE_TEST'); if type(hook)=='table' then hook.app=app end end
 
 -- Réglages appliqués à la radio (volumes, rôles, langue, signal radio).
+local warmLang=nil
 local function apply()
  Config.effective(cfg,run)
  voice.volume=cfg.enabled and cfg.volume or 0
@@ -134,6 +135,15 @@ local function apply()
  voice.muted=not cfg.enabled or app.radioMuted==true
  Say.setLanguage(sayer,cfg.language)
  sayer.chirp=cfg.chirp and chirp or nil
+ -- Clips de sécurité de la langue préchargés (radio instantanée, src/port.lua) : au lancement et au changement de
+ -- langue seulement (jamais à chaque réglage déplacé).
+ if warmLang~=sayer.lang then
+  warmLang=sayer.lang
+  local hot={}
+  for _,id in ipairs(Catalog.hot) do local c=Catalog.clips[id]; local rel=sayer.lang..'/'..c[sayer.lang]; if files[rel] then hot[#hot+1]=appDir..'/vox/'..rel end end
+  if chirp then hot[#hot+1]=chirp end
+  Port.warm(hot)
+ end
  -- Formulations variées (1.3.0, src/say.lua : variantes selon le ton).
  sayer.vary=cfg.variety~=false
  voice.infoGap=cfg.infoGap; voice.repeatGap=cfg.repeatGap
@@ -278,7 +288,7 @@ local function duckStep(dt)
  local now=Port.clock()
  -- Radio qui parle ou message en attente : tenu baissé jusqu'à 0,6 s après le dernier (aucune remontée entre deux
  -- messages rapprochés, « à gauche… toujours là… dégagé »).
- if Voice.busy(voice) then duck.busyAt=now end
+ if Voice.busy(voice) or Voice.urgentWaiting(voice) then duck.busyAt=now end
  if cfg.enabled and cfg.duck and now-duck.busyAt<0.6 then want=cfg.duckLevel end
  local step=math.max(0,math.min(0.1,dt or 0))*(want<duck.level and 8 or 2.5)
  if duck.level<want then duck.level=math.min(want,duck.level+step) else duck.level=math.max(want,duck.level-step) end
@@ -286,7 +296,7 @@ local function duckStep(dt)
   if Port.duckCar(F.player,duck.level) then duck.applied=duck.level; duck.car=F.player end
  end
 end
-Port.onRelease(function() Port.duckCar(F.player,1) end)
+Port.onRelease(function() Port.duckCar(F.player,1); Port.journalFlush() end)
 -- Raccourcis (Ctrl+Alt, comme SuperHUD, sans ses touches H et G) : J overlays, K édition en jeu, M radio coupée.
 local previousKeys={}
 local hotkeyActions={
@@ -306,7 +316,9 @@ local ctx={F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=
  trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency}
 -- Journal : état de l'app, tour du joueur, point d'état périodique.
 local lastActive,lapLogged,stateAt=nil,nil,-1e9
-local function lapText(ms) ms=tonumber(ms) or 0; if ms<=0 then return '-' end; local s=ms/1000; return string.format('%d:%06.3f',math.floor(s/60),s%60) end
+local LINK_GRACE=3
+local linkLostAt=nil
+local function lapText(ms) return require('src/util').lapTime((tonumber(ms) or 0)/1000) end
 local function heartbeat(real)
  if real-stateAt<10 then return end
  stateAt=real
@@ -330,7 +342,12 @@ local function step(dt)
  end
  -- AdvancedIA absent, arrêté ou rechargé, ou app coupée : la référence de la direction de course est oubliée (pas
  -- de comparaison avec l'état d'une autre instance au retour). Gardée en pause (suspendu).
- if link.state~='connected' and link.state~='suspended' or not cfg.enabled then spotter.prev=nil end
+ -- Liaison perdue plus de LINK_GRACE s (1.3.1 : un à-coup du jeu de plus de 2,5 s rendait la liaison « perdue » une
+ -- image, coupait la radio et faisait réannoncer la neutralisation en cours) : référence oubliée, radio arrêtée.
+ local linkDown=link.state~='connected' and link.state~='suspended'
+ if linkDown then linkLostAt=linkLostAt or real else linkLostAt=nil end
+ local linkGone=linkDown and real-linkLostAt>LINK_GRACE
+ if linkGone or not cfg.enabled then spotter.prev=nil end
  app.now=F.clock; app.real=real
  -- Nouvelle session, redémarrage de la session (tours du joueur revenus en arrière) ou autre voiture pilotée :
  -- chronométrage, spotter, ingénieur et radio repartent de zéro.
@@ -374,7 +391,7 @@ local function step(dt)
  if active then
   -- Tours sous neutralisation ou passés par la voie des stands : hors du rythme (src/timing.lua).
   local d=link.d
-  local neutral=d and (d.neutral or d.red) or false
+  local neutral=Link.neutralised(d)
   for i=0,F.count-1 do
    local c=F.cars[i]
    Timing.update(timing,i,c.spline,c.laps,F.clock,c.valid,neutral or c.pitlane)
@@ -392,17 +409,27 @@ local function step(dt)
   ctx.now=F.clock; ctx.real=real
   protected(Spotter.finish,spotter,ctx)
   if cfg.engineerOn then protected(Engineer.debrief,engineer,ctx) end
- elseif not Link.connected(link) or not cfg.enabled then
+ elseif linkGone or not cfg.enabled then
   if Voice.busy(voice) or #voice.queue>0 then Voice.stop(voice) end
  end
  -- Plan d'arrêt pour AdvancedIA (contrat v1) : écrit à chaque changement ; le stamp avance chaque seconde de simulation.
  -- Selon les réglages seulement : en pause, le plan reste celui d'avant (AdvancedIA ne repasse pas à ses rappels).
  local pitplan=Strategist.pitplan(engineer.strategist,ctx,cfg.enabled and cfg.engineerOn and cfg.strategyOn)
  if pitplan~=pitplanText then pitplanText=pitplan; Port.store(Strategist.pitplanKey,pitplan) end
- Voice.step(voice,real)
- duckStep(F.dt or 0)
  if dirtyAt and real-dirtyAt>1 then saveNow() end
  hotkeys()
+end
+-- Radio à part (1.3.1) : une erreur ailleurs dans l'image (liaison, chronométrage, stratégie) n'arrête jamais la phrase
+-- en cours ni la suivante, et le son de la voiture revient toujours.
+local journalAt=0
+local function radioStep()
+ Voice.step(voice,Port.clock())
+ Port.warmStep()
+end
+local function duckFrame(dt) duckStep(dt or 0) end
+local function journalStep()
+ local now=Port.clock()
+ if now-journalAt>=1 or now<journalAt then journalAt=now; Port.journalFlush() end
 end
 -- Réglages enregistrés (une seconde après le dernier changement, et avant un redémarrage de mise à jour). Bureaux
 -- enregistrés sous des clés texte (« 1 » à « 4 ») : JSON valide même si certains bureaux n'ont jamais été réglés.
@@ -414,7 +441,10 @@ function saveNow()
 end
 function script.update(dt)
  if protected(step,dt) then bootFrames=bootFrames+1 end
+ protected(radioStep)
+ protected(duckFrame,dt)
  protected(updateTick)
+ protected(journalStep)
 end
 -- Fenêtres : une erreur de dessin ne laisse ni police ni découpe ouverte.
 local function window(fn)

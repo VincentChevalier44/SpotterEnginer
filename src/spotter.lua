@@ -49,11 +49,11 @@ local PIT_NOTICE={pitCompound={'pitCompound',3,18},pitPlanSame={'pitPlanSame',3,
  pitNotCounted={'pitNotCounted',3,30},pitValidated={'pitValidated',4,30},
  restartPlace={'restartPlace',3,20},restartRetake={'restartRetake',2,8,nil,15}}
 function M.new()
- return {prev=nil,cur=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
-  stopped={},mistakes={},rivalState={},exitSpline=nil,exitSamples=0,inLane={},cuts=0,lapValid=true,
+ return {prev=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
+  mistakes={},rivalState={},exitSpline=nil,exitSamples=0,inLane={},cuts=0,lapValid=true,
   stint=false,leftBox=false,autoFlip=false,sideAgree=0,sideDisagree=0,sideAtL=-1e9,sideAtR=-1e9,wasL=false,wasR=false,neutralEndAt=-1e9,greenPending=false,lastLapSaid=false,deltaQueuedAt=nil,proxCfg=nil,proxMe=nil,
   zoneAt=-1e9,zoneGreenAt=-1e9,deltaAbove=nil,penaltyAt=-1e9,blackAt=-1e9,compound=false,wasLane=false,laneCompound=false,planPending=false,planSaid=false,finishSaid=false,finishAt=false,finishStale=false,
-  haz=Hazards.new(),incoming={},incomingAt=-1e9,sideCarL=-1,sideCarR=-1,chaseOn=false,clearBehindAt=-1e9,attackAt=-1e9,
+  haz=Hazards.new(),incoming={},incomingSince={},incomingSeen={},incomingAt=-1e9,sideCarL=-1,sideCarR=-1,chaseOn=false,clearBehindAt=-1e9,
   liveAt=-1e9,inAhead=false,inBehind=false,inAheadCar=-1,inBehindCar=-1}
 end
 -- Changement de séance : tout repart de zéro (référence de la direction de course comprise), sauf ce qui est appris
@@ -64,7 +64,7 @@ local function copy(d,into)
  for k=1,#FIELDS do local f=FIELDS[k]; into[f]=d[f] end
  return into
 end
-local function say(ctx,key,prio,parts,opts) return Say.say(ctx.say,'spotter',key,prio,parts,ctx.real,opts) end
+local say=Say.as('spotter')
 -- Annonces qui n'ont plus de sens à la fin d'une neutralisation ou d'un drapeau rouge.
 local AFTER_NEUTRAL={delta=true,vscEnding=true,scIn=true,neutral=true,boxNeutral=true,red=true,scOut=true}
 local AFTER_ZONE={zone=true}
@@ -78,8 +78,8 @@ local function neutralClip(cur)
  return (cur.neutralMode=='vsc' or cur.neutralMode=='fcy') and cur.neutralMode or nil
 end
 -- Longueur de circuit minimale des calculs de distance (m) : un circuit inconnu (0) ne donne pas de distances nulles.
-local MIN_TRACK=500
-local function sayEngineer(ctx,key,prio,parts,opts) return Say.say(ctx.say,'engineer',key,prio,parts,ctx.real,opts) end
+local MIN_TRACK=U.MIN_TRACK
+local sayEngineer=Say.as('engineer')
 -- Tour d'arrêt du plan de l'ingénieur, si un plan annoncera le « box » (ingénieur, stratégie et appels actifs, plan
 -- prêt : jamais sur les estimations des premiers tours) ; sinon nil, et les rappels d'AdvancedIA restent dits.
 local function plannedLap(ctx)
@@ -319,8 +319,14 @@ local function race(s,ctx)
  end
  if cfg.penaltiesVoice then
   if cur.giveBack>=0 and p.giveBack<0 then say(ctx,'giveBack',1,{'giveBack',{text=name(ctx,cur.giveBack)}},{ttl=8}) end
-  -- Place rendue dans le délai : aucune pénalité décidée entre-temps.
-  if p.giveBack>=0 and cur.giveBack<0 and cur.penaltyId==p.penaltyId then say(ctx,'giveBack',3,{'giveBackDone'},{ttl=5}) end
+  -- Place rendue dans le délai : aucune pénalité décidée entre-temps, et la voiture due vraiment devant le joueur sur la
+  -- piste, à moins de 300 m (1.3.1 : AdvancedIA efface aussi la dette à l'entrée des stands, quand la voiture devient
+  -- dépassable ou sert une pénalité, ou à l'échéance ; « place rendue » y était dit à tort).
+  if p.giveBack>=0 and cur.giveBack<0 and cur.penaltyId==p.penaltyId then
+   local F=ctx.F; local me=F.cars[F.player]; local c=F.cars[p.giveBack]
+   local ahead=me and c and c.valid and not me.pitlane and U.wrap(c.spline-me.spline)*math.max(MIN_TRACK,F.trackLength or 0)
+   if ahead and ahead>0 and ahead<300 then say(ctx,'giveBack',3,{'giveBackDone'},{ttl=5}) end
+  end
   -- penaltyKind : 'slow' ou 'dq' ; le pont v1 ne garde que 3 caractères ('slo') : tout sauf 'dq' est une coupure des gaz.
   -- Coupure des gaz : décidée par AdvancedIA (raison précise), appliquée par la pénalité native d'AC une image plus
   -- tard ; la native seule (pénalité d'AC lui-même) n'est dite que sans décision d'AdvancedIA dans les 10 s.
@@ -446,27 +452,48 @@ M.sideIdle=sideIdle
 -- m, décalée d'une voie, plus rapide de INCOMING.closing km/h au moins, ce côté encore libre, et à côté dans INCOMING.lead s
 -- au moins (sinon « voiture à gauche » suit aussitôt : une seule annonce utile) : « il arrive à gauche ».
 -- Une fois par voiture toutes les INCOMING.again s, et une annonce au plus toutes les INCOMING.gap s ; jamais au premier
--- tour d'une course (peloton serré au départ), ni sous INCOMING.kmh.
-local INCOMING={behind=19,closing=8,again=20,gap=6,kmh=60,lead=0.8}
-M.INCOMING=INCOMING
+-- tour d'une course (peloton serré au départ), ni sous INCOMING.kmh. Position mesurée dans le repère de la bissectrice
+-- des deux caps (1.3.1 : en courbe, une voiture dans les traces du joueur paraissait décalée d'une voie dans son seul
+-- repère), décalage tenu INCOMING.hold s, jamais au freinage (pédale au-delà de INCOMING.brake).
+local INCOMING={behind=19,closing=8,again=20,gap=6,kmh=60,lead=0.8,hold=0.3,brake=0.3}
 function M.incoming(s,ctx,me,p,pc)
  local F=ctx.F
  if me.kmh<INCOMING.kmh or not F.started or F.isRace and me.laps<1 then return end
  local d=ctx.link.d
- if d and (d.neutral or d.red) then return end
+ if Link.neutralised(d) then return end
+ local seen=s.incomingSeen
+ for k in pairs(seen) do seen[k]=nil end
+ if (tonumber(F.me.brake) or 0)>INCOMING.brake then for k in pairs(s.incomingSince) do s.incomingSince[k]=nil end; return end
  for k=1,p.count do
   local it=p.list[k]; local c=F.cars[it.index]
-  local alat=math.abs(it.lat)
-  if c and c.valid and it.long<-(pc.length+0.3) and it.long>-INCOMING.behind and alat>=pc.laneMin and alat<=pc.laneMax and c.kmh-me.kmh>=INCOMING.closing then
-   local left=it.lat>0
-   local soon=(-it.long-(pc.length+0.3))/math.max(0.1,(c.kmh-me.kmh)/3.6)
-   if soon>=INCOMING.lead and not (left and (p.left or p.candL) or not left and (p.right or p.candR)) and ctx.now-(s.incoming[it.index] or -1e9)>INCOMING.again and ctx.real-s.incomingAt>INCOMING.gap then
+  local long,lat=nil,nil
+  if c then long,lat=M.bisector(me,c) end
+  if lat and pc.flip then lat=-lat end
+  local alat=lat and math.abs(lat) or 0
+  if c and c.valid and long and long<-(pc.length+0.3) and long>-INCOMING.behind and alat>=pc.laneMin and alat<=pc.laneMax and c.kmh-me.kmh>=INCOMING.closing then
+   seen[it.index]=true
+   local since=s.incomingSince[it.index] or ctx.now; s.incomingSince[it.index]=since
+   local left=lat>0
+   local soon=(-long-(pc.length+0.3))/math.max(0.1,(c.kmh-me.kmh)/3.6)
+   if ctx.now-since>=INCOMING.hold and soon>=INCOMING.lead and not (left and (p.left or p.candL) or not left and (p.right or p.candR)) and ctx.now-(s.incoming[it.index] or -1e9)>INCOMING.again and ctx.real-s.incomingAt>INCOMING.gap then
     if say(ctx,'side:incoming',2,{left and 'incomingLeft' or 'incomingRight'},{ttl=1.2,once=true,tone='urgent'}) then
      s.incoming[it.index]=ctx.now; s.incomingAt=ctx.real
     end
    end
   end
  end
+ for i in pairs(s.incomingSince) do if not seen[i] then s.incomingSince[i]=nil end end
+end
+-- Position d'une voiture dans le repère de la bissectrice des caps du joueur et de la voiture (avant +, gauche +) : la
+-- corde entre deux points d'un virage est parallèle à la tangente moyenne, la courbure ne crée aucun faux décalage.
+function M.bisector(me,c)
+ local lx,lz=(me.lookX or 0)+(c.lookX or me.lookX or 0),(me.lookZ or 0)+(c.lookZ or me.lookZ or 0)
+ local n=math.sqrt(lx*lx+lz*lz)
+ if n<1e-6 or not c.x then return nil,nil end
+ lx,lz=lx/n,lz/n
+ local sx,sz=lz,-lx
+ local dx,dz=c.x-me.x,c.z-me.z
+ return dx*lx+dz*lz,dx*sx+dz*sz
 end
 -- Position longitudinale (m, devant +) d'une voiture dans le repère du joueur.
 local function along(me,c)
@@ -493,7 +520,7 @@ local function side(s,ctx)
   pc={}; for k,v in pairs(Proximity.defaults) do pc[k]=v end; s.proxCfg=pc
   s.proxMe={}
  end
- pc.length=me.len or Proximity.defaults.length; pc.width=me.wid or Proximity.defaults.width
+ pc.length=me.len or Proximity.defaults.length
  pc.stillMax=cfg.stillThere and Proximity.defaults.stillMax or 0; pc.flip=(cfg.flipSides==true)~=(s.autoFlip==true)
  local pm=s.proxMe; pm.x=me.x; pm.z=me.z; pm.lookX=me.lookX; pm.lookZ=me.lookZ; pm.kmh=me.kmh
  local events=Proximity.step(s.prox,pm,F.cars,F.count,F.player,ctx.now,pc)
@@ -522,7 +549,7 @@ local function side(s,ctx)
    -- Priorité 2 : « dégagé » coupe une information (redite ensuite), jamais une annonce de sécurité. Dépassement fini
    -- (1.3.0, réglage Anticipation) : la voiture qui était à côté est maintenant derrière, « tu es passé, rabats-toi ».
    local clip=SIDE[e]
-   if cfg.anticipation and M.passed(s,ctx,me,e) then clip='clearPassed' end
+   if cfg.anticipation and e=='clear' and M.passed(s,ctx,me,e) then clip='clearPassed' end
    if ok then say(ctx,'side:'..e,2,{clip},{ttl=1.5,once=true}) end
    if e=='clear' or e=='clearLeft' then s.sideCarL=-1 end
    if e=='clear' or e=='clearRight' then s.sideCarR=-1 end
@@ -538,7 +565,7 @@ end
 -- Écarts devant / derrière (voitures voisines au classement, src/position.lua), à la fin d'un tour sur gapEvery.
 local function gaps(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]; local cfg=ctx.cfg
- if not F.isRace or not me or not me.valid or me.laps<1 or me.laps==s.gapLap then return end
+ if not F.isRace or not me or not me.valid or me.laps<1 or me.laps==s.gapLap or me.finished then return end
  s.gapLap=me.laps
  if me.laps%cfg.gapEvery~=0 or me.pitlane then return end
  local d=ctx.link.d
@@ -586,7 +613,6 @@ end
 -- derrière : « rien derrière, tu peux tenter » (une fois par attaque, au plus toutes les LIVE.again s) ; déjà vrai quand la
 -- voiture devant entre dans la seconde : une seule transmission (« tu es dans la seconde… rien derrière… »).
 local LIVE={every=0.5,inside=1.0,out=1.4,attack=0.6,attackOut=1.0,free=1.5,again=90,line=0.06}
-M.LIVE=LIVE
 local function live(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]; local cfg=ctx.cfg
  if not F.isRace or not me or not me.valid or me.laps<2 or me.pitlane or me.finished then return end
@@ -595,11 +621,18 @@ local function live(s,ctx)
  -- Près de la ligne : les écarts du tour y sont dits (gaps), jamais retardés par un écart en direct.
  if me.spline<LIVE.line or me.spline>1-LIVE.line then return end
  local d=ctx.link.d
- if d and (d.neutral or d.red) then return end
+ -- Neutralisation : la file se reforme, rien n'est dit, et rien n'est rattrapé à la relance (écarts tenus pour déjà
+ -- dits jusqu'à ce qu'ils repassent au-dessus de LIVE.out). Jaune local, dépassement interdit, relance : rien non plus
+ -- (« tu peux tenter » contredirait AdvancedIA).
+ if Link.neutralised(d) then s.inAhead=true; s.inBehind=true; s.chaseOn=true; return end
+ if d and (d.zone or d.noPass or d.panelNoPass or d.playerRestart or d.relaunch) then return end
  local ahead,behind=Position.neighbours(F,me)
  local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now) or nil
  local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now) or nil
- local free=not gb or gb>LIVE.free
+ -- Personne derrière : sur les écarts relevés sur la piste (toute voiture, même d'un autre tour) ; une voiture classée
+ -- derrière dont l'écart n'est pas connu ne laisse pas « libre ».
+ local free=not (behind and not gb) and (not gb or gb>LIVE.free)
+ if free then for _,h in pairs(s.closing) do if #h>0 and h[#h].g<LIVE.free then free=false; break end end end
  local attack=cfg.anticipation and free and ctx.now-s.clearBehindAt>LIVE.again
  if cfg.gaps and cfg.gapEvents then
   if ahead~=s.inAheadCar or not ga or ga>LIVE.out then s.inAhead=false; s.inAheadCar=ahead end
@@ -670,50 +703,56 @@ local function sampleAll(s,ctx)
  local length=math.max(MIN_TRACK,F.trackLength)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  local ahead=i~=F.player and c and c.valid and not c.pitlane and U.wrap(c.spline-me.spline)*length
+  local ahead=i~=F.player and c and c.valid and not c.pitlane and U.ahead(me,c,length)
   if ahead and ahead<0 and ahead>-CLOSE.range then sampleGap(s,ctx,i) else s.closing[i]=nil end
  end
 end
 -- Trafic : retardataires devant, trafic plus rapide derrière, voiture arrêtée ou en difficulté devant.
 local function traffic(s,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local t=ctx.timing
- if not me or not me.valid or me.pitlane or me.kmh<30 then return end
+ if not me or not me.valid or me.pitlane or me.kmh<30 then
+  -- Joueur aux stands ou au pas : compteurs d'erreur des IA tenus à jour (jamais une erreur faite pendant l'arrêt dite à
+  -- la sortie comme nouvelle).
+  for i=0,F.count-1 do local lc=Link.car(ctx.link,i); s.mistakes[i]=lc and lc.mistakeId end
+  return
+ end
  local mine=Timing.car(t,F.player)
  local d=ctx.link.d
  local length=math.max(MIN_TRACK,F.trackLength)
+ -- Neutralisation, drapeau rouge, relance : ni retardataire ni trafic plus rapide (la file roule ensemble).
+ local held=d and (d.neutral or d.red or d.relaunch)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  if i~=F.player and c.valid and not c.pitlane then
+  local lc=Link.car(ctx.link,i)
+  -- Erreur de pilotage d'une IA : compteur relu pour toutes les voitures à chaque image ; dite seulement si elle change
+  -- entre 40 et 400 m devant (jamais une erreur faite plus loin, ou pendant un arrêt du joueur, dite plus tard).
+  local mistake=lc and lc.mistakeId
+  local lastMistake=s.mistakes[i]; s.mistakes[i]=mistake
+  -- Voiture de sécurité d'AdvancedIA (une voiture d'AC classée dernière) : jamais un retardataire ni un trafic.
+  if i~=F.player and c.valid and not c.pitlane and not (lc and lc.safety) then
    local tc=Timing.car(t,i)
-   local ahead=U.wrap(c.spline-me.spline)*length
+   local ahead=U.ahead(me,c,length)
+   if cfg.hazards and mistake and lastMistake~=nil and mistake~=lastMistake and ahead>40 and ahead<400 and not held then
+    say(ctx,'mistake',2,{'aiMistake'},{ttl=3,cooldown=10})
+   end
    -- Retardataire : devant sur la piste, à moins de 2,5 s, au moins un demi-tour derrière et classée derrière.
-   if cfg.backmarkers and F.isRace and ahead>0 and ahead<400 and M.lapDown(me,c,mine,tc,true) then
+   if cfg.backmarkers and F.isRace and not held and ahead>0 and ahead<400 and M.lapDown(me,c,mine,tc,true) then
     local g=Timing.trackGap(t,i,F.player,ctx.now)
-    if g and g<2.5 and ctx.now-(s.backmarkers[i] or -1e9)>90 then s.backmarkers[i]=ctx.now; say(ctx,'backmarker',3,{'backmarker'},{ttl=5}) end
+    if g and g<2.5 and ctx.now-(s.backmarkers[i] or -1e9)>90 then s.backmarkers[i]=ctx.now; say(ctx,'backmarker',3,{'backmarker'},{ttl=5,cooldown=20}) end
    end
    -- Trafic plus rapide derrière, à moins de FASTER_GAP s : hors course, voiture qui arrive vraiment (CLOSE ; un tour
    -- lancé d'AdvancedIA en attente est dit à sa place) ; en course, voiture qui prend un tour (plus rapide par nature,
    -- souvent de quelques % seulement), seulement si AdvancedIA ne montre pas déjà le drapeau bleu.
-   if cfg.fasterBehind and ahead<0 and not s.fastPending[i] and ctx.now-(s.faster[i] or -1e9)>60 then
+   -- En course, une voiture qui prend un tour est laissée au drapeau bleu d'AdvancedIA quand il est annoncé (réglage
+   -- Drapeaux bleus) : jamais « garde ta ligne » puis « laisse passer » pour la même voiture.
+   if cfg.fasterBehind and not held and ahead<0 and not s.fastPending[i] and ctx.now-(s.faster[i] or -1e9)>60 then
     local call
     if F.isRace then
      local blue=d and (d.panelDecided=='blue' or d.panelDecided=='nativeBlue')
-     local g=not blue and M.lapDown(me,c,mine,tc,false) and Timing.trackGap(t,F.player,i,ctx.now)
+     local g=not blue and not cfg.blueFlags and M.lapDown(me,c,mine,tc,false) and Timing.trackGap(t,F.player,i,ctx.now)
      call=g and g<FASTER_GAP
     else call=arriving(s,i,FASTER_GAP) end
-    if call then s.faster[i]=ctx.now; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4}) end
-   end
-   if cfg.hazards and ahead>40 and ahead<600 then
-    -- Voiture arrêtée, en tête-à-queue ou à contresens devant : src/hazards.lua (1.3.0, plus tôt, avec son côté).
-    -- Erreur de pilotage d'une IA devant (AdvancedIA) : compteur changé.
-    local lc=Link.car(ctx.link,i)
-    if lc and ahead<400 then
-     local last=s.mistakes[i]
-     if last~=nil and lc.mistakeId~=last then say(ctx,'mistake',2,{'aiMistake'},{ttl=3,cooldown=10}) end
-     s.mistakes[i]=lc.mistakeId
-    end
-   elseif cfg.hazards then
-    local lc=Link.car(ctx.link,i); if lc then s.mistakes[i]=lc.mistakeId end
+    if call then s.faster[i]=ctx.now; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4,cooldown=15}) end
    end
   end
  end
@@ -722,13 +761,16 @@ end
 local function crawl(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]
  if F.isRace or not ctx.cfg.fasterBehind or not me or not me.valid or me.pitlane or me.kmh>=CRAWL.kmh then return end
+ -- Joueur arrêté ou en tête-à-queue suivi par les urgences (« voiture qui arrive, attends ») : pas de « garde ta ligne ».
+ if ctx.cfg.emergencies and ctx.emergency and ctx.emergency.stranded then return end
  local length=math.max(MIN_TRACK,F.trackLength)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  if i~=F.player and c.valid and not c.pitlane and c.kmh>=me.kmh+CRAWL.faster and ctx.now-(s.faster[i] or -1e9)>60 then
-   local ahead=U.wrap(c.spline-me.spline)*length
+  local lc=Link.car(ctx.link,i)
+  if i~=F.player and c.valid and not c.pitlane and not (lc and lc.safety) and c.kmh>=me.kmh+CRAWL.faster and ctx.now-(s.faster[i] or -1e9)>60 then
+   local ahead=U.ahead(me,c,length)
    if ahead<0 and ahead>-CRAWL.range then
-    s.faster[i]=ctx.now; s.fastPending[i]=nil; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4})
+    s.faster[i]=ctx.now; s.fastPending[i]=nil; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4,cooldown=15})
    end
   end
  end
@@ -756,7 +798,10 @@ local function fastCar(s,ctx)
  end
 end
 -- Sortie des stands : position de la sortie apprise (passages voie -> piste de toutes les voitures) ; quand le joueur
--- repart de son emplacement, voitures qui arriveront à la sortie en même temps que lui.
+-- est à moins de EXIT_NEAR m de la sortie après être reparti de son emplacement (1.3.1 : jugé au départ de l'emplacement
+-- à 25 km/h, l'arrivée à la sortie était estimée trois fois trop tard), voitures qui y arriveront en même temps que lui.
+-- Rien sous drapeau rouge ni voie fermée.
+local EXIT_NEAR=150
 local function pitExit(s,ctx)
  local F=ctx.F; local cfg=ctx.cfg
  for i=0,F.count-1 do
@@ -776,14 +821,18 @@ local function pitExit(s,ctx)
  if not me.pitlane then s.leftBox=false; return end
  if me.inPit then s.leftBox=true; return end
  if not s.leftBox or me.kmh<15 or not s.exitSpline then return end
- s.leftBox=false
  local length=math.max(MIN_TRACK,F.trackLength)
  local toExit=U.wrap(s.exitSpline-me.spline); if toExit<0 then toExit=toExit+1 end
- local myEta=toExit*length/math.max(5,math.min(F.pitSpeed,me.kmh+10)/3.6)
+ if toExit*length>EXIT_NEAR then return end
+ s.leftBox=false
+ local d=ctx.link.d
+ if d and (d.red or d.pitsClosed) then return end
+ local myEta=toExit*length/math.max(5,math.max(me.kmh,math.min(F.pitSpeed or 60,60))/3.6)
  local busy=false
  for i=0,F.count-1 do
   local c=F.cars[i]
-  if i~=F.player and c.valid and not c.pitlane and c.kmh>30 then
+  local lc=Link.car(ctx.link,i)
+  if i~=F.player and c.valid and not c.pitlane and c.kmh>30 and not (lc and lc.safety) then
    local dist=U.wrap(s.exitSpline-c.spline); if dist<0 then dist=dist+1 end
    local eta=dist*length/(c.kmh/3.6)
    if eta>myEta-1.5 and eta<myEta+3 then busy=true end

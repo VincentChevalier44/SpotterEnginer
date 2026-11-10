@@ -2,6 +2,55 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.1 — 10 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.
+
+### Fixed: "Big hit! We're checking the damage." on every heavy braking
+- AC reports a contact with the track when the car touches a kerb or scrapes the floor, often under heavy braking. 1.3.0 took the speed lost by the braking itself (43 to 47 km/h in 0.4 s) for an impact, then said "No damage" 3 s later, at every big braking zone.
+- A contact now only counts the speed lost beyond the deceleration you already had just before it. Against a wall without damage, it is never a hit with the brake pedal pressed. A real hit (damage recorded, or a car stopped while you were not braking) is still called, and so is a contact with a car that really costs you speed.
+- The session log now writes each notable contact with the speed lost beyond the braking, the expected loss and the brake pedal.
+
+### Full adversarial review (radio, spotter, engineer, strategy, overlays, code)
+
+**Instant radio**
+- Safety calls (priority 1 and 2) no longer wait for the short gap between two messages, and priority 1 calls start without the opening tone. A transmission that follows the previous one by less than a second has no tone either (*"Car left… still there… clear"* in one go).
+- The next clip of a sentence is prepared while the current one plays and starts the moment it ends. The end of a clip is read from its position in its duration, not only from "still playing". Safety clips are preloaded at launch and on a language change.
+- A side-by-side call (priority 1, of an instant) now cuts another priority 1 call that is not one (a long red-flag message no longer swallows "car left").
+- The radio runs on its own: an error elsewhere in a frame no longer stops the sentence in progress, and the car sound always comes back.
+- A game hitch of a few seconds no longer counts as a lost link: the radio is only stopped, and race control only starts from a new reference, after 3 s without AdvancedIA (it cut the sentence and announced the neutralisation in progress again).
+- The session log is buffered and written once per second, never just before a safety call.
+- A call counts as heard only when said to the end (or after 0.5 s of voice): a position cut at once is said again at the next line. A call that expired without being said no longer uses up its delay. Spotter information (DRS, flash) and a call replayed after an interruption no longer wait 12 s behind another information. The same key already waiting is updated even during its delay.
+
+**No more false alarms**
+- "Careful rejoining, car coming!" after every pit exit: AdvancedIA's "on track" value is only written during an incident, so the player read as off track. It is now read only with an incident.
+- A stopped car mid-track was called "off the track" before AdvancedIA saw the incident, then dropped behind a side call.
+- "Contact between cars ahead" on every AI rub under braking: the braking is now discounted, as for the player in 1.3.1.
+- "Coming up on your left" for a car following in your tracks through a corner: measured along both cars' average heading, held 0.3 s, and never under braking.
+- Pit exit clear or traffic: judged 150 m before the exit at pit-lane speed, instead of at the box at 25 km/h (three times too late); nothing under a red flag or with the pit lane closed.
+- AdvancedIA's safety car is never a backmarker, faster traffic, a hazard or a contact.
+- No backmarker or faster-traffic calls under neutralisation, red flag or restart; a short delay between two such calls (a train of cars no longer gives four calls in 20 s). In a race, a car about to lap you is left to AdvancedIA's blue flag when it is announced (never "hold your line" then "let him by").
+- "You're within a second", "nothing behind, you can have a go": never in a yellow zone, under no-overtaking or at a restart, and nothing caught up all at once at the green. "Nothing behind" now looks at every car measured behind, not only the next one in the classification.
+- "Place given back" only when the car you owed is really ahead of you (AdvancedIA also clears the debt in the pit lane or at the deadline).
+- "You're clear, move over" only when both sides are clear. An AI mistake made further away, or during your stop, is no longer announced later as new. No gaps after the chequered flag.
+- A stop on track is only judged once you have driven above 50 km/h since the start or the pit exit (never at a standing start). A puncture is not called again after a pit-lane pass with the tyre still flat. Off track must last 0.3 s.
+- Your own spin is now seen by the car's yaw rate: AdvancedIA 1.58 always publishes its spin and wrong-way flags as false (reported; fixed in its 1.59).
+
+**A more accurate engineer**
+- Under a safety car, "Let's use the neutralisation. Box, box, this lap" was followed by "Box next lap" in the same lap, and the pit plan published for AdvancedIA pointed to the next lap. The neutral box is now committed like any other.
+- Undercut, overcut and threat are never said in the pit lane, under neutralisation, with a box committed, without a planned stop or with the stop more than 4 laps away. The duel model is consistent: an unknown rival answers the next lap; undercut and overcut need a real margin of 1 s; the threat compares the rival stopping now with you answering the next lap; the horizon stops at the finish. The written figure is now the margin after the stops, not a "gain".
+- The target delta after a stop is compared to the new target (it said "minus 1.5 s" on fresh tyres), and only on normal laps (never "plus 4.9 s" after a spin).
+- Fuel: no "lift and coast, minus 15 laps" when a refuelling stop is needed but not planned; no "plus 0 laps" point. Timed race: the extra lap still counts once the clock has run out.
+- The window is not announced in the 10 s after a pit exit, nor repeated within 90 s unless the stop moves earlier; a one-lap window says the stop lap only. "No more stops" is never said with a box committed. After "stay out" under a neutralisation, a box needs a clear gain (3 s). The chase pace reads "+0.3 s/lap".
+
+**Overlays**
+- Engineer: the fuel margin is the radio's own figure (safety margin included, to the committed box or the planned stop); tyre colours use the radio's thresholds (core and surface); the last lap shows its delta to the target, in red when the lap was not normal; the target is grey until the plan is ready.
+- Strategy: a large **BOX THIS LAP** / **BOX NEXT LAP** banner, or **PIT LANE CLOSED**; the stop lap shown is the committed one; fuel in laps, as on the radio; degradation labelled "vs new"; duels show "—" with no rival close enough; **Strategy off** and **Race finished** instead of a stale plan.
+
+**Code**
+- Duplicates merged: one helper per role to speak (`Say.as`), one track-distance helper (`U.ahead`), one neutralisation test (`Link.neutralised`), shared sum, lap time and `callable`; the lost-place check moved next to the gained-place one.
+- Dead code removed (unused exports, state, reset functions, about twenty values read from CSP every frame and never used); a test that could never fail now checks the right call; the "missing clips" message no longer points to a file that is not shipped.
+
 ## 1.3.0 — 10 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Nothing changes in the bridge or in the pit plan contract (`SpotterEnginer.pitplan` v1).

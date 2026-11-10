@@ -50,16 +50,16 @@ local function meaning(parts)
  end
  return table.concat(out,' ')
 end
-M.meaning=meaning
 -- Ton d'un clip du catalogue (neutral sans précision).
 function M.toneOf(id) local c=Catalog.clips[id]; return c and c.tone or 'neutral' end
+-- Annonce d'un rôle à partir du contexte d'une image (ctx.say, ctx.real) : une seule définition pour tous les modules.
+function M.as(role) return function(ctx,key,prio,parts,opts) return M.say(ctx.say,role,key,prio,parts,ctx.real,opts) end end
 function M.setLanguage(s,lang) s.lang=lang=='EN' and 'EN' or 'FR' end
 function M.mark(s) return s.lang=='FR' and ',' or '.' end
 -- Précision écrite seulement (Catalog.notes), dans la langue de la radio.
 function M.note(s,id,...) return string.format(Catalog.notes[id][s.lang],...) end
 -- Accord de l'unité avec la valeur dite : singulier sous 2 en français (« 1,5 tour »), pour 1 seulement en anglais.
 local function singular(lang,v) if lang=='FR' then return v<2 end return v==1 end
-M.singular=singular
 -- Unités accordées (clip au pluriel -> clip au singulier) quand elles suivent un nombre.
 local SINGULAR={laps='lapOne',seconds='secondOne',placesGained='placeGained',placesLost='placeLost',overtakes='overtakeOne'}
 -- Nombre en atomes : signe, entier (0 à Catalog.maxNumber, plus grand : écrit seulement), virgule et chiffres des
@@ -183,6 +183,8 @@ function M.say(s,role,key,prio,parts,now,opts)
  opts=opts or {}
  if M.strict then for k=1,#parts do local p=parts[k]; if type(p)=='string' and not Catalog.clips[p] then error('clip inconnu : '..p,2) end end end
  if M.strict and opts.tone and not Catalog.tones[opts.tone] then error('ton inconnu : '..tostring(opts.tone),2) end
+ -- Refusée d'avance (radio ou rôle coupés, délai de la clé) : rien n'est préparé, la rotation des variantes n'avance pas.
+ if s.voice and Voice.refused(s.voice,role,key,opts.cooldown,now) then return false end
  local sense=meaning(parts)
  local chosen=nil
  for k=1,#parts do

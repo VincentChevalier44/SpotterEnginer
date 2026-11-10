@@ -22,7 +22,7 @@ function M.new()
  return {moveAt=-1e9,mx=nil,my=nil,h=320,drag=nil,moved=0,x=0,y=0,
   pos=vec2(0,0),size=vec2(M.LW,M.LH),ppos=vec2(0,0),psize=vec2(M.PW,320)}
 end
-local function callable(f) return type(f)=='function' or type(f)=='cdata' end
+local callable=require('src/port').callable
 -- Ouvrir ou fermer l'édition ; fermée, tous les overlays sont verrouillés.
 function M.toggle(app)
  app.editing=not app.editing
