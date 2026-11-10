@@ -50,15 +50,15 @@ local PIT_NOTICE={pitCompound={'pitCompound',3,18},pitPlanSame={'pitPlanSame',3,
  restartPlace={'restartPlace',3,20},restartRetake={'restartRetake',2,8,nil,15}}
 function M.new()
  return {prev=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
-  mistakes={},rivalState={},exitSpline=nil,exitSamples=0,inLane={},cuts=0,lapValid=true,
+  mistakes={},rivalState={},rivalNow={},exitSpline=nil,exitSamples=0,exitAlt=nil,exitAltN=0,inLane={},cuts=0,lapValid=true,
   stint=false,leftBox=false,autoFlip=false,sideAgree=0,sideDisagree=0,sideAtL=-1e9,sideAtR=-1e9,wasL=false,wasR=false,neutralEndAt=-1e9,greenPending=false,lastLapSaid=false,deltaQueuedAt=nil,proxCfg=nil,proxMe=nil,
   zoneAt=-1e9,zoneGreenAt=-1e9,deltaAbove=nil,penaltyAt=-1e9,blackAt=-1e9,compound=false,wasLane=false,laneCompound=false,planPending=false,planSaid=false,finishSaid=false,finishAt=false,finishStale=false,
   haz=Hazards.new(),incoming={},incomingSince={},incomingSeen={},incomingAt=-1e9,sideCarL=-1,sideCarR=-1,chaseOn=false,clearBehindAt=-1e9,
-  liveAt=-1e9,inAhead=false,inBehind=false,inAheadCar=-1,inBehindCar=-1}
+  liveAt=-1e9,inAhead=false,inBehind=false,inAheadCar=-1,inBehindCar=-1,slowAt=nil}
 end
 -- Changement de séance : tout repart de zéro (référence de la direction de course comprise), sauf ce qui est appris
 -- sur le circuit (sortie des stands, côtés inversés).
-local LEARNT={'exitSpline','exitSamples','autoFlip'}
+local LEARNT={'exitSpline','exitSamples','exitAlt','exitAltN','autoFlip'}
 function M.reset(s) U.refill(s,M.new(),LEARNT) end
 local function copy(d,into)
  for k=1,#FIELDS do local f=FIELDS[k]; into[f]=d[f] end
@@ -77,8 +77,8 @@ local function neutralClip(cur)
  if cur.neutralMode=='sc' then return cur.safetyPhase=='call' and 'scCall' or 'sc' end
  return (cur.neutralMode=='vsc' or cur.neutralMode=='fcy') and cur.neutralMode or nil
 end
--- Longueur de circuit minimale des calculs de distance (m) : un circuit inconnu (0) ne donne pas de distances nulles.
-local MIN_TRACK=U.MIN_TRACK
+-- Longueur de circuit des calculs de distance (m) : un circuit inconnu (0) ne donne pas de distances nulles.
+local function trackLength(F) return math.max(U.MIN_TRACK,F.trackLength or 0) end
 local sayEngineer=Say.as('engineer')
 -- Tour d'arrêt du plan de l'ingénieur, si un plan annoncera le « box » (ingénieur, stratégie et appels actifs, plan
 -- prêt : jamais sur les estimations des premiers tours) ; sinon nil, et les rappels d'AdvancedIA restent dits.
@@ -224,7 +224,13 @@ local function race(s,ctx)
   if cur.neutral and cur.neutralMode=='sc' and p.safetyPhase=='call' and cur.safetyPhase=='out' then say(ctx,'scOut',2,{'sc'},{ttl=8}) end
   -- Fin de VSC ou SC qui rentre annulées par AdvancedIA (nouvel incident) : l'annonce devenue fausse est retirée, la
   -- neutralisation qui continue est redite.
-  if p.ending and not cur.ending and cur.neutral then Voice.cancel(ctx.voice,AFTER_ENDING); say(ctx,'neutral',1,{cur.neutralMode=='sc' and 'sc' or cur.neutralMode=='fcy' and 'fcy' or 'vsc'},{ttl=8}) end
+  -- Même mode seulement : une fin de VSC annulée par une SC est déjà dite plus haut (« SC appelée » ; revue 1.3.2 :
+  -- remplacée ici par « reste en file », la SC encore aux stands).
+  if p.ending and not cur.ending and cur.neutral then
+   Voice.cancel(ctx.voice,AFTER_ENDING)
+   local id=p.neutralMode==cur.neutralMode and neutralClip(cur)
+   if id then say(ctx,'neutral',1,{id},{ttl=8}) end
+  end
   if p.safetyPhase=='in' and cur.safetyPhase=='out' and cur.neutral then Voice.cancel(ctx.voice,AFTER_SCIN); say(ctx,'scOut',1,{'sc'},{ttl=8}) end
   if cur.ending and not p.ending and cur.neutralMode=='vsc' then say(ctx,'vscEnding',2,{'vscEnding'},{ttl=5}) end
   if cur.safetyPhase=='in' and p.safetyPhase~='in' then say(ctx,'scIn',2,{'scIn'},{ttl=15}) end
@@ -324,7 +330,7 @@ local function race(s,ctx)
   -- dépassable ou sert une pénalité, ou à l'échéance ; « place rendue » y était dit à tort).
   if p.giveBack>=0 and cur.giveBack<0 and cur.penaltyId==p.penaltyId then
    local F=ctx.F; local me=F.cars[F.player]; local c=F.cars[p.giveBack]
-   local ahead=me and c and c.valid and not me.pitlane and U.wrap(c.spline-me.spline)*math.max(MIN_TRACK,F.trackLength or 0)
+   local ahead=me and c and c.valid and not me.pitlane and U.ahead(me,c,trackLength(F),F.open)
    if ahead and ahead>0 and ahead<300 then say(ctx,'giveBack',3,{'giveBackDone'},{ttl=5}) end
   end
   -- penaltyKind : 'slow' ou 'dq' ; le pont v1 ne garde que 3 caractères ('slo') : tout sauf 'dq' est une coupure des gaz.
@@ -423,9 +429,13 @@ local SIDE={left='carLeft',right='carRight',three='threeWide',clearLeft='clearLe
 -- Vérification indépendante du côté : position latérale sur la piste donnée par CSP (ac.worldCoordinateToTrack, -1 à
 -- gauche, +1 à droite) comparée au côté tiré du repère de la voiture. Trois désaccords nets, trois fois plus nombreux
 -- que les accords : les côtés sont inversés automatiquement (une ligne sur la radio), en plus du réglage manuel.
+-- Jamais jugé quand le joueur recule sur le tour ou reprend la piste après un tête-à-queue (revue 1.3.2 : à contresens,
+-- sa gauche est la droite de la piste ; chaque voiture croisée était un désaccord, et les côtés s'inversaient).
 local function checkSide(s,ctx,me,index,left)
  local c=ctx.F.cars[index]
  if not ctx.trackLateral or not c or not c.valid then return end
+ local tc=ctx.timing and ctx.timing.cars[ctx.F.player]
+ if tc and (tc.ds or 0)<0 or ctx.emergency and ctx.emergency.stranded then return end
  local a=ctx.trackLateral(me.x,me.y or 0,me.z); local b=ctx.trackLateral(c.x,c.y or 0,c.z)
  if not a or not b or math.abs(b-a)<0.08 or math.abs(a)>1.2 or math.abs(b)>1.2 then return end
  local trackLeft=b<a
@@ -458,12 +468,11 @@ M.sideIdle=sideIdle
 local INCOMING={behind=19,closing=8,again=20,gap=6,kmh=60,lead=0.8,hold=0.3,brake=0.3}
 function M.incoming(s,ctx,me,p,pc)
  local F=ctx.F
- if me.kmh<INCOMING.kmh or not F.started or F.isRace and me.laps<1 then return end
- local d=ctx.link.d
- if Link.neutralised(d) then return end
- local seen=s.incomingSeen
- for k in pairs(seen) do seen[k]=nil end
- if (tonumber(F.me.brake) or 0)>INCOMING.brake then for k in pairs(s.incomingSince) do s.incomingSince[k]=nil end; return end
+ -- Hors conditions : décalages tenus oubliés (revue 1.3.2 : un ancien début de décalage, gardé, dispensait la même
+ -- voiture du délai INCOMING.hold à son retour).
+ if me.kmh<INCOMING.kmh or not F.started or F.isRace and me.laps<1 or Link.neutralised(ctx.link.d)
+  or (tonumber(F.me.brake) or 0)>INCOMING.brake then U.wipe(s.incomingSince); return end
+ local seen=U.wipe(s.incomingSeen)
  for k=1,p.count do
   local it=p.list[k]; local c=F.cars[it.index]
   local long,lat=nil,nil
@@ -503,13 +512,20 @@ local function along(me,c)
  return ((c.x-me.x)*lx+(c.z-me.z)*lz)/n
 end
 -- Dépassement fini à un « dégagé » : la voiture qui était à côté (de ce côté) est maintenant derrière le joueur.
+local function behind(F,me,i)
+ local c=i>=0 and F.cars[i]
+ local l=c and c.valid and along(me,c)
+ return l and l<-((me.len or 4.7)+0.5) or false
+end
 function M.passed(s,ctx,me,e)
  local F=ctx.F
- local function behind(i) local c=i>=0 and F.cars[i]; local l=c and c.valid and along(me,c); return l and l<-((me.len or 4.7)+0.5) end
- if e=='clearLeft' then return behind(s.sideCarL) or false end
- if e=='clearRight' then return behind(s.sideCarR) or false end
- return (behind(s.sideCarL) or behind(s.sideCarR)) or false
+ if e=='clearLeft' then return behind(F,me,s.sideCarL) end
+ if e=='clearRight' then return behind(F,me,s.sideCarR) end
+ return behind(F,me,s.sideCarL) or behind(F,me,s.sideCarR)
 end
+-- Côté tenu sous Proximity.minKmh (état gelé : épingle, départ) : oublié en silence après SLOW_HOLD s (revue 1.3.2 :
+-- côte à côte, puis tête-à-queue et 20 s à l'arrêt, « dégagé » dit à la reprise pour une voiture partie depuis longtemps).
+local SLOW_HOLD=3
 local function side(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid or me.pitlane then sideIdle(s); return end
@@ -522,6 +538,10 @@ local function side(s,ctx)
  end
  pc.length=me.len or Proximity.defaults.length
  pc.stillMax=cfg.stillThere and Proximity.defaults.stillMax or 0; pc.flip=(cfg.flipSides==true)~=(s.autoFlip==true)
+ if me.kmh<pc.minKmh then
+  if not s.slowAt or ctx.now<s.slowAt then s.slowAt=ctx.now end
+  if ctx.now-s.slowAt>SLOW_HOLD then sideIdle(s) end
+ else s.slowAt=nil end
  local pm=s.proxMe; pm.x=me.x; pm.z=me.z; pm.lookX=me.lookX; pm.lookZ=me.lookZ; pm.kmh=me.kmh
  local events=Proximity.step(s.prox,pm,F.cars,F.count,F.player,ctx.now,pc)
  local p=s.prox
@@ -565,15 +585,20 @@ end
 -- Écarts devant / derrière (voitures voisines au classement, src/position.lua), à la fin d'un tour sur gapEvery.
 local function gaps(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]; local cfg=ctx.cfg
- if not F.isRace or not me or not me.valid or me.laps<1 or me.laps==s.gapLap or me.finished then return end
+ if not F.isRace or not me or not me.valid then return end
+ local d=ctx.link.d
+ -- Voie des stands, neutralisation, drapeau rouge : le dernier écart dit n'est plus une référence (revue 1.3.2 : 20 s
+ -- avant la voiture de sécurité, 0,8 s après : « tu reviens »).
+ if me.pitlane or Link.neutralised(d) then s.lastGaps.ahead=nil; s.lastGaps.behind=nil end
+ if me.laps<1 or me.laps==s.gapLap or me.finished then return end
  s.gapLap=me.laps
  if me.laps%cfg.gapEvery~=0 or me.pitlane then return end
- local d=ctx.link.d
  if d and d.neutral then return end
  local ahead,behind=Position.neighbours(F,me)
  local parts={}
+ -- Écarts propres (Timing.gap, clean) : jamais sur un passage fait dans la voie des stands ou sous neutralisation.
  if ahead then
-  local g,laps=Timing.gap(ctx.timing,ahead,F.player,ctx.now)
+  local g,laps=Timing.gap(ctx.timing,ahead,F.player,ctx.now,true)
   -- Un seul message pour devant et derrière (« Écart devant : 1,2 seconde, tu reviens. Derrière : 2,4 secondes. ») ;
   -- nombre et unité en un seul clip sous 10 s (src/say.lua).
   if g then
@@ -590,7 +615,7 @@ local function gaps(s,ctx)
   elseif laps>0 then s.lastGaps.ahead=nil end
  end
  if behind then
-  local g=Timing.gap(ctx.timing,F.player,behind,ctx.now)
+  local g=Timing.gap(ctx.timing,F.player,behind,ctx.now,true)
   if g then
    parts[#parts+1]=#parts>0 and 'andBehind' or 'gapBehind'; parts[#parts+1]={n=g,dec=cfg.gapDecimals,unit='s'}
    local last=s.lastGaps.behind
@@ -624,11 +649,15 @@ local function live(s,ctx)
  -- Neutralisation : la file se reforme, rien n'est dit, et rien n'est rattrapé à la relance (écarts tenus pour déjà
  -- dits jusqu'à ce qu'ils repassent au-dessus de LIVE.out). Jaune local, dépassement interdit, relance : rien non plus
  -- (« tu peux tenter » contredirait AdvancedIA).
- if Link.neutralised(d) then s.inAhead=true; s.inBehind=true; s.chaseOn=true; return end
- if d and (d.zone or d.noPass or d.panelNoPass or d.playerRestart or d.relaunch) then return end
+ -- Voisins du moment tenus pour déjà dits (revue 1.3.2 : un voisin changé pendant la neutralisation, par un arrêt,
+ -- réarmait l'annonce, dite dès le vert dans la file groupée) ; de même pendant la relance.
  local ahead,behind=Position.neighbours(F,me)
- local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now) or nil
- local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now) or nil
+ if Link.neutralised(d) or d and (d.playerRestart or d.relaunch) then
+  s.inAhead=true; s.inBehind=true; s.chaseOn=true; s.inAheadCar=ahead; s.inBehindCar=behind; return
+ end
+ if d and (d.zone or d.noPass or d.panelNoPass) then return end
+ local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now,true) or nil
+ local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now,true) or nil
  -- Personne derrière : sur les écarts relevés sur la piste (toute voiture, même d'un autre tour) ; une voiture classée
  -- derrière dont l'écart n'est pas connu ne laisse pas « libre ».
  local free=not (behind and not gb) and (not gb or gb>LIVE.free)
@@ -677,7 +706,12 @@ local function sampleGap(s,ctx,i)
  local h=s.closing[i]
  if not g then s.closing[i]=nil; return end
  if not h or (#h>0 and ctx.now<h[#h].t) then h={}; s.closing[i]=h end
- if #h==0 or ctx.now-h[#h].t>=CLOSE.every then h[#h+1]={t=ctx.now,g=g} end
+ local n=#h
+ if n==0 or ctx.now-h[n].t>=CLOSE.every then
+  -- Relevé périmé repris pour le nouveau (aucune table neuve en régime établi).
+  local e=n>1 and ctx.now-h[1].t>CLOSE.keep and table.remove(h,1) or {}
+  e.t=ctx.now; e.g=g; h[#h+1]=e
+ end
  while #h>1 and ctx.now-h[1].t>CLOSE.keep do table.remove(h,1) end
 end
 -- Dernier écart relevé (s), rythme de rapprochement (s gagnées par s ; nil sur moins de CLOSE.short s) et durée de la
@@ -699,11 +733,11 @@ end
 -- Écarts relevés de toutes les voitures derrière le joueur, à toute vitesse ; oubliés quand il est aux stands.
 local function sampleAll(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]
- if not me or not me.valid or me.pitlane then for k in pairs(s.closing) do s.closing[k]=nil end; return end
- local length=math.max(MIN_TRACK,F.trackLength)
+ if not me or not me.valid or me.pitlane then U.wipe(s.closing); return end
+ local length=trackLength(F)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  local ahead=i~=F.player and c and c.valid and not c.pitlane and U.ahead(me,c,length)
+  local ahead=i~=F.player and c and c.valid and not c.pitlane and U.ahead(me,c,length,F.open)
   if ahead and ahead<0 and ahead>-CLOSE.range then sampleGap(s,ctx,i) else s.closing[i]=nil end
  end
 end
@@ -718,7 +752,7 @@ local function traffic(s,ctx)
  end
  local mine=Timing.car(t,F.player)
  local d=ctx.link.d
- local length=math.max(MIN_TRACK,F.trackLength)
+ local length=trackLength(F)
  -- Neutralisation, drapeau rouge, relance : ni retardataire ni trafic plus rapide (la file roule ensemble).
  local held=d and (d.neutral or d.red or d.relaunch)
  for i=0,F.count-1 do
@@ -731,7 +765,7 @@ local function traffic(s,ctx)
   -- Voiture de sécurité d'AdvancedIA (une voiture d'AC classée dernière) : jamais un retardataire ni un trafic.
   if i~=F.player and c.valid and not c.pitlane and not (lc and lc.safety) then
    local tc=Timing.car(t,i)
-   local ahead=U.ahead(me,c,length)
+   local ahead=U.ahead(me,c,length,F.open)
    if cfg.hazards and mistake and lastMistake~=nil and mistake~=lastMistake and ahead>40 and ahead<400 and not held then
     say(ctx,'mistake',2,{'aiMistake'},{ttl=3,cooldown=10})
    end
@@ -763,13 +797,13 @@ local function crawl(s,ctx)
  if F.isRace or not ctx.cfg.fasterBehind or not me or not me.valid or me.pitlane or me.kmh>=CRAWL.kmh then return end
  -- Joueur arrêté ou en tête-à-queue suivi par les urgences (« voiture qui arrive, attends ») : pas de « garde ta ligne ».
  if ctx.cfg.emergencies and ctx.emergency and ctx.emergency.stranded then return end
- local length=math.max(MIN_TRACK,F.trackLength)
+ local length=trackLength(F)
  for i=0,F.count-1 do
   local c=F.cars[i]
-  local lc=Link.car(ctx.link,i)
-  if i~=F.player and c.valid and not c.pitlane and not (lc and lc.safety) and c.kmh>=me.kmh+CRAWL.faster and ctx.now-(s.faster[i] or -1e9)>60 then
-   local ahead=U.ahead(me,c,length)
-   if ahead<0 and ahead>-CRAWL.range then
+  if i~=F.player and c.valid and not c.pitlane and c.kmh>=me.kmh+CRAWL.faster and ctx.now-(s.faster[i] or -1e9)>60 then
+   local ahead=U.ahead(me,c,length,F.open)
+   local lc=Link.car(ctx.link,i)
+   if ahead<0 and ahead>-CRAWL.range and not (lc and lc.safety) then
     s.faster[i]=ctx.now; s.fastPending[i]=nil; say(ctx,'fasterBehind',3,{'fasterBehind'},{ttl=4,cooldown=15})
    end
   end
@@ -801,19 +835,37 @@ end
 -- est à moins de EXIT_NEAR m de la sortie après être reparti de son emplacement (1.3.1 : jugé au départ de l'emplacement
 -- à 25 km/h, l'arrivée à la sortie était estimée trois fois trop tard), voitures qui y arriveront en même temps que lui.
 -- Rien sous drapeau rouge ni voie fermée.
-local EXIT_NEAR=150
+-- Sortie apprise (revue 1.3.2 : le premier passage vu la fixait pour toujours, et une voiture donnée « dans la voie »
+-- une image en coupant l'entrée des stands suffisait) : seuls comptent les passages après EXIT_STAY s dans la voie
+-- (s.inLane : instant d'entrée), jamais la voiture de sécurité ; un passage loin de la sortie connue nourrit une seconde
+-- sortie possible (exitAlt), qui prend sa place dès qu'elle a été vue plus souvent.
+local EXIT_NEAR,EXIT_STAY=150,3
+local function learnExit(s,sp)
+ if s.exitSpline==nil then s.exitSpline=sp; s.exitSamples=1
+ elseif math.abs(U.wrap(sp-s.exitSpline))<0.05 then
+  s.exitSamples=math.min(20,s.exitSamples+1); s.exitSpline=(s.exitSpline+U.wrap(sp-s.exitSpline)/s.exitSamples)%1
+ elseif s.exitAlt and math.abs(U.wrap(sp-s.exitAlt))<0.05 then
+  s.exitAltN=s.exitAltN+1; s.exitAlt=(s.exitAlt+U.wrap(sp-s.exitAlt)/s.exitAltN)%1
+  if s.exitAltN>s.exitSamples then
+   s.exitSpline,s.exitAlt=s.exitAlt,s.exitSpline; s.exitSamples,s.exitAltN=s.exitAltN,s.exitSamples
+  end
+ else s.exitAlt=sp; s.exitAltN=1 end
+end
 local function pitExit(s,ctx)
  local F=ctx.F; local cfg=ctx.cfg
  for i=0,F.count-1 do
   local c=F.cars[i]
   if c.valid then
-   local was=s.inLane[i]
-   if was and not c.pitlane and c.kmh>20 then
-    local sp=c.spline
-    if s.exitSpline==nil then s.exitSpline=sp; s.exitSamples=1
-    elseif math.abs(U.wrap(sp-s.exitSpline))<0.05 then s.exitSamples=math.min(20,s.exitSamples+1); s.exitSpline=(s.exitSpline+U.wrap(sp-s.exitSpline)/s.exitSamples)%1 end
+   local since=s.inLane[i]
+   if c.pitlane then
+    if not since or ctx.now<since then s.inLane[i]=ctx.now end
+   elseif since then
+    s.inLane[i]=false
+    if c.kmh>20 and ctx.now-since>=EXIT_STAY then
+     local lc=Link.car(ctx.link,i)
+     if not (lc and lc.safety) then learnExit(s,c.spline) end
+    end
    end
-   s.inLane[i]=c.pitlane
   end
  end
  local me=F.cars[F.player]
@@ -821,7 +873,7 @@ local function pitExit(s,ctx)
  if not me.pitlane then s.leftBox=false; return end
  if me.inPit then s.leftBox=true; return end
  if not s.leftBox or me.kmh<15 or not s.exitSpline then return end
- local length=math.max(MIN_TRACK,F.trackLength)
+ local length=trackLength(F)
  local toExit=U.wrap(s.exitSpline-me.spline); if toExit<0 then toExit=toExit+1 end
  if toExit*length>EXIT_NEAR then return end
  s.leftBox=false
@@ -848,7 +900,7 @@ local function rivals(s,ctx)
   local lc=Link.car(ctx.link,i)
   if lc and i~=F.player then
    local st=s.rivalState[i]
-   local now=s.rivalNow; if not now then now={}; s.rivalNow=now end
+   local now=s.rivalNow
    now.time=lc.timeAdded; now.pending=lc.pending; now.cut=lc.cutLeft>0; now.dq=lc.sanctionDq or lc.flagDq
    if st then
     local c=F.cars[i]; local rel=c.valid and c.position-me.position or 99

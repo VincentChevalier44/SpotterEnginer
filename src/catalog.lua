@@ -8,8 +8,10 @@ local C={}
 C.languages={'FR','EN'}
 -- Sous-dossiers des clips dans vox/<LANGUE> (lus par src/port.lua, générés par tools/generer_voix.py).
 C.subfolders={'','num/','sec/','pos/'}
--- Nombres dits de 0 à C.maxNumber (num/), durées de 0 à C.maxTenths dixièmes de seconde (sec/).
+-- Nombres dits de 0 à C.maxNumber (num/ ; jusqu'à C.maxSpoken avec le clip « cent »), durées de 0 à C.maxTenths
+-- dixièmes de seconde (sec/).
 C.maxNumber=99
+C.maxSpoken=999
 C.maxTenths=99
 -- Signal d'ouverture de la radio (dossier de l'app).
 C.toneFile='sounds/radio.wav'
@@ -271,6 +273,8 @@ local list={
  {'coverStop',225,'225_il_rentre_on_couvre',"Il rentre, on couvre.",'225_he_pits_we_cover',"He's pitting, we cover."},
  {'noMoreStops',226,'226_plus_d_arret',"Plus d'arrêt prévu, on va jusqu'au bout.",'226_no_more_stops',"No more stops, we go to the end.",tone='calm'},
  {'weGain',227,'227_on_gagne_environ',"On gagne environ",'227_gains_us_about',"That gains us about"},
+ -- Centaines (nombres de 100 à 999, src/say.lua) : « cent » + reste, « deux » + « cent » + reste ; « one » + « hundred ».
+ {'hundred',228,'228_cent',"cent",'228_hundred',"hundred"},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={
@@ -346,4 +350,13 @@ C.hot={'carLeft','carRight','threeWide','clearLeft','clearRight','clear','clear_
 for _,id in ipairs(C.hot) do assert(C.clips[id],'clip préchargé inconnu : '..id) end
 -- Nombre de fichiers attendus dans vox (toutes langues) : annonces, nombres, durées, positions.
 function C.fileCount() return (#C.order+C.maxNumber+1+C.maxTenths+1+C.maxPosition)*#C.languages end
+-- Chaque fichier attendu (« FR/01_vert.wav », « EN/num/07.wav »…), donné à fn : clips présents (src/port.lua).
+function C.eachFile(fn)
+ for _,lang in ipairs(C.languages) do
+  for k=1,#C.order do fn(lang..'/'..C.clips[C.order[k]][lang]) end
+  for n=0,C.maxNumber do fn(lang..'/'..C.numberFile(n)) end
+  for n=0,C.maxTenths do fn(lang..'/'..C.secondsFile(n)) end
+  for n=1,C.maxPosition do fn(lang..'/'..C.positionFile(n)) end
+ end
+end
 return C

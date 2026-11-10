@@ -72,13 +72,14 @@ function T.no_fuel_use_no_phantom_stop()
  check(p.ok and p.stops==0,'no stop without fuel use: '..tostring(p.stops))
 end
 -- Règles d'AdvancedIA : arrêt dû compté sur les arrêts faits dans la fenêtre ; fenêtre convertie en tours depuis
--- maintenant (tours du leader, ou temps d'une course chronométrée).
+-- maintenant (tours entiers du leader à l'arrivée à l'emplacement, ou temps d'une course chronométrée). Leader, 30 %
+-- de 30 tours : à la fin de son tour 9 il arrive à son emplacement avec 8 tours comptés : premier tour d'arrêt, le 10.
 function T.pit_rules_follow_acai()
  local St=require('src/strategist')
  local d={pitState='pending',pitWaived=false,mandatoryStops=1,playerStops=1,pitDue=0,pitCsp=false,pitPosition=0.1,pitOpen=0.3,pitClose=0.7}
  local F={laps=30,timed=false,timeLeft=0}
  local owed,open,close=St.rules(d,3,30,100,F)
- check(owed==1 and open==9 and close==20,'before the window (a stop made before does not count): '..owed..' '..open..' '..close)
+ check(owed==1 and open==10 and close==20,'before the window (a stop made before does not count): '..owed..' '..open..' '..close)
  d.pitState='open'; d.pitDue=1
  owed=St.rules(d,3,30,100,F); check(owed==1,'inside the window: ACAI due count')
  d.pitState='closed'; owed=St.rules(d,3,30,100,F); check(owed==0,'after the window')
@@ -205,8 +206,10 @@ function T.pitplan_contract_v1()
  me.laps=12; me.spline=0.1; me.pitlane=false; o=get(); check(o.state=='done','done kept after the stop')
  t.plan.optimal=30; t.plan.window={27,33}; o=get()
  check(o.state=='planned' and o.lap=='30' and o.window=='27-33','next stop planned')
- -- Neutralisation : arrêt dit maintenant.
- t.neutralBox=true; o=get(); check(o.state=='boxnow','neutral box: boxnow'); t.neutralBox=false
+ -- Neutralisation : arrêt dit pour ce tour (dès le début du tour) ; jamais boxnow pour un tour à venir.
+ t.neutralBox=true; o=get(); check(o.state=='planned','neutral box said, stop planned later: planned')
+ t.boxLap=13; me.spline=0.05; o=get(); check(o.state=='boxnow' and o.lap=='13','neutral box on this lap: boxnow')
+ t.neutralBox=false; t.boxLap=false; me.spline=0.1
  -- Appels box coupés : publié quand même, boxcalls=0 ; ingénieur coupé ou hors course : none.
  ctx.cfg.boxCalls=false; o=get(); check(o.boxcalls=='0' and o.state=='planned','box calls off')
  check(Strategist.pitplan(t,ctx,false):find('state=none',1,true),'engineer off: none')

@@ -15,6 +15,13 @@
 -- suppression ; tout autre reste (paquet extrait, copie des fichiers remplacés, fichiers inconnus) est effacé par
 -- p.tidy, seulement sans repère ni démarrage surveillé (M.tidy de src/update.lua).
 -- Chaque source garde la liste de ses fichiers (.files) : une source n'est utilisée que si tous ses fichiers sont là.
+-- current/ puis backup/ gardent aussi la version par-dessus laquelle ils valent (.over) : ils ne portent que les fichiers
+-- qu'une copie a remplacés, et ne défont que cette copie-là (voir previous dans src/update.lua).
+-- Ce module peut tourner un lancement avec le src/update.lua d'une autre version (copie interrompue) : il n'en lit que
+-- prefix, manifestVersion et parseReport (présents depuis la 1.1.0) ; companion n'est lu que par p.companionLayout,
+-- appelé par le seul src/update.lua qui le définit.
+-- Rappel facultatif posé par le script principal sur le port : port.beforeCopy(), appelé juste avant la copie finale
+-- (fichiers de l'app tenus ouverts à rendre : clips de voix préchargés).
 -- Le dossier de l'app (sur un autre disque que Documents, le plus souvent) ne reçoit que la copie finale : chaque fichier
 -- copié à côté (.new) puis mis en place d'un seul coup (même disque), surveillance des fichiers de CSP suspendue puis
 -- rétablie, src/ d'abord, SpotterEnginer.lua puis le manifeste en dernier.
@@ -35,20 +42,14 @@ local function hex(s)
  if #s==32 then return (s:gsub('.',function(c) return string.format('%02x',c:byte()) end)) end
  return nil
 end
--- Fichiers d'un dossier, chemins relatifs avec « / ».
-local function files(dir,rel,out)
+-- Fichiers d'un dossier (chemins relatifs avec « / »), ou, avec dirs, ses sous-dossiers, les plus profonds d'abord
+-- (pour les effacer une fois vides).
+local function scan(dir,rel,out,dirs)
  io.scanDir(dir,'*',function(name,attr)
   if name=='.' or name=='..' or name=='' then return end
   local path=rel=='' and name or rel..'/'..name
-  if attr and attr.isDirectory then files(dir..'/'..name,path,out) else out[#out+1]=path end
- end)
- return out
-end
--- Sous-dossiers d'un dossier, les plus profonds d'abord (pour les effacer une fois vides).
-local function folders(dir,rel,out)
- io.scanDir(dir,'*',function(name,attr)
-  if name=='.' or name=='..' or name=='' then return end
-  if attr and attr.isDirectory then local path=rel=='' and name or rel..'/'..name; folders(dir..'/'..name,path,out); out[#out+1]=path end
+  if attr and attr.isDirectory then scan(dir..'/'..name,path,out,dirs); if dirs then out[#out+1]=path end
+  elseif not dirs then out[#out+1]=path end
  end)
  return out
 end
@@ -61,23 +62,36 @@ local function ordered(list)
  table.sort(list,function(a,b) local x,y=rank(a),rank(b); if x~=y then return x<y end; return a<b end)
  return list
 end
--- Liste des fichiers d'une source (.files) : un chemin par ligne, chemins sûrs seulement.
+-- Liste des fichiers d'une source (.files) : un chemin par ligne, chemins sûrs seulement, jugés par segment comme ceux du
+-- paquet (Update.safeRel, récrit ici : voir l'en-tête) : « notes..md » est un nom, « .. » jamais.
+local function safeRel(rel)
+ if rel:find('[\\:]') then return false end
+ for segment in (rel..'/'):gmatch('([^/]*)/') do
+  local last=segment:sub(-1)
+  if segment=='' or last=='.' or last==' ' then return false end
+ end
+ return true
+end
 local function parseList(text)
  if type(text)~='string' then return nil end
  local out={}
  for line in (text..'\n'):gmatch('([^\r\n]*)\r?\n') do
   if line~='' then
-   if line:find('..',1,true) or line:find(':',1,true) or line:find('\\',1,true) or line:sub(1,1)=='/' then return nil end
+   if not safeRel(line) then return nil end
    out[#out+1]=line
   end
  end
  return #out>0 and out or nil
 end
+M.parseList=parseList
 -- Bibliothèques de CSP lues sans erreur quand elles manquent (tests, ancien CSP).
 local function lib(name) local t=rawget(_G,name); return type(t)=='table' and t or nil end
 local needed={'load','save','fileExists','deleteFile','copyFile','move','createDir','createFileDir','scanDir','scanZip','loadFromZip','extractFromZipAsync'}
 M.work='SpotterEnginer-update'
 M.list='.files'
+M.over='.over'
+-- Comparaison du paquet extrait : durée d'une tranche (s) ; la suite à l'image suivante (p.step).
+M.compareSlice=0.003
 -- onRelease : journal versé, radio arrêtée, son de la voiture rendu, réglages enregistrés (fourni par le script
 -- principal), avant ac.restartApp.
 function M.new(onRelease)
@@ -114,26 +128,30 @@ function M.new(onRelease)
  -- Surveillance des fichiers de CSP suspendue (rechargement en direct) le temps d'écrire dans le dossier de l'app, puis
  -- rétablie.
  local function watch(paused) if ac and callable(ac.pauseFilesWatching) then pcall(ac.pauseFilesWatching,paused) end end
- local function list(dir) local ok,out=pcall(files,dir,'',{}); return ok and type(out)=='table' and out or nil end
- -- Beta 1.36 : dossiers vides effacés aussi (les plus profonds d'abord, puis le dossier lui-même) ; sinon le renommage
- -- de la sauvegarde trouverait sa destination déjà là et passerait à la copie dès la troisième mise à jour.
+ local function list(dir) local ok,out=pcall(scan,dir,'',{},false); return ok and type(out)=='table' and out or nil end
+ -- Sous-dossiers vides effacés, les plus profonds d'abord.
+ local function prune(dir)
+  if not callable(io.deleteDir) then return end
+  local ok,subs=pcall(scan,dir,'',{},true)
+  if ok and type(subs)=='table' then for _,rel in ipairs(subs) do pcall(io.deleteDir,dir..'/'..rel) end end
+ end
+ -- Beta 1.36 : dossiers vides effacés aussi (puis le dossier lui-même) ; sinon le renommage de la sauvegarde trouverait
+ -- sa destination déjà là et passerait à la copie dès la troisième mise à jour.
  local function clear(dir)
   local all=list(dir); if all then for _,rel in ipairs(all) do pcall(io.deleteFile,dir..'/'..rel) end end
-  if callable(io.deleteDir) then
-   local ok,subs=pcall(folders,dir,'',{})
-   if ok and type(subs)=='table' then for _,rel in ipairs(subs) do pcall(io.deleteDir,dir..'/'..rel) end end
-   pcall(io.deleteDir,dir)
-  end
+  prune(dir)
+  if callable(io.deleteDir) then pcall(io.deleteDir,dir) end
  end
  local function copy(a,b) pcall(io.createFileDir,b); local ok,r=pcall(io.copyFile,a,b,false); return ok and r~=false and exists(b) end
  -- Remplacement d'un fichier de l'app d'un seul coup : copie à côté (.new, même dossier, même disque), puis déplacement
- -- qui remplace ; une coupure laisse l'ancien fichier entier ou le nouveau, jamais un fichier à moitié écrit.
- local function swap(src,dst)
+ -- qui remplace ; une coupure laisse l'ancien fichier entier ou le nouveau, jamais un fichier à moitié écrit. want :
+ -- contenu de la source, déjà lu (jamais nil : deux lectures en échec ne valent pas « identiques »).
+ local function swap(src,dst,want)
   local tmp=dst..'.new'
   delete(tmp)
   if not copy(src,tmp) then delete(tmp); return false end
   local ok,r=pcall(io.move,tmp,dst,true)
-  if not ok or r==false or load(dst)~=load(src) then delete(tmp); return false end
+  if not ok or r==false or load(dst)~=want then delete(tmp); return false end
   return true
  end
  local function listOf(root) return root and parseList(load(root..'/'..M.list)) or nil end
@@ -158,6 +176,14 @@ function M.new(onRelease)
  -- Version d'une source (next, current, backup) lue dans son manifeste ; source complète (tous ses fichiers listés là).
  function p.sourceVersion(name) local root=roots[name]; return root and Update.manifestVersion(load(root..'/manifest.ini')) or nil end
  function p.sourceComplete(name) return complete(roots[name]) end
+ -- Version par-dessus laquelle une source vaut (.over), ou nil (sauvegarde d'une version d'avant ce repère).
+ function p.sourceOver(name) local root=roots[name]; local t=root and load(root..'/'..M.over); return t and t:match('^[^\r\n]+') or nil end
+ function p.sourceSetOver(name,version) local root=roots[name]; return root~=nil and save(root..'/'..M.over,version) end
+ -- Fichier dans la liste d'une source.
+ function p.sourceListed(name,rel)
+  for _,item in ipairs(listOf(roots[name]) or {}) do if item==rel then return true end end
+  return false
+ end
  function p.sourceHas(name,required)
   local root=roots[name]; if not root then return false end
   for _,rel in ipairs(required) do if not exists(root..'/'..rel) then return false end end
@@ -207,20 +233,40 @@ function M.new(onRelease)
  function p.sourceText(name,rel) local root=roots[name]; return root and load(root..'/'..rel) or nil end
  function p.open(url) if os and callable(os.openURL) and type(url)=='string' and url:sub(1,8)=='https://' then pcall(os.openURL,url) end end
  -- Paquet extrait dans next/ (vidé d'abord ; manifeste extrait en dernier par CSP), puis comparé fichier par fichier au
- -- paquet ; liste des fichiers écrite en dernier (source complète seulement si tout est conforme).
+ -- paquet ; liste des fichiers écrite en dernier (source complète seulement si tout est conforme). La comparaison (un
+ -- millier de fichiers) se fait par tranches de M.compareSlice : la première dès la fin de l'extraction, les suivantes
+ -- à chaque image (p.step, appelé par Update.tick) : le pilote a pu repartir, jamais une longue image en piste. Rien
+ -- n'est copié dans l'app avant la fin : une comparaison abandonnée laisse next/ sans liste, donc inutilisable.
+ local job,staging=nil,nil
+ function p.step()
+  local j=job
+  if not j then return end
+  local started=clock()
+  repeat
+   local rel=j.names[j.at]
+   if not rel then
+    job=nil
+    j.cb(not save(roots.next..'/'..M.list,table.concat(j.names,'\n')) and 'liste des fichiers' or nil)
+    return
+   end
+   local want=p.entry(j.data,Update.prefix..rel)
+   if want==nil or load(roots.next..'/'..rel)~=want then job=nil; j.cb('fichier extrait different du paquet : '..rel); return end
+   j.at=j.at+1
+  until clock()-started>=M.compareSlice
+ end
  function p.stage(data,names,cb)
   if not ready then cb('unavailable'); return end
+  -- Une extraction plus ancienne (annulée) qui finirait après celle-ci est ignorée.
+  local mine={data=data,names=names,cb=cb,at=1}
+  job=nil; staging=mine
   pcall(io.createDir,work); clear(work..'/next'); pcall(io.createDir,work..'/next')
   local ok,err=pcall(io.extractFromZipAsync,data,work..'/next',{crucial=Update.prefix..'manifest.ini'},function(e)
+   if staging~=mine then return end
+   staging=nil
    if e and e~='' then cb(tostring(e)); return end
-   local root=roots.next
-   for _,rel in ipairs(names) do
-    if load(root..'/'..rel)~=p.entry(data,Update.prefix..rel) then cb('fichier extrait different du paquet : '..rel); return end
-   end
-   if not save(root..'/'..M.list,table.concat(names,'\n')) then cb('liste des fichiers'); return end
-   cb(nil)
+   job=mine; p.step()
   end)
-  if not ok then cb('extraction: '..tostring(err)) end
+  if not ok then staging=nil; cb('extraction: '..tostring(err)) end
  end
  -- Fichiers de l'app que la copie d'une source va remplacer (contenu différent de la source ; le manifeste toujours),
  -- copiés dans current/ avec leur liste ; les fichiers identiques n'y vont pas (Beta 1.37 : la copie d'une mise à jour
@@ -238,11 +284,22 @@ function M.new(onRelease)
   if not seen['manifest.ini'] then names[#names+1]='manifest.ini' end
   for _,rel in ipairs(names) do
    local dst=app..'/'..rel
-   if exists(dst) and (rel=='manifest.ini' or load(dst)~=load(from..'/'..rel)) then
-    if not copy(dst,root..'/'..rel) then return false,rel end
-    kept[#kept+1]=rel
+   if exists(dst) then
+    local keep=rel=='manifest.ini'
+    if not keep then
+     -- Source illisible : arrêt ici (jamais « identique » parce que les deux lectures ont échoué).
+     local new=load(from..'/'..rel)
+     if new==nil then return false,rel end
+     keep=load(dst)~=new
+    end
+    if keep then
+     if not copy(dst,root..'/'..rel) then return false,rel end
+     kept[#kept+1]=rel
+    end
    end
   end
+  -- Version que la copie va installer : la seule par-dessus laquelle ces fichiers valent ; liste en dernier.
+  if not save(root..'/'..M.over,p.sourceVersion(source) or '') then return false,M.over end
   if not save(root..'/'..M.list,table.concat(kept,'\n')) then return false,M.list end
   if p.sourceVersion('current')~=p.installedVersion() or not complete(root) then return false,'manifest.ini' end
   return true,nil,{saved=#kept,ms=(clock()-started)*1000}
@@ -259,10 +316,13 @@ function M.new(onRelease)
   watch(true)
   for _,rel in ipairs(all) do
    local src,dst=root..'/'..rel,app..'/'..rel
-   if load(src)~=load(dst) then
+   -- Source illisible (antivirus, disque) : échec dit, jamais un fichier sauté comme « identique » (nil des deux côtés).
+   local want=load(src)
+   if want==nil then watch(false); return false,rel end
+   if want~=load(dst) then
     -- Surveillance réaffirmée à chaque fichier : CSP la rétablit seule au bout de quelques secondes.
     watch(true)
-    if not swap(src,dst) then watch(false); return false,rel end
+    if not swap(src,dst,want) then watch(false); return false,rel end
     copied=copied+1
    end
   end
@@ -288,6 +348,7 @@ function M.new(onRelease)
   if moved then clear(old) end
   clear(bak); pcall(io.createDir,bak)
   for _,rel in ipairs(listOf(cur) or {}) do if not copy(cur..'/'..rel,bak..'/'..rel) then return false,rel end end
+  if exists(cur..'/'..M.over) and not copy(cur..'/'..M.over,bak..'/'..M.over) then return false,M.over end
   if not copy(cur..'/'..M.list,bak..'/'..M.list) or not complete(bak) then return false,M.list end
   clear(cur); clear(old)
   return true
@@ -298,10 +359,6 @@ function M.new(onRelease)
  -- précédente, le repère, le compte rendu, le démarrage surveillé ni la note d'une reprise abandonnée. Renvoie le
  -- nombre de fichiers effacés.
  local known={['installing.txt']=true,['updated.txt']=true,['boot.txt']=true,['failed.txt']=true}
- local function empty(dir)
-  local ok,subs=pcall(folders,dir,'',{})
-  if ok and type(subs)=='table' and callable(io.deleteDir) then for _,rel in ipairs(subs) do pcall(io.deleteDir,dir..'/'..rel) end end
- end
  function p.tidy()
   if not ready or not work then return 0 end
   local n=0
@@ -321,9 +378,9 @@ function M.new(onRelease)
   for _,name in ipairs(stray) do gone(work..'/'..name) end
   local listed=listOf(roots.backup)
   if listed then
-   local keep={[M.list]=true}; for _,rel in ipairs(listed) do keep[rel]=true end
+   local keep={[M.list]=true,[M.over]=true}; for _,rel in ipairs(listed) do keep[rel]=true end
    for _,rel in ipairs(list(roots.backup) or {}) do if not keep[rel] then gone(roots.backup..'/'..rel) end end
-   empty(roots.backup)
+   prune(roots.backup)
   end
   return n
  end

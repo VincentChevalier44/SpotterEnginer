@@ -7,6 +7,8 @@ local Up=require('src/update')
 local Remote=require('src/remote')
 local Fake=require('tests/updatefake')
 local tests={}
+-- Comparaison du paquet extrait en une seule tranche (résultats exacts) ; le test des tranches la règle lui-même.
+Remote.compareSlice=math.huge
 local SHA=string.rep('ab',32)
 -- Corps du paquet : exactement la taille annoncée par la version publiée.
 local SIZE=1000000
@@ -48,7 +50,17 @@ local function port(o)
  end
  -- AdvancedIA installé (o.aai=false : absent) et pont de la version précédente.
  function p.companionLayout() if o.aai==false then return nil end; return o.aai or LAYOUT end
- function p.sourceText(_,rel) if rel==Up.companion.layout then return o.backupLayout end; return nil end
+ -- Paquet extrait (next) : pont et manifeste du paquet ; sauvegarde : son pont s'il a été gardé (o.backupLayout).
+ function p.sourceText(name,rel)
+  if rel==Up.companion.layout then if name=='next' then return o.pkgLayout or LAYOUT end; return o.backupLayout end
+  if name=='next' and rel=='manifest.ini' then return o.manifest or '[ABOUT]\nVERSION=1.34\n' end
+  return nil
+ end
+ -- Version par-dessus laquelle la sauvegarde vaut (o.over ; false : sauvegarde d'avant ce repère) : par défaut la
+ -- version installée.
+ function p.sourceOver(name) if name~='backup' or o.over==false then return p.over end; return p.over or o.over or o.installed or '1.34' end
+ function p.sourceSetOver(name,v) log('over '..name..' '..v); p.over=v; return true end
+ function p.sourceListed() return o.backupListed==true end
  function p.appText(rel) if rel==Up.companion.layout then return LAYOUT end; return nil end
  function p.installedVersion() return o.installed end
  function p.sourceVersion(name) return versions[name] end
@@ -443,7 +455,8 @@ tests.UPDATE_REMOTE_END_TO_END=function()
   f.files[f.work..'/backup/SpotterEnginer.lua']='main 1.32'; f.files[f.work..'/backup/manifest.ini']='VERSION=1.32'
   f.files[f.work..'/backup/.files']='SpotterEnginer.lua\nmanifest.ini'
  end,function(f,p,u)
-  assert(p.ready and p.app==f.root and p.installedVersion()=='1.33' and p.work==f.work and u.previous=='1.32')
+  -- Sauvegarde d'avant le repère .over, sans compte rendu qui la relie à la version installée : jamais proposée.
+  assert(p.ready and p.app==f.root and p.installedVersion()=='1.33' and p.work==f.work and u.previous==nil)
   Up.check(u,p,0); f.flush(); assert(u.phase=='available' and u.release.notes[3]=='- Nouveau point')
   f.watch(); assert(Up.install(u,p,true)); f.flush()
   assert(u.phase=='ready','install: '..tostring(u.phase)..' '..tostring(u.error)..' '..tostring(u.detail))
@@ -457,6 +470,7 @@ tests.UPDATE_REMOTE_END_TO_END=function()
   assert(u.phase=='restarting','tick: '..tostring(u.phase)..' '..tostring(u.detail))
   -- Sauvegarde : seulement les fichiers que la copie remplace (jamais le reste du dossier de l'app).
   assert(files[f.work..'/backup/SpotterEnginer.lua']=='main 1.33' and files[f.work..'/backup/tracks/spa.lua']==nil and files[f.work..'/backup/backup/old.txt']==nil)
+  assert(files[f.work..'/backup/.over']=='1.34','previous version kept with the version it was taken under')
   -- Copie finale : fichiers changés, nouveau fichier, identiques jamais réécrits, manifeste en dernier, aucun rechargement,
   -- chaque fichier copié à côté puis mis en place, surveillance rétablie à la fin.
   assert(files[f.root..'/SpotterEnginer.lua']=='main 1.34' and files[f.root..'/src/ui.lua']=='ui 1.34' and files[f.root..'/src/new.lua']=='new 1.34')
@@ -606,7 +620,7 @@ tests.UPDATE_TIDY_USER_STATE_137=function()
   local W=f.work
   local back={'SpotterEnginer.lua','manifest.ini','src/update.lua'}
   for _,rel in ipairs(back) do f.files[W..'/backup/'..rel]=rel=='manifest.ini' and 'VERSION=1.35' or 'old '..rel end
-  f.files[W..'/backup/.files']=table.concat(back,'\n')
+  f.files[W..'/backup/.files']=table.concat(back,'\n'); f.files[W..'/backup/.over']='1.36'
   local nxt=W..'/next/'..Fake.prefix
   for _,rel in ipairs({'SpotterEnginer.lua','manifest.ini','src/update.lua','src/remote.lua','src/ui.lua'}) do f.files[nxt..rel]='new '..rel end
   f.files[nxt..'.files']='SpotterEnginer.lua\nmanifest.ini\nsrc/update.lua\nsrc/remote.lua\nsrc/ui.lua'
@@ -616,6 +630,7 @@ tests.UPDATE_TIDY_USER_STATE_137=function()
   for path in pairs(f.files) do assert(not path:find(W..'/next',1,true) and path~=W..'/boot.txt.bak','left: '..path) end
   for path in pairs(f.dirs) do assert(not path:find(W..'/next',1,true),'folder left: '..path) end
   for _,rel in ipairs(back) do assert(f.files[W..'/backup/'..rel],'previous version kept: '..rel) end
+  assert(f.files[W..'/backup/.over']=='1.36','.over kept by the cleaning')
   assert(u.previous=='1.35','rollback still offered')
   assert(events(u):find('mise a jour: nettoyage (7 fichiers)',1,true),events(u))
   local u2=Up.new('1.36'); Up.start(u2,p,Up.recover(p)); assert(not events(u2):find('nettoyage',1,true),'nothing left to clean')
@@ -713,11 +728,225 @@ tests.UPDATE_COMPATIBILITY=function()
  u,p=ready({}); assert(Up.status(u,true)=='v=1;installed=1.33;latest=1.34;state=available',Up.status(u,true))
  Up.install(u,p,true); Up.tick(u,p,true,200); assert(u.phase=='restarting')
  -- Retour arrière vers une version qui attendait un autre pont : refusé.
- u,p=ready({backup='1.32',backupLayout=layout(0)}); u.previous='1.32'
+ u,p=ready({backup='1.32',over='1.33',backupLayout=layout(0)}); u.previous='1.32'
  assert(Up.rollback(u,p,true)==false and u.error=='aaiNewer')
- u,p=ready({backup='1.32'}); u.previous='1.32'; assert(Up.rollback(u,p,true)==true and u.phase=='rollbackReady')
+ u,p=ready({backup='1.32',over='1.33'}); u.previous='1.32'; assert(Up.rollback(u,p,true)==true and u.phase=='rollbackReady')
  -- À jour : publié « uptodate » ; état d'avant toute vérification : rien.
  assert(Up.status(Up.new('1.34'),true)==nil)
+end
+-- La version précédente ne garde que les fichiers qu'une mise à jour a remplacés ; elle n'est proposée que
+-- par-dessus la version que cette mise à jour a installée (.over). Installée à la main depuis : plus proposée (elle
+-- mêlerait deux versions). Sauvegarde d'avant ce repère : gardée seulement si le compte rendu du lancement la relie
+-- à la version installée, et le repère est alors écrit.
+tests.UPDATE_ROLLBACK_OVER=function()
+ local function started(version,o) local p=port(o); local u=Up.new(version); Up.start(u,p); return u,p end
+ local u,p=started('1.34',{backup='1.33',installed='1.34'}); assert(u.previous=='1.33')
+ u=started('1.35',{backup='1.33',over='1.34'}); assert(u.previous==nil,'another version installed by hand since')
+ u=started('1.34',{backup='1.33',over=false}); assert(u.previous==nil,'older backup, nothing proves it')
+ u,p=started('1.34',{backup='1.33',over=false,report='update 1.33 -> 1.34'})
+ assert(u.previous=='1.33' and find(p.calls,'over backup 1.34'),'older backup proven by the report of this launch')
+ u,p=started('1.34',{backup='1.33',over=false,report='update 1.32 -> 1.34'}); assert(u.previous==nil and p.over==nil,'report from another version')
+ u,p=started('1.35',{backup='1.33',over=false,report='update 1.33 -> 1.34'}); assert(u.previous==nil and p.over==nil,'report to another version')
+ u,p=started('1.34',{backup='1.33',over=false,report='rollback 1.35 -> 1.34'}); assert(u.previous==nil and p.over==nil,'a rollback proves nothing')
+ -- Port d'une version d'avant le repère (copie interrompue, modules de deux versions) : rien de proposé, aucune erreur.
+ p=port({backup='1.33'}); p.sourceOver=nil; p.sourceSetOver=nil; p.sourceListed=nil; p.sourceText=nil
+ u=Up.new('1.34'); Up.start(u,p); assert(u.previous==nil)
+ Up.tick(u,p,true,1); assert(Up.status(u,true)==nil)
+ -- Sauvegarde changée depuis le lancement : retour arrière refusé sans rien copier.
+ local o={backup='1.33',installed='1.34'}; u,p=started('1.34',o); o.over='1.35'
+ assert(not Up.rollback(u,p,true) and u.error=='write' and not find(p.calls,'snapshot'))
+ -- Vrai port : mise à jour, puis autre version installée à la main, puis sauvegarde d'avant le repère.
+ onFake(nil,nil,function(f,p0,u0)
+  Up.check(u0,p0,0); Up.install(u0,p0,true); Up.tick(u0,p0,true,1); assert(u0.phase=='restarting')
+  local files=f.files
+  local function launch(v) local q=Remote.new(function() end); local w=Up.new(v); Up.start(w,q,Up.recover(q)); q.bootOk(); return w,q end
+  local w,q=launch('1.34'); assert(w.previous=='1.33' and q.sourceOver('backup')=='1.34')
+  f.app('1.35'); w,q=launch('1.35')
+  assert(w.previous==nil and not Up.rollback(w,q,true),'1.35 installed by hand: the 1.33 files would mix with it')
+  Up.tick(w,q,true,5); assert(files[f.root..'/SpotterEnginer.lua']=='main 1.35' and files[f.work..'/backup/SpotterEnginer.lua']=='main 1.33')
+  f.app('1.34'); w=launch('1.34'); assert(w.previous=='1.33','same version back: offered again')
+  files[f.work..'/backup/.over']=nil; w=launch('1.34'); assert(w.previous==nil,'older backup without proof')
+  files[f.work..'/updated.txt']='update 1.33 -> 1.34'; w=launch('1.34')
+  assert(w.previous=='1.33' and files[f.work..'/backup/.over']=='1.34','older backup proven by the report, marker written')
+  w,q=launch('1.34'); assert(w.previous=='1.33','kept at the next launches')
+  assert(Up.rollback(w,q,true)); Up.tick(w,q,true,9); assert(w.phase=='restarting' and Up.manifestVersion(files[f.root..'/manifest.ini'])=='1.33')
+ end)
+end
+-- État publié pour AdvancedIA : jamais le texte d'avant resté dans ac.store. Après une mise à jour réussie
+-- (redémarrage, compte rendu), une réponse 404, un retour arrière ; valeur du manifeste assainie ; texte refait
+-- seulement quand l'état change.
+tests.UPDATE_STATUS_STATES=function()
+ local S=Up.status
+ -- Redémarrage après la copie : la version en place est déjà la nouvelle.
+ local u,p=ready({installed='1.33'}); Up.install(u,p,true); Up.tick(u,p,true,10)
+ assert(u.phase=='restarting' and S(u,true)=='v=1;installed=1.34;latest=1.34;state=uptodate',S(u,true))
+ -- Lancement suivant : compte rendu affiché, état publié « uptodate » avant, pendant et après la vérification.
+ p=port({report='update 1.33 -> 1.34',backup='1.33'}); u=Up.new('1.34'); Up.start(u,p)
+ assert(Up.view(u,true)=='success' and S(u,true)=='v=1;installed=1.34;latest=1.34;state=uptodate',S(u,true))
+ p.hold=true; Up.check(u,p,100); assert(S(u,true)=='v=1;installed=1.34;latest=1.34;state=checking',S(u,true))
+ p.flush(); assert(u.phase=='current' and S(u,true)=='v=1;installed=1.34;latest=1.34;state=uptodate',S(u,true))
+ -- Retour arrière : la version quittée est connue plus récente ; installation rattrapée : celle à refaire.
+ p=port({report='rollback 1.34 -> 1.33'}); u=Up.new('1.33'); Up.start(u,p)
+ assert(S(u,true)=='v=1;installed=1.33;latest=1.34;state=available',S(u,true))
+ p=port({report='recovered 1.33 -> 1.34'}); u=Up.new('1.33'); Up.start(u,p)
+ assert(S(u,true)=='v=1;installed=1.33;latest=1.34;state=available',S(u,true))
+ -- Retour arrière en cours : état d'avant gardé (rien d'écrit), puis version rétablie, la plus récente connue proposée.
+ local o={backup='1.33',installed='1.34'}; p=port(o); u=Up.new('1.34'); Up.start(u,p); Up.check(u,p,100)
+ assert(S(u,true)=='v=1;installed=1.34;latest=1.34;state=uptodate')
+ Up.rollback(u,p,true); assert(S(u,true)==nil); Up.tick(u,p,true,200)
+ assert(u.phase=='restarting' and S(u,true)=='v=1;installed=1.33;latest=1.34;state=available',S(u,true))
+ -- Aucune version publiée (404) : jamais « checking » pour toujours.
+ u=Up.new('1.33'); p=port({apiStatus=404}); p.hold=true; Up.check(u,p,100); assert(S(u,true)=='v=1;installed=1.33;latest=1.33;state=checking')
+ p.flush(); assert(u.phase=='none' and S(u,true)=='v=1;installed=1.33;latest=1.33;state=uptodate',S(u,true))
+ -- Erreurs et état terminal.
+ u=Up.new('1.33'); Up.check(u,port({apiStatus=500}),100); assert(S(u,true)=='v=1;installed=1.33;latest=1.33;state=error',S(u,true))
+ u=Up.new('1.33'); u.phase='broken'; assert(S(u,true)=='v=1;installed=1.33;latest=1.33;state=error')
+ -- Retour arrière refusé (en conduite, pont) : rien de publié (surtout pas « incompatible » ni « needs=? »).
+ u,p=ready({backup='1.32',over='1.33',backupLayout=layout(0)}); u.previous='1.32'
+ local before=S(u,true); assert(before=='v=1;installed=1.33;latest=1.34;state=available')
+ assert(not Up.rollback(u,p,true) and u.error=='aaiNewer' and S(u,true)==nil)
+ assert(not Up.rollback(u,p,false) and u.error=='driving' and S(u,false)==nil)
+ -- Le refus suivant d'une installation est de nouveau publié.
+ assert(not Up.install(u,p,false) and S(u,false)==before)
+ -- Valeur lue dans le manifeste du paquet : aucun séparateur du contrat, longueur bornée, 200 octets au plus.
+ u,p=ready({pkgLayout=layout(2),manifest='[ABOUT]\nVERSION=1.34\nREQUIRES_ADVANCEDIA=Beta 1.52;state=uptodate\n'}); Up.install(u,p,true)
+ assert(S(u,true)=='v=1;installed=1.33;latest=1.34;state=incompatible;needs=Beta 1.52 state uptodate',S(u,true))
+ u,p=ready({pkgLayout=layout(2),manifest='[ABOUT]\nVERSION=1.34\nREQUIRES_ADVANCEDIA='..string.rep('é',300)..'\n'}); Up.install(u,p,true)
+ local text=S(u,true); local needs=text:match(';needs=(.*)$')
+ assert(#text<=Up.statusMax and #needs<=Up.needsMax and needs==string.rep('é',math.floor(Up.needsMax/2)),text)
+ -- Texte refait seulement quand l'état change (appelé à chaque image).
+ p=port({report='rollback 1.34 -> 1.33'}); u=Up.new('1.33'); Up.start(u,p)
+ local newer,calls=Up.newer,0
+ Up.newer=function(a,b) calls=calls+1; return newer(a,b) end
+ local ok,err=pcall(function()
+  local first=S(u,true); local n=calls
+  for _=1,50 do assert(S(u,true)==first and S(u,false)==first) end
+  assert(n>0 and calls==n,'status rebuilt '..(calls-n)..' times')
+  p.hold=true; Up.check(u,p,100); assert(S(u,true)=='v=1;installed=1.33;latest=1.33;state=checking',S(u,true))
+ end)
+ Up.newer=newer; assert(ok,err)
+end
+-- Le pont est recontrôlé à l'image de la copie (paquet extrait gardé, AdvancedIA mis à jour entre-temps) ; un
+-- pont gardé dans la version précédente mais illisible refuse le retour arrière (jamais jugé sur celui de l'app).
+tests.UPDATE_BRIDGE_RECHECK=function()
+ local o={installed='1.33'}; local u,p=ready(o)
+ Up.install(u,p,true); Up.tick(u,p,false,10); assert(u.phase=='available' and u.release.staged)
+ o.aai=layout(2); o.manifest='[ABOUT]\nVERSION=1.34\nREQUIRES_ADVANCEDIA=Beta 1.60\n'
+ assert(Up.install(u,p,true) and u.phase=='ready'); Up.tick(u,p,true,20)
+ assert(u.phase=='failed' and u.error=='aaiNewer' and u.release.needs=='Beta 1.60' and not find(p.calls,'snapshot') and p.marked==nil)
+ assert(Up.status(u,true)=='v=1;installed=1.33;latest=1.34;state=incompatible;needs=Beta 1.60')
+ -- Pont revenu : le paquet gardé s'installe sans nouveau téléchargement.
+ o.aai=nil; local downloads=count(p.calls,'get '..u.release.zip.url)
+ assert(Up.install(u,p,true)); Up.tick(u,p,true,30); assert(u.phase=='restarting' and count(p.calls,'get '..u.release.zip.url)==downloads)
+ -- Retour arrière : pont listé dans la version précédente mais illisible.
+ u,p=ready({backup='1.32',over='1.33',backupListed=true}); u.previous='1.32'
+ assert(not Up.rollback(u,p,true) and u.error=='layout')
+ -- Pont non gardé (identique dans les deux versions) : celui de l'app.
+ u,p=ready({backup='1.32',over='1.33'}); u.previous='1.32'; assert(Up.rollback(u,p,true))
+end
+-- Chemins et noms que Windows changerait, doublons à la casse près, tags et adresses de téléchargement.
+tests.UPDATE_PATHS_AND_TAGS=function()
+ local function with(x) local t=entries(); t[#t+1]=x; return t end
+ for _,bad in ipairs({'manifest.ini.','src/x.lua ','src./x.lua','docs /x.md','CON','src/nul.lua','aux.txt','fonts/COM1','src/lpt9.tar.gz','src/a\tb.lua','src/a?.lua','src/a*.lua','src/a|b','src/<a>','src/"a"'}) do
+  assert(not Up.content(with(Up.prefix..bad)),bad); assert(not Up.safeRel(bad),bad)
+ end
+ for _,good in ipairs({'docs/notes..md','vox/FR/01_vert.wav','src/console.lua','fonts/common/a b.ttf','.gitkeep','src/com10.lua'}) do
+  assert(Up.content(with(Up.prefix..good)),good); assert(Up.safeRel(good),good)
+ end
+ -- Deux entrées pour un seul fichier sous Windows.
+ assert(not Up.content(with(Up.prefix..'SRC/Update.lua')) and not Up.content(with(Up.prefix..'manifest.ini')))
+ assert(not Up.safeRel('') and not Up.safeRel(nil) and not Up.safeRel('/a') and not Up.safeRel('a//b') and not Up.safeRel('a/../b') and not Up.safeRel('C:/a') and not Up.safeRel('a\\b'))
+ -- Liste des fichiers d'une source (src/remote.lua) : même règle par segment.
+ local L=Remote.parseList
+ assert(#L('docs/notes..md\nsrc/a.lua\r\n')==2 and L('')==nil and L(nil)==nil)
+ for _,bad in ipairs({'../x','a/../b','/a','a\\b','C:/x','a/b./c','a /b','a//b','..'}) do assert(L('src/ok.lua\n'..bad)==nil,bad) end
+ -- Tags : un numéro à point, caractères simples ; adresse exacte du tag, dans ce dépôt.
+ for _,tag in ipairs({'2026','release-12','v1.34 beta','v1.34/x','v1.34?x','','v'}) do assert(not Up.release(release({tag_name=tag})),tag) end
+ local a=release({tag_name='v1.34.0'}); assert(not Up.release(a),'assets of another tag')
+ a=release(); a.assets[1].browser_download_url=Up.download..'v1.34/../../../../Autre/Depot/releases/download/v1.34/SpotterEnginer-1.34.zip'; assert(not Up.release(a))
+ a=release(); a.assets[1].browser_download_url=Up.download..'v1.33/SpotterEnginer-1.34.zip'; assert(not Up.release(a))
+ a=release(); a.assets[2].browser_download_url=Up.download..'v1.34/SpotterEnginer-1.34.sha256?x=1'; assert(not Up.release(a))
+ a=release(); a.assets[2].name='SpotterEnginer-1.34.zip.sha256'; a.assets[2].browser_download_url=Up.download..'v1.34/SpotterEnginer-1.34.zip.sha256'; assert(Up.release(a))
+ a=release({tag_name='1.34'}); for _,asset in ipairs(a.assets) do asset.browser_download_url=Up.download..'1.34/'..asset.name end; assert(Up.release(a).version=='1.34')
+ -- À l'arrêt : jamais sur une image ou une voiture que CSP n'a pas pu lire (valeurs de l'image d'avant).
+ assert(not Up.stopped({valid=false,paused=true}) and not Up.stopped({valid=true},{valid=false,inPit=true,kmh=0}))
+ assert(Up.stopped({valid=true,paused=true}) and Up.stopped({valid=true},{valid=true,inPit=true,kmh=0.5}))
+end
+-- Un fichier illisible n'est jamais pris pour « identique » (deux lectures en échec) : la copie s'arrête, la
+-- version installée est remise en place, le manifeste ne change pas.
+tests.UPDATE_REMOTE_UNREADABLE=function()
+ local function staged(setup,check)
+  onFake(nil,nil,function(f,p,u)
+   Up.check(u,p,0); Up.install(u,p,true); assert(u.phase=='ready',tostring(u.detail))
+   setup(f); Up.tick(u,p,true,10); check(f,u)
+  end)
+ end
+ local function intact(f) return f.files[f.root..'/SpotterEnginer.lua']=='main 1.33' and f.files[f.root..'/src/ui.lua']=='ui 1.33' and Up.manifestVersion(f.files[f.root..'/manifest.ini'])=='1.33' and f.files[f.work..'/installing.txt']==nil end
+ local nxt='/next/'..Fake.prefix
+ -- Nouveau module du paquet illisible (absent de l'app : nil des deux côtés).
+ staged(function(f) f.noload[f.work..nxt..'src/new.lua']=true end,function(f,u)
+  assert(u.phase=='failed' and u.error=='write' and u.detail=='src/new.lua','new: '..u.phase..' '..u.error..' '..u.detail)
+  assert(intact(f) and f.files[f.root..'/src/new.lua']==nil and f.restarts==0)
+ end)
+ -- Fichier du paquet illisible qui remplace un fichier de l'app : arrêt avant toute copie.
+ staged(function(f) f.noload[f.work..nxt..'src/ui.lua']=true end,function(f,u)
+  assert(u.error=='write' and u.detail=='sauvegarde : src/ui.lua' and intact(f),u.error..' '..u.detail)
+ end)
+ -- Fichier de l'app illisible après son remplacement : copie non confirmée, version remise en place.
+ staged(function(f) f.noload[f.root..'/src/ui.lua']=true end,function(f,u)
+  assert(u.error=='write' or u.phase=='broken',u.phase..' '..u.error)
+  f.noload[f.root..'/src/ui.lua']=nil
+  assert(Up.manifestVersion(f.files[f.root..'/manifest.ini'])=='1.33' and f.restarts==0)
+ end)
+ -- Fichier extrait illisible : paquet refusé à la comparaison.
+ onFake(nil,function(f) f.noload[f.work..nxt..'src/ui.lua']=true end,function(f,p,u)
+  Up.check(u,p,0); Up.install(u,p,true)
+  assert(u.error=='write' and u.detail:find('different du paquet : src/ui.lua',1,true) and intact(f),tostring(u.detail))
+ end)
+end
+-- Paquet extrait comparé au paquet par tranches (une image ne porte qu'une tranche) ; la liste des fichiers
+-- n'est écrite qu'à la fin ; une extraction annulée qui finit plus tard est ignorée.
+tests.UPDATE_REMOTE_COMPARE_SLICES=function()
+ local slice=Remote.compareSlice
+ local ok,err=pcall(function()
+  Remote.compareSlice=0
+  onFake(nil,nil,function(f,p,u)
+   local list=f.work..'/next/'..Fake.prefix..'.files'
+   Up.check(u,p,0); assert(Up.install(u,p,true))
+   assert(u.phase=='staging' and f.files[list]==nil,'one file compared, the rest at the next frames')
+   local frames=0
+   while u.phase=='staging' and frames<50 do frames=frames+1; Up.tick(u,p,false,frames); if u.phase=='staging' then assert(f.files[list]==nil) end end
+   assert(frames>=6 and u.phase=='available' and u.release.staged and f.files[list],'frames '..frames..' '..u.phase)
+   assert(f.files[f.root..'/SpotterEnginer.lua']=='main 1.33' and f.reloads==0,'nothing copied while driving')
+   assert(Up.install(u,p,true)); Up.tick(u,p,true,60); assert(u.phase=='restarting')
+  end)
+  -- Fichier abîmé loin dans la liste : trouvé à sa tranche.
+  onFake(nil,function(f) f.corruptExtract=Fake.prefix..'src/ui.lua' end,function(f,p,u)
+   Up.check(u,p,0); Up.install(u,p,true)
+   for frame=1,50 do Up.tick(u,p,false,frame) end
+   assert(u.error=='write' and u.detail:find('different du paquet : src/ui.lua',1,true) and not u.release.staged)
+  end)
+  -- Annulée pendant l'extraction, relancée : la première extraction, finie ensuite, n'interrompt pas la seconde.
+  onFake(nil,function(f) f.async=true end,function(f,p,u)
+   Up.check(u,p,0); f.flush(); Up.install(u,p,true)
+   while u.phase~='staging' do local list=f.pending; f.pending={}; list[1](); for k=2,#list do f.pending[#f.pending+1]=list[k] end end
+   assert(Up.cancel(u) and Up.install(u,p,true)); f.flush()
+   for frame=1,50 do Up.tick(u,p,false,frame) end
+   assert(u.phase=='available' and u.release.staged and p.sourceComplete('next'),u.phase..' '..tostring(u.detail))
+  end)
+ end)
+ Remote.compareSlice=slice; assert(ok,err)
+end
+-- Rappel facultatif du port avant la copie finale (fichiers de l'app tenus ouverts à rendre) ; une erreur du
+-- rappel n'empêche rien.
+tests.UPDATE_BEFORE_COPY=function()
+ local u,p=ready({installed='1.33'}); p.beforeCopy=function() p.calls[#p.calls+1]='before copy' end
+ Up.install(u,p,true); Up.tick(u,p,true,10)
+ assert(u.phase=='restarting' and ordered(p.calls,{'stage','before copy','snapshot','place next','restart'}) and count(p.calls,'before copy')==1)
+ u,p=ready({installed='1.33'}); p.beforeCopy=function() error('boom') end
+ Up.install(u,p,true); Up.tick(u,p,true,10); assert(u.phase=='restarting')
+ u,p=ready({backup='1.32',over='1.33',installed='1.33'}); u.previous='1.32'; p.beforeCopy=function() p.calls[#p.calls+1]='before copy' end
+ Up.rollback(u,p,true); Up.tick(u,p,true,10); assert(ordered(p.calls,{'before copy','snapshot','place backup'}))
 end
 -- Vrai port : pont d'AdvancedIA lu sur le disque, à côté de l'app ; AdvancedIA absent ou plus ancien : refusé, rien
 -- d'extrait ni de copié dans le dossier de l'app.

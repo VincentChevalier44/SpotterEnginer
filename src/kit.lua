@@ -10,8 +10,7 @@ local function hex(h,a)
  local r,g,b=h:match('^#(%x%x)(%x%x)(%x%x)$')
  return rgbm(tonumber(r,16)/255,tonumber(g,16)/255,tonumber(b,16)/255,a or 1)
 end
--- Jetons du kit (ai.css, Kit) ; clés historiques gardées pour l'overlay : blue (accent d'action), light (texte), grey
--- (libellé), field (contrôle), panel, line, warn, red, green.
+-- Jetons du kit (ai.css, Kit).
 local palette
 function W.colors()
  if not palette then
@@ -34,8 +33,6 @@ function W.colors()
    best=hex('#B26CFF'),veil=hex('#111318',0.58),
    -- Nom de l'app dans l'en-tête : l'accent pervenche.
    brand=hex('#A09BFF')}
-  local c=palette
-  c.blue=c.cyan; c.light=c.text; c.grey=c.label; c.field=c.control; c.hover=c.controlHover; c.line=c.rule; c.red=c.danger; c.green=c.ok; c.dark=c.ink
  end
  return W.current or palette
 end
@@ -79,7 +76,6 @@ function W.setFonts(dir)
  for role,pair in pairs(FAMILIES) do fonts[role]=dir and pair[1]:format(dir) or pair[2] end
  f.fontRole=nil; f.fontName=nil; forget()
 end
-function W.fonts() return fonts end
 -- Police du rôle voulu, poussée seulement si elle change (une seule police poussée à la fois par le kit ; deux rôles
 -- servis par la même police, comme avec les polices de secours, ne la repoussent pas).
 local function use(role)
@@ -116,8 +112,6 @@ local function vec(x,y)
  return p
 end
 function W.point(x,y) return vec(f.ox+x*f.s,f.oy+y*f.s) end
--- Point réutilisé en coordonnées de fenêtre (overlay) : consommé aussitôt par l'appel de dessin.
-W.vec=vec
 local point=W.point
 -- Canevas : W.minWidth px virtuels au minimum (réduit en dessous, au plus de moitié), sinon la largeur de la fenêtre.
 function W.begin(id)
@@ -269,7 +263,6 @@ function W.paragraph(str,x,y,w,size,col,r)
  for i,line in ipairs(list) do W.text(line,x,y+(i-1)*size*LINE,size,col,r) end
  return #list*size*LINE
 end
-function W.lineHeight(size) return size*LINE end
 -- Aide au survol : la région la plus prioritaire sous la souris fournit l'infobulle de l'image.
 local function inside(x,y,w,h)
  local mx,my=f.mx or 0,f.my or 0; local ax,ay=f.ox+x*f.s,f.oy+y*f.s; local bx,by=f.ox+(x+w)*f.s,f.oy+(y+h)*f.s
@@ -287,7 +280,6 @@ end
 -- Identifiant natif « ##spe_… » d'une commande, fait une fois par identifiant.
 local hashed={}
 local function hashId(id) local s=hashed[id]; if not s then s='##spe_'..id; hashed[id]=s end; return s end
-W.hashId=hashId
 -- Zone cliquable : bouton invisible natif (identifiant stable, clic gauche), survol, appui et clic droit.
 local hitSize=nil
 function W.hit(id,x,y,w,h)
@@ -307,7 +299,6 @@ function W.marker(x,y,col)
 end
 -- Barre inclinée des titres de section (4 × 11, -18°).
 local function bar(x,y,col) W.quad(x+3.6,y,x+7.6,y,x+4,y+11,x,y+11,col) end
-W.bar=bar
 -- En-tête de bloc (.h) : barre cyan, titre condensé gras 13 en capitales, texte de droite (au plus 60 % de la
 -- largeur), filet bas ; le titre s'arrête avant le texte de droite.
 function W.heading(label,x,y,w,right,rightRole,rightCol)
@@ -373,30 +364,6 @@ function W.button(id,label,x,y,w,h,active,tip,style,icon)
  W.help(tip,x,y,w,h,5)
  return clicked,right
 end
--- Lien (.lk) : texte condensé gras 12 en capitales, cyan clair ; renvoie le clic et la largeur.
-function W.link(id,label,x,y,tip)
- local c=W.colors(); local text=W.upper(label); local w=width(text,12,'cond')
- local clicked,hover,pressed=W.hit(id,x,y,w,16)
- W.text(text,x,y+1,12,pressed and c.cyanActive or hover and c.cyan or c.cyanText,'cond')
- W.help(tip,x,y,w,16,5)
- return clicked,w
-end
-function W.linkWidth(label) return width(W.upper(label),12,'cond') end
--- Icône (.ic, 28 × 28) : corbeille ou croix ; survol rouge.
-function W.icon(id,kind,x,y,tip)
- local c=W.colors()
- local clicked,hover,pressed=W.hit(id,x,y,28,28)
- if hover or pressed then W.rect(x,y,28,28,pressed and c.dangerBackHover or c.dangerBack) end
- local col=(hover or pressed) and c.dangerText or c.label
- local cx,cy=x+14,y+14
- if kind=='close' then W.line(cx-4,cy-4,cx+4,cy+4,col,1.6); W.line(cx+4,cy-4,cx-4,cy+4,col,1.6)
- else
-  W.line(cx-4.5,cy-3,cx+4.5,cy-3,col,1.5); W.line(cx-1.5,cy-3,cx-1.5,cy-4.5,col,1.4); W.line(cx-1.5,cy-4.5,cx+1.5,cy-4.5,col,1.4); W.line(cx+1.5,cy-4.5,cx+1.5,cy-3,col,1.4)
-  W.line(cx-3.2,cy-3,cx-2.6,cy+5,col,1.4); W.line(cx+3.2,cy-3,cx+2.6,cy+5,col,1.4); W.line(cx-2.6,cy+5,cx+2.6,cy+5,col,1.4)
- end
- W.help(tip,x,y,28,28,5)
- return clicked
-end
 -- Interrupteur (.sw, 30 × 16) : état allumé cyan, éteint gris, désactivé grisé.
 -- Interrupteur grisé mais allumé (réglage toujours actif, Beta 1.37) : on et disabled vrais ensemble, bouton à droite.
 function W.switchShape(x,y,on,hover,disabled)
@@ -447,7 +414,6 @@ function W.chip(str,x,y,kind)
  W.rect(x,y,w,17,s[1]); W.text(text,x+5,y+2,11,s[2],'cond')
  return w
 end
-function W.chipRight(str,right,y,kind) local w=W.chipWidth(str); W.chip(str,right-w,y,kind); return w end
 -- Puce d'état à point de couleur (en-tête, Beta 1.38) : point de 7 px puis le texte, aux couleurs de la puce.
 function W.dotChipWidth(str) return width(W.upper(str),11,'cond')+22 end
 function W.dotChip(str,x,y,kind)
@@ -505,24 +471,6 @@ function W.segment(id,labels,x,y,w,h,selected,tip,ids,tips)
  W.frameRect(x,y,w,h,c.rule)
  return picked,right
 end
--- Segment lisible : chaque libellé (en capitales) tient dans sa case.
-function W.segmentFits(labels,w)
- local cell=w/#labels-6
- for i=1,#labels do if width(W.upper(labels[i]),11,'cond')>cell then return false end end
- return true
-end
--- Bouton à défilement (.cy) : « ‹ valeur › », un clic pour la valeur suivante.
-function W.cycle(id,label,x,y,w,h,tip)
- local c=W.colors()
- local clicked,hover,pressed,right=W.hit(id,x,y,w,h)
- W.rect(x,y,w,h,pressed and c.block or hover and c.panel or c.bg)
- W.frameRect(x,y,w,h,hover and c.ruleHover or c.rule)
- W.text('‹',x+7,y+(h-14)/2,11,c.cyan)
- W.right('›',x+w-7,y+(h-14)/2,11,c.cyan)
- W.cell(label,x+20,y+(h-15)/2,w-40,12,c.text)
- W.help(tip,x,y,w,h,5)
- return clicked,right
-end
 -- Tuile (.tile) : nom, puce à droite, description (la dernière ligne finie par « … » si elle ne tient pas) ; allumée
 -- (cyan foncé, cadre cyan) quand choisie.
 function W.tile(id,name,chip,chipKind,desc,x,y,w,h,pressed,tip)
@@ -542,16 +490,6 @@ function W.tile(id,name,chip,chipKind,desc,x,y,w,h,pressed,tip)
  end
  W.help(tip,x,y,w,h,5)
  return clicked
-end
--- Ligne de liste (.li) : fond de bloc, choisie en cyan foncé avec un trait cyan à gauche.
-function W.row(id,x,y,w,h,pressed,tip)
- local c=W.colors()
- local clicked,hover,down=W.hit(id,x,y,w,h)
- f.active[id]=pressed==true
- W.rect(x,y,w,h,pressed and (hover and c.selectHover or c.select) or down and c.blockActive or hover and c.blockHover or c.block)
- if pressed then W.rect(x,y,2,h,c.cyan) end
- W.help(tip,x,y,w,h,4)
- return clicked,hover
 end
 -- Ligne de la barre latérale (.nav, 28 px ; Beta 1.42 : h plus petit si la liste ne tient pas) : nom, nombre de réglages
 -- modifiés, interrupteur de la section.
@@ -589,22 +527,6 @@ function W.slider(id,x,y,w,value,lo,hi,step,tip,default)
  W.para(tx-5,y,10,16,active and c.cyan or hover and c.thumbHover or c.thumb,3)
  W.help(tip,x,y-2,w,20,5)
  return result,right
-end
--- Petit bouton −/+ (.pm, 20 × 18).
-function W.pm(id,label,x,y,tip)
- local c=W.colors()
- local clicked,hover,pressed=W.hit(id,x,y,20,18)
- W.rect(x,y,20,18,pressed and c.controlActive or hover and c.controlHover or c.control)
- local tw=width(label,13)
- W.text(label,x+(20-tw)/2,y+1,13,hover and c.text or c.soft)
- W.help(tip,x,y,20,18,5)
- return clicked
-end
--- Champ texte (.in) : cadre dessiné, saisie native sans fond par-dessus (seulement si entièrement visible).
-function W.inputFrame(x,y,w,h,focus,err)
- local c=W.colors()
- W.rect(x,y,w,h,c.bg)
- W.frameRect(x,y,w,h,err and c.danger or focus and c.cyan or c.rule)
 end
 -- Message (.msg) : losange de couleur et texte coupé ; kinds ok, er, wn, mut, gr, wo. Renvoie la hauteur.
 local msgCache=setmetatable({},{__mode='k'})
@@ -682,13 +604,5 @@ function W.finish()
   if s then ui.popStyleColor(#s) end
  end
  ui.setCursor(point(0,0))
-end
--- Pas d'un réglage numérique : entier pour les clés entières, sinon 1, 2 ou 5 × 10^n proche du centième de la plage.
-function W.step(lo,hi,integer)
- if integer then return 1 end
- local raw=(hi-lo)/100
- local power=10^math.floor(math.log10(raw))
- local unit=raw/power
- return (unit<1.5 and 1 or unit<3.5 and 2 or unit<7.5 and 5 or 10)*power
 end
 return W

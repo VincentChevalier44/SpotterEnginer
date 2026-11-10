@@ -57,7 +57,7 @@ function M.defaultModel()
  return {base=100,fuelPerLap=2.5,fuelK=0.03,tank=100,fuel=50,fuelMargin=1.0,
   wearF=nil,wearR=nil,kmF=0.25,kmR=0.25,km0F=0,km0R=0,gripK=0.6,degLinear=0.05,age0=0,
   warmup=1.5,pitLane=22,tyreChange=10,fuelRate=0.5,minPit=0,changeTyres=true,
-  wearGrowth=0,gripFloor=94,maxStint=0,trafficCost=1.5,trafficWindow=2.0,tolerance=2.0}
+  wearGrowth=0,gripFloor=94,trafficCost=1.5,trafficWindow=2.0,tolerance=2.0}
 end
 -- Perte d'adhérence (%) aux km virtuels donnés d'un essieu ; 0 sans courbe.
 local function loss(curve,km) if not curve then return 0 end return math.max(0,curve.max-M.eval(curve,km)) end
@@ -83,7 +83,7 @@ function M.lapGrip(m,km0F,km0R,k)
  return g
 end
 -- Sommes préfixes de la dégradation d'un relais (D[n] = somme des n premiers tours) et longueur maximale permise par
--- l'adhérence plancher (ou la longueur de relais maximale réglée).
+-- l'adhérence plancher.
 local function prefix(m,km0F,km0R,age0,count)
  local D={[0]=0}; local life=count
  for k=0,count-1 do
@@ -93,7 +93,6 @@ local function prefix(m,km0F,km0R,age0,count)
  end
  -- Sans courbe : perte linéaire au-delà de 4 s au tour = pneu fini.
  if not (m.wearF or m.wearR) and m.degLinear>0 then life=math.min(life,math.max(0,math.floor(4/m.degLinear)-age0)) end
- if m.maxStint and m.maxStint>0 then life=math.min(life,m.maxStint) end
  return D,life
 end
 M.prefix=prefix
@@ -116,7 +115,7 @@ function M.solve(m,race,traffic)
  local done=math.max(0,math.floor(race.done or 0))
  local total=math.max(done+1,math.floor(race.total or done+1))
  local R=total-done
- local plan={ok=false,done=done,total=total,remaining=R,stops=0,laps={},costs={},window=nil,optimal=nil,reason=''}
+ local plan={ok=false,done=done,total=total,stops=0,laps={},costs={},window=nil,optimal=nil,reason=''}
  if m.fuelPerLap<=0 or m.base<=0 then plan.reason='model'; return plan end
  local tankLaps=math.floor((m.tank-m.fuelMargin)/m.fuelPerLap)
  if tankLaps<1 then plan.reason='tank'; return plan end
@@ -134,7 +133,7 @@ function M.solve(m,race,traffic)
  -- Pneus déjà sous le plancher d'adhérence : le plancher ne force plus un arrêt à chaque tour (la dégradation, comptée
  -- dans le coût, décide) ; il ne limite que les relais à venir.
  local maxCurrent=math.max(1,math.min(R,lifeC>0 and lifeC or R,fuelLaps>0 and fuelLaps or 1))
- plan.fuelLaps=fuelLaps; plan.lifeLaps=lifeC; plan.tankLaps=tankLaps; plan.freshLife=lifeF
+ plan.fuelLaps=fuelLaps
  -- f[x][q] : coût minimal de x (tours finis, arrêt fait à la fin du tour x) à l'arrivée, q arrêts obligatoires encore
  -- dus après cet arrêt ; nxt : longueur du relais suivant choisie.
  local Q=math.max(0,race.mandatory or 0)
@@ -314,7 +313,6 @@ function M.duels(m,done,me,ahead,behind,loss,horizon,R)
   local A={gap=behind.gap,km0F=me.km0F,km0R=me.km0R,age0=me.age0,stop=done+2}
   local B={gap=0,km0F=behind.km0F,km0R=behind.km0R,age0=behind.age0,stop=done+1}
   local g=M.duel(m,done,A,B,cap(4),loss)
-  out.threatGap=g
   out.threat=g<0
  end
  return out

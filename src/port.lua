@@ -66,7 +66,12 @@ end
 -- principal porte le nom du dossier (règle de CSP). Les clés du pont gardent l'ancien préfixe « ACAdvancedIA.Bridge »
 -- exprès (protocole figé, src/bridge_layout.lua) : ne pas les renommer.
 -- Dossiers possibles d'AdvancedIA (nouveau nom d'abord) : une seule liste, celle de la mise à jour (src/update.lua).
-M.aaiFolders=require('src/update').companion.folders
+-- Module de la mise à jour illisible (remplaçant posé par SpotterEnginer.lua, sans cette liste) : les deux noms connus.
+do
+ local ok,up=pcall(require,'src/update')
+ local list=ok and type(up)=='table' and type(up.companion)=='table' and up.companion.folders
+ M.aaiFolders=type(list)=='table' and list or {'AdvancedIA','ACAdvancedIA'}
+end
 -- Texte cherché dans le script principal d'AdvancedIA (pont chargé). Écrit en deux morceaux : le contrôle des paquets de
 -- la mise à jour (src/update.lua, M.requires) prend tout require('src/…') écrit en clair pour un module à livrer.
 local AAI_BRIDGE_REQUIRE="require('src/".."bridge')"
@@ -115,18 +120,20 @@ function M.bridgeOpen()
  return nil,nil,tostring(a)
 end
 -- Clips présents : ensemble des chemins relatifs « FR/01_vert.wav », « FR/num/07.wav », « FR/pos/07.wav » (langues et
--- sous-dossiers du catalogue).
+-- sous-dossiers du catalogue), et nombre de clips du catalogue trouvés.
 function M.voiceFiles(root)
  local set,count={},0
  for _,lang in ipairs(Catalog.languages) do
   for _,sub in ipairs(Catalog.subfolders) do
    pcall(io.scanDir,root..'/'..lang..'/'..sub,'*',function(name,attr)
     if name and not (attr and attr.isDirectory) and (name:lower():match('%.wav$') or name:lower():match('%.mp3$') or name:lower():match('%.ogg$')) then
-     set[lang..'/'..sub..name]=true; count=count+1
+     set[lang..'/'..sub..name]=true
     end
    end)
   end
  end
+ -- Présents : seuls les clips du catalogue comptent (un fichier en trop ne masque pas un clip manquant).
+ Catalog.eachFile(function(rel) if set[rel] then count=count+1 end end)
  return set,count
 end
 -- Lecture d'un clip : événement audio créé pour un passage (il devient invalide après), à niveau constant quelle que
@@ -169,6 +176,17 @@ function M.warmStep()
   warmQueue[warmHead]=nil; warmHead=warmHead+1; warmQueued[p]=nil
   if not warmed[p] then warmed[p]=newEvent(p) or false end
  end
+end
+-- Clips préchargés libérés (avant la copie des fichiers d'une mise à jour : aucun clip tenu par FMOD), file de
+-- préchargement vidée ; les clips sont rechargés à la demande ensuite.
+function M.release()
+ for path,ev in pairs(warmed) do
+  if ev then pcall(function() ev:dispose() end) end
+  warmed[path]=nil
+ end
+ for k=#warmQueue,1,-1 do warmQueue[k]=nil end
+ for path in pairs(warmQueued) do warmQueued[path]=nil end
+ warmHead=1
 end
 function M.prepare(path,volume)
  local ev=warmed[path]
@@ -239,6 +257,45 @@ end
 local journal={path=nil,bytes=0,failures=0,max=2*1024*1024,keep=3,marker='SpotterEnginer.journal'}
 -- Mémoire de la partie (ac.store : gardée au rechargement de l'app, vidée à la relance du jeu), lue par d'autres apps.
 function M.store(key,text) if callable(ac.store) then pcall(ac.store,key,text) end end
+-- Valeur de cette mémoire (chaîne ou nombre, SDK de CSP), ou nil.
+function M.recall(key)
+ if not callable(ac.load) then return nil end
+ local ok,v=pcall(ac.load,key)
+ return ok and v or nil
+end
+-- Heure du système (s), pour ce qui doit survivre au rechargement de l'app.
+function M.wallClock() return os.time() end
+-- Mémoire gardée au rechargement à chaud de l'app (ctx.keep : annonces déjà dites) : keep.load(name) rend une chaîne
+-- ou nil, keep.store(name,text) l'écrit. ac.load rend une chaîne, un nombre ou nil (SDK de CSP) ; inerte hors du jeu.
+-- Portée : un numéro par séance suivie (keep.resume) ; ce qui a été gardé pendant une autre séance, ou avant un
+-- redémarrage de la séance, n'est plus lu (rien à effacer). Chaîne vide : nil.
+local KEEP='SpotterEnginer.keep.'
+local scope='0.'
+local function keepLoad(key)
+ local host=rawget(_G,'ac')
+ if type(host)~='table' or not callable(host.load) then return nil end
+ local ok,v=pcall(host.load,KEEP..key)
+ if not ok then return nil end
+ if type(v)=='number' then v=tostring(v) end
+ return type(v)=='string' and v~='' and v or nil
+end
+local function keepStore(key,text)
+ local host=rawget(_G,'ac')
+ if type(host)~='table' or not callable(host.store) then return false end
+ return (pcall(host.store,KEEP..key,text==nil and '' or tostring(text)))
+end
+M.keep={load=function(name) return keepLoad(scope..tostring(name)) end,
+ store=function(name,text) return keepStore(scope..tostring(name),text) end}
+-- Séance suivie par l'app (à chaque remise à zéro, SpotterEnginer.lua). again : première remise à zéro depuis le
+-- chargement de l'app ; vrai si c'est la séance déjà suivie avant un rechargement à chaud (même portée : ce qui a été
+-- gardé se relit), sinon une portée neuve.
+function M.keep.resume(session,again)
+ local epoch=tonumber(keepLoad('epoch')) or 0
+ local same=again==true and epoch>0 and keepLoad('session')==tostring(session)
+ if not same then epoch=epoch+1 end
+ keepStore('epoch',epoch); keepStore('session',tostring(session)); scope=epoch..'.'
+ return same
+end
 function M.journalOpen()
  journal.path=nil; journal.bytes=0; journal.failures=0
  local continued=false
@@ -346,6 +403,10 @@ function M.read(F,dt)
  local wv=sim.windVelocityKmh
  if wv then F.windX=num(wv.x); F.windZ=num(wv.y) else F.windX=0; F.windZ=0 end
  F.started=sim.isSessionStarted~=false; F.finishedSession=sim.isSessionFinished==true
+ -- Temps de séance (s ; repart de zéro au redémarrage de la séance) et pilotage à la souris (bouton d'édition en jeu).
+ F.sessionTime=num(sim.currentSessionTime)/1000; F.mouseSteer=sim.isMouseSteeringActive==true
+ -- Circuit ouvert (de A à B, sim.isTrackOpen) : vrai, sinon nil (boucle fermée, ou CSP sans ce champ).
+ F.open=sim.isTrackOpen==true or nil
  local wc=sim.weatherConditions
  if wc then F.weatherNow=num(wc.currentType,-1); F.weatherNext=num(wc.upcomingType,-1); F.transition=num(wc.transition) else F.weatherNow=-1; F.weatherNext=-1; F.transition=0 end
  F.rainComing=F.weatherNext>=0 and wetTypes[F.weatherNext]==true and not (F.weatherNow>=0 and wetTypes[F.weatherNow]==true)

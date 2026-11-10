@@ -40,13 +40,20 @@ function M.pick(s,id,tone)
  return pick
 end
 -- Sens d'une annonce (clips de base et valeurs, avant le choix des variantes) : une même annonce dite autrement reste une
--- redite (src/voice.lua, repeatGap).
+-- redite (src/voice.lua, repeatGap). Valeur arrondie comme elle est dite : « moins 0,4 tour » calculé 0,43 puis 0,41
+-- est la même annonce.
+local FORMATS={[0]='%.0f','%.1f','%.2f','%.3f'}
+local function shown(p)
+ local n=tonumber(p.n)
+ if not n or n~=n then return tostring(p.n) end
+ return string.format(FORMATS[p.dec or 0] or '%.3f',n)
+end
 local function meaning(parts)
  local out={}
  for k=1,#parts do
   local p=parts[k]
   if type(p)=='string' then out[#out+1]=p
-  elseif type(p)=='table' then out[#out+1]=p.pos and ('P'..p.pos) or p.n and tostring(p.n) or p.text or '' end
+  elseif type(p)=='table' then out[#out+1]=p.pos and ('P'..p.pos) or p.n and shown(p) or p.text or '' end
  end
  return table.concat(out,' ')
 end
@@ -62,8 +69,9 @@ function M.note(s,id,...) return string.format(Catalog.notes[id][s.lang],...) en
 local function singular(lang,v) if lang=='FR' then return v<2 end return v==1 end
 -- Unités accordées (clip au pluriel -> clip au singulier) quand elles suivent un nombre.
 local SINGULAR={laps='lapOne',seconds='secondOne',placesGained='placeGained',placesLost='placeLost',overtakes='overtakeOne'}
--- Nombre en atomes : signe, entier (0 à Catalog.maxNumber, plus grand : écrit seulement), virgule et chiffres des
--- décimales (zéros de fin retirés : « 1 », jamais « 1,0 »). Renvoie la valeur dite.
+-- Nombre en atomes : signe, entier (0 à Catalog.maxSpoken ; au-delà de Catalog.maxNumber, dit avec le clip « cent »,
+-- voir hundreds ; plus grand : écrit seulement), virgule et chiffres des décimales (zéros de fin retirés : « 1 », jamais
+-- « 1,0 »). Renvoie la valeur dite.
 local function numberParts(out,value,dec)
  local negative=value<0; value=math.abs(value)
  dec=dec or 0
@@ -123,12 +131,29 @@ local function relative(s,p)
  local c=Catalog.clips[p]
  return c and s.lang..'/'..c[s.lang] or nil
 end
+-- Clips d'un entier de 100 à Catalog.maxSpoken, ajoutés à list : « cent » + reste en français de 100 à 199, sinon
+-- chiffre + « cent » (« hundred ») + reste ; reste nul : rien de plus. false s'il manque un clip. Le texte écrit reste
+-- le nombre en chiffres.
+local function hundreds(s,n,list)
+ if n>Catalog.maxSpoken or n~=math.floor(n) then return false end
+ local h,rest=math.floor(n/100),n%100
+ local word=s.lang..'/'..Catalog.clips.hundred[s.lang]
+ local count=(h>1 or s.lang~='FR') and s.lang..'/'..Catalog.numberFile(h) or nil
+ local tail=rest>0 and s.lang..'/'..Catalog.numberFile(rest) or nil
+ if not s.files[word] or count and not s.files[count] or tail and not s.files[tail] then return false end
+ if count then list[#list+1]=s.root..'/'..count end
+ list[#list+1]=s.root..'/'..word
+ if tail then list[#list+1]=s.root..'/'..tail end
+ return true
+end
 -- Chemins des clips des atomes (textes écrits seulement ignorés), ou nil si l'un manque.
 function M.paths(s,atoms)
  local list={}
  for k=1,#atoms do
   local a=atoms[k]
-  if not (type(a)=='table' and a.text) then
+  if type(a)=='table' and a.int and a.int>Catalog.maxNumber then
+   if not hundreds(s,a.int,list) then return nil end
+  elseif not (type(a)=='table' and a.text) then
    local rel=relative(s,a)
    if not rel or not s.files[rel] then return nil end
    list[#list+1]=s.root..'/'..rel

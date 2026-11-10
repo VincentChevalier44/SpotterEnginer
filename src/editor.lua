@@ -36,10 +36,12 @@ local function place(st,app,sw,sh)
  st.x=U.clamp(x,0,math.max(0,sw-M.LW)); st.y=U.clamp(y,0,math.max(0,sh-M.LH))
 end
 -- Souris bougée depuis moins de SHOW s, ou sur le bouton. Sans position de la souris (CSP ancien) : toujours montré.
-local function wanted(st,now)
+-- steering : pilotage à la souris en cours (elle bouge sans cesse : le bouton resterait affiché et prendrait les clics) ;
+-- son mouvement ne compte pas, le bouton reste joignable en le survolant, en pause ou par Ctrl+Alt+K.
+local function wanted(st,now,steering)
  if not callable(ui.mousePos) then return true end
  local m=ui.mousePos()
- if st.mx and (math.abs(m.x-st.mx)>0.5 or math.abs(m.y-st.my)>0.5) then st.moveAt=now end
+ if not steering and st.mx and (math.abs(m.x-st.mx)>0.5 or math.abs(m.y-st.my)>0.5) then st.moveAt=now end
  st.mx,st.my=m.x,m.y
  if m.x>=st.x and m.x<st.x+M.LW and m.y>=st.y and m.y<st.y+M.LH then st.moveAt=now end
  return now-st.moveAt<M.SHOW
@@ -156,7 +158,8 @@ function M.hud(st,app)
  place(st,app,sw,sh)
  local now=app.clock and app.clock() or 0
  local editing=app.editing==true
- local show=editing or cfg.enabled and cfg.editButton and not (app.F and app.F.replay) and wanted(st,now)
+ local F=app.F
+ local show=editing or cfg.enabled and cfg.editButton and not (F and F.replay) and wanted(st,now,F and F.mouseSteer and not F.paused)
  if not show then return end
  st.pos.x,st.pos.y=st.x,st.y
  if not st.drawLauncher then st.drawLauncher=function() launcher(st,app) end; st.drawPanel=function() panel(st,app) end end

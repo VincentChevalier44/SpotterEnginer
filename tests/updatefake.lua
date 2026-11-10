@@ -14,6 +14,7 @@
 -- ni effacés, ni remplacés), source illisible (f.unreadable[chemin] : copie refusée ; f.locked : ouvert en lecture par
 -- l'app, copiable mais jamais remplacé), suppression refusée
 -- (f.failDelete, motif du chemin).
+-- Lecture refusée (f.noload[chemin] : io.load rend nil alors que le fichier existe : antivirus, disque).
 -- 1.37 : io.save(…, true) sur un fichier existant garde l'ancien contenu en <fichier>.bak, comme io.replaceFile de
 -- CSP (ReplaceFileW avec copie de sauvegarde), vu sur le disque du pilote (boot.txt.bak après la mise à jour 1.35 -> 1.36).
 -- 1.36 : dossiers gardés une fois vides (f.dirs), comme sous Windows : créés par createDir/createFileDir ou par
@@ -26,7 +27,7 @@ M.layout='local L={}\nL.version=1\nreturn L\n'
 function M.install(o)
  o=o or {}
  local f={files=o.files or {},zips={},count=0,calls={},responses={},json={},sha={},restarts=0,opened={},root=o.root or 'D:/app',
-  state=o.state or 'C:/state',saved={},pending={},reloads=0,watching=true,locked={},readonly={},unreadable={},pausedWrites=0,dirs={}}
+  state=o.state or 'C:/state',saved={},pending={},reloads=0,watching=true,locked={},readonly={},unreadable={},noload={},pausedWrites=0,dirs={}}
  local function log(x) f.calls[#f.calls+1]=x end
  local function keep(t,k) f.saved[#f.saved+1]={t,k,t[k]} end
  local appRoot,stateRoot=f.root..'/',f.state..'/'
@@ -94,7 +95,7 @@ function M.install(o)
  keep(os,'openURL'); os.openURL=function(url) f.opened[#f.opened+1]=url end
  for _,name in ipairs({'load','save','fileExists','deleteFile','copyFile','move','createDir','createFileDir','scanDir','scanZip','loadFromZip','extractFromZipAsync','deleteDir','dirExists'}) do keep(io,name) end
  local orig={}; for _,s in ipairs(f.saved) do if s[1]==io then orig[s[2]]=s[3] end end
- io.load=function(path,...) if under(path) then return f.files[path] end; return orig.load(path,...) end
+ io.load=function(path,...) if under(path) then if f.noload[path] then return nil end; return f.files[path] end; return orig.load(path,...) end
  io.save=function(path,data,ensure,...)
   if under(path) then
    if f.failSave and path:find(f.failSave,1,true) or f.readonly[path] then return false end

@@ -2,6 +2,42 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.2 — 10 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Second full adversarial review: every finding fixed, each with its test (222 checks).
+
+### Strategy and engineer
+- **Pit window one lap too early.** AdvancedIA opens the mandatory window on the leader's whole laps; the engineer rounded after subtracting your gap to the leader, and could call you in on a lap where the stop did not count (20 laps, window at 42 %, half a lap behind: lap 8 instead of 9). Timed races and CSP windows now count the part of the lap already driven.
+- **Timed race with an extra lap**: the last lap is no longer counted as "2 laps left" (wrong *"lift and coast"*, even *"box this lap"* on the last lap).
+- A *"box"* you did not follow no longer stays engaged when the plan has no stop left: fuel calls come back, *"no more stops"* is said, and the pit plan published for AdvancedIA no longer shows a lap already gone.
+- The pit plan published for AdvancedIA says `boxnow` only on the stop lap (it stayed `boxnow` for a future lap during a whole neutralisation), and keeps `done` when the line is crossed in the pit lane.
+- Strategy switched off during a race: the old plan is forgotten. Without a plan, fuel calls work in timed races too.
+- The pit window is no longer announced again each lap when the optimal lap wavers between two values.
+- Undercut and threat are never computed against a car already in the pit lane. Two mandatory stops are both counted once the window is open. No phantom tyre stop with tyre wear off. *"Rain expected in…"* is said once per step, not up to four times. The pit lane loss ignores partial passages.
+- **"Abnormal tyre wear" after an app reload**: what was already said (wear, pit window, debrief, *"no more stops"*, calls just heard) survives a hot reload of the app within the session.
+
+### Spotter
+- **Stopped on track** (out of fuel, parked): *"Car coming, wait!"* at most twice per episode, and none after 30 s.
+- Gaps and overtakes are no longer wrong on tracks whose timing line is not at the start of the lap spline.
+- A spin is only called when the yaw cannot be explained by the corner (no false spin in a kart hairpin). The left/right auto-swap ignores samples taken driving the wrong way.
+- After a neutralisation: no *"within a second"* or *"you're closing"* from the bunched queue. No stale gap after a rival's stop. No late *"clear"* after standing still. *"Careful rejoining"* only for a car clearly faster than you. No *"no damage"* after going back to the pits. The pit exit is learnt from real stops only. A VSC escalated to Safety Car says *"Safety car called"*. Point-to-point tracks are no longer treated as loops.
+
+### Radio and interface
+- **Strategy overlay error** when a called stop disappeared from the plan (the in-game overlay editor vanished with it): fixed, and the editor is drawn even if an overlay fails.
+- The radio no longer talks through the pause menu or a replay: the sentence in progress ends, the queue is dropped, and the radio delays stop running while the game is paused.
+- **Numbers from 100 to 999 are spoken** (new *"hundred"* clip): pit window and optimal lap in races of more than 99 laps were only written.
+- A restart of the race during the first lap is detected (everything starts from zero, the debrief no longer keeps the overtakes of the aborted start).
+- The same figure is no longer repeated lap after lap when its spoken value has not changed. An engineer information that waits for its turn is no longer dropped.
+- *Test the voice* works without AdvancedIA. A role switched off or a language change drops its queued calls. Settings changed just before the app unloads are saved. Overlay positions go up to 16000 × 9000 px (triple 4K screens). The **OVERLAYS** button no longer shows on every mouse move when you steer with the mouse. The "missing clips" warning counts catalogue clips only.
+- Lighter frames: overlay texts are rebuilt only when the displayed value changes, no table or text allocated per frame in the overlays, the engineer, the strategist and the updater; unused kit widgets and texts removed.
+
+### Updater and tools
+- **Roll back** is only offered when the kept version was saved from under the version now installed (after a manual install over it, rolling back mixed two versions).
+- The app loads even when the update modules are unreadable (the fallback itself failed).
+- The status published for AdvancedIA is no longer stale after a successful update or when no release exists; a refused roll back no longer shows as an incompatible update.
+- The bridge guard is checked again at the moment of the copy. Unreadable files are never taken for identical ones. Stricter package paths (Windows reserved names, trailing dots, case duplicates) and exact download address. The package comparison is spread over several frames. Preloaded clips are released before the files are copied. GitHub is not asked again at each app reload.
+- `tools/sync_repo.py` refuses a folder that is not the SpotterEnginer repository, never removes `.git*`, `.github/` or the files listed in `.syncrepo-keep`, and has `--dry-run`. `tools/package.py` compiles every Lua file of the package and refuses a package above 80 % of the size limit known to installed versions. `tools/generer_voix.py` writes each clip atomically.
+
 ## 1.3.1 — 10 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.

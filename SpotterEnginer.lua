@@ -88,6 +88,8 @@ local files,present=Port.voiceFiles(appDir..'/vox')
 local chirpPath=appDir..'/'..Catalog.toneFile
 local chirp=nil
 pcall(function() if io.fileExists(chirpPath) then chirp=chirpPath end end)
+-- Juste avant la copie des fichiers d'une mise à jour (src/update.lua) : radio arrêtée, clips préchargés libérés.
+updatePort.beforeCopy=function() Voice.stop(voice); Port.release() end
 local sayer=Say.new(voice,files,appDir..'/vox',cfg.language)
 local timing=Timing.new()
 local spotter=Spotter.new()
@@ -120,6 +122,16 @@ voice.onEvent=function(kind,item,again)
 end
 local app={cfg=cfg,run=run,link=link,voice=voice,F=F,timing=timing,spotter=spotter,engineer=engineer,fontDir=Port.fontDir(),logo=Port.appFile('icon.png'),
  version=Port.ownVersion(),updater=nil,updatePort=updatePort,updateStopped=false,voicePresent=present,voiceTotal=Catalog.fileCount(),now=0,real=0,errors=errors,bridgeWhy=bridgeWhy}
+-- Horloge de la radio (app.radioNow, ctx.real, Voice.step) : le temps réel sans les pauses du jeu. En pause, les délais
+-- de la radio (validité, délai par clé, rythme, redite) ne s'écoulent pas ; la phrase en cours finit, et l'essai de la
+-- voix (priorité 1) part quand même.
+local pausedFor,lastReal=0,nil
+local function radioClock()
+ local real=Port.clock()
+ if lastReal and F.paused and real>lastReal then pausedFor=pausedFor+(real-lastReal) end
+ lastReal=real; app.radioNow=real-pausedFor
+end
+radioClock()
 -- Polices du kit dès le chargement : les overlays en ont besoin même si la fenêtre de réglages n'est jamais ouverte.
 W.setFonts(app.fontDir)
 -- Tests hors du jeu (tests/integration_spec.lua) : accès à l'état de l'app ; absent en jeu.
@@ -127,12 +139,18 @@ do local hook=rawget(_G,'SPE_TEST'); if type(hook)=='table' then hook.app=app en
 
 -- Réglages appliqués à la radio (volumes, rôles, langue, signal radio).
 local warmLang=nil
+-- Annonces en attente écartées par un réglage : rôle coupé (les siennes), langue changée (toutes : clips et textes de
+-- l'autre langue) ; la phrase en cours finit.
+local function ofSilentRole(q) return q.role=='spotter' and not cfg.spotterOn or q.role=='engineer' and not cfg.engineerOn end
+local function anyCall() return true end
 local function apply()
  Config.effective(cfg,run)
  voice.volume=cfg.enabled and cfg.volume or 0
+ if voice.spotterOn and not cfg.spotterOn or voice.engineerOn and not cfg.engineerOn then Voice.purge(voice,ofSilentRole) end
  voice.spotterOn=cfg.spotterOn; voice.engineerOn=cfg.engineerOn
  voice.spotterVolume=cfg.spotterVolume; voice.engineerVolume=cfg.engineerVolume
  voice.muted=not cfg.enabled or app.radioMuted==true
+ if sayer.lang~=cfg.language then Voice.purge(voice,anyCall) end
  Say.setLanguage(sayer,cfg.language)
  sayer.chirp=cfg.chirp and chirp or nil
  -- Clips de sécurité de la langue préchargés (radio instantanée, src/port.lua) : au lancement et au changement de
@@ -163,6 +181,11 @@ app.clock=Port.clock
 -- de l'app : événements versés au journal, radio arrêtée, son de la voiture rendu, réglages enregistrés. Hors du jeu
 -- (tests), le port est inerte et rien ne change. État publié pour AdvancedIA (ac.store, Update.status).
 local UPDATE_DELAY,BOOT_FRAMES,BOOT_DRAWS=10,10,3
+-- Vérification de lancement : pas de nouvelle interrogation de GitHub à chaque rechargement à chaud de l'app. L'heure
+-- de la dernière (heure du système, mémoire de la partie) la repousse à UPDATE_AGAIN s après elle ; le bouton
+-- « Vérifier » n'est pas concerné.
+local UPDATE_AGAIN,UPDATE_KEY=600,'SpotterEnginer.updateChecked'
+local updateDue=nil
 local updater=Update.new(Update.label and Update.label(app.version) or app.version)
 app.updater=updater
 local updateEvents={}
@@ -174,6 +197,11 @@ local saveNow
 onRelease=function()
  updateLog(); Voice.stop(voice); Port.duckCar(F.player,1)
  if saveNow then pcall(saveNow) end
+end
+-- Annonces entendues gardées au rechargement à chaud de l'app (src/voice.lua, heardText) : l'ingénieur ne redit pas
+-- ce qu'il vient de dire (« usure anormale » redite cinq fois le 05/11/2026). Portée de la séance (Port.keep).
+voice.onHeard=function(item)
+ if item.role=='engineer' then Port.keep.store('heard',Voice.heardText(voice,app.radioNow)) end
 end
 if updatePort.ready then Update.start(updater,updatePort,recovered) end
 updateLog()
@@ -199,7 +227,11 @@ local function updateTick()
  app.updateStopped=Update.stopped(F,me)
  Update.tick(updater,updatePort,app.updateStopped,now)
  if not updateAsked and cfg.updateCheck and now-updateStart>=UPDATE_DELAY and updater.phase=='idle' then
-  updateAsked=true; Update.check(updater,updatePort,now)
+  if not updateDue then
+   local wall=Port.wallClock(); local last=tonumber(Port.recall(UPDATE_KEY))
+   updateDue=last and wall>=last and wall-last<UPDATE_AGAIN and now+UPDATE_AGAIN-(wall-last) or now
+  end
+  if now>=updateDue then updateAsked=true; Port.store(UPDATE_KEY,Port.wallClock()); Update.check(updater,updatePort,now) end
  end
  -- Démarrage confirmé (images et dessins de la fenêtre ou des overlays) : surveillance levée, restes effacés.
  if not booted and bootFrames>=BOOT_FRAMES and bootDraws>=BOOT_DRAWS then booted=true; pcall(updatePort.bootOk); pcall(Update.tidy,updater,updatePort) end
@@ -267,7 +299,7 @@ end
 -- Essai de la voix : un clip livré de chaque rôle.
 function app.test(role)
  local parts=role=='spotter' and {'green'} or {'pitOpen'}
- Say.say(sayer,role,'test:'..role,1,parts,Port.clock(),{ttl=5})
+ Say.say(sayer,role,'test:'..role,1,parts,app.radioNow,{ttl=5})
 end
 -- Erreur d'un module : comptée, écrite une fois par message dans le journal de CSP, jamais d'arrêt de l'app.
 local function protected(fn,...)
@@ -296,7 +328,9 @@ local function duckStep(dt)
   if Port.duckCar(F.player,duck.level) then duck.applied=duck.level; duck.car=F.player end
  end
 end
-Port.onRelease(function() Port.duckCar(F.player,1); Port.journalFlush() end)
+-- Déchargement de l'app (rechargement à chaud, fin de la partie) : son de la voiture rendu, réglages changés depuis
+-- moins d'une seconde enregistrés, journal écrit.
+Port.onRelease(function() Port.duckCar(F.player,1); if dirtyAt and saveNow then pcall(saveNow) end; Port.journalFlush() end)
 -- Raccourcis (Ctrl+Alt, comme SuperHUD, sans ses touches H et G) : J overlays, K édition en jeu, M radio coupée.
 local previousKeys={}
 local hotkeyActions={
@@ -312,12 +346,22 @@ local function hotkeys()
   previousKeys[key]=down
  end
 end
+-- ctx.real : horloge de la radio (temps réel sans les pauses). ctx.keep : mémoire gardée au rechargement à chaud de
+-- l'app (keep.load(name) -> chaîne ou nil, keep.store(name,text)), propre à la séance suivie ; ctx.resumed : la remise
+-- à zéro en cours suit un rechargement à chaud dans la même séance (ce qui a été gardé peut être relu).
 local ctx={F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
- trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency}
+ trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency,keep=Port.keep,resumed=false}
 -- Journal : état de l'app, tour du joueur, point d'état périodique.
 local lastActive,lapLogged,stateAt=nil,nil,-1e9
 local LINK_GRACE=3
 local linkLostAt=nil
+-- Redémarrage de la même séance avant la fin du premier tour (les tours ne reculent pas) : départ donné qui redevient
+-- non donné, ou temps de séance qui recule de plus de RESTART_BACK s ; lus hors pause et hors rediffusion (comparés
+-- aux dernières valeurs lues en piste), jamais dans les RESTART_HOLD s qui suivent une remise à zéro.
+local RESTART_BACK,RESTART_HOLD=2,2
+local lastStarted,lastTime,resetAt=nil,nil,-1e9
+-- Tout sauf l'essai de la voix (liaison suspendue ou perdue).
+local function notTest(q) return tostring(q.key):sub(1,5)~='test:' end
 local function lapText(ms) return require('src/util').lapTime((tonumber(ms) or 0)/1000) end
 local function heartbeat(real)
  if real-stateAt<10 then return end
@@ -349,17 +393,31 @@ local function step(dt)
  local linkGone=linkDown and real-linkLostAt>LINK_GRACE
  if linkGone or not cfg.enabled then spotter.prev=nil end
  app.now=F.clock; app.real=real
- -- Nouvelle session, redémarrage de la session (tours du joueur revenus en arrière) ou autre voiture pilotée :
- -- chronométrage, spotter, ingénieur et radio repartent de zéro.
+ local radio=app.radioNow
+ -- Nouvelle session, redémarrage de la session (tours du joueur revenus en arrière, départ redevenu non donné ou temps
+ -- de séance qui recule) ou autre voiture pilotée : chronométrage, spotter, ingénieur et radio repartent de zéro.
+ -- Rediffusion : rien n'y est comparé (les tours et le temps y sont ceux de l'enregistrement).
  local meNow=F.cars[F.player]
- local restarted=meNow and meNow.valid and lastLaps and meNow.laps<lastLaps
- if meNow and meNow.valid then lastLaps=meNow.laps end
+ local restarted=false
+ if not F.replay then
+  restarted=meNow and meNow.valid and lastLaps and meNow.laps<lastLaps or false
+  if meNow and meNow.valid then lastLaps=meNow.laps end
+  if not F.paused then
+   -- Départ redevenu non donné : en course seulement, avant l'arrivée (jamais un état de fin de séance).
+   local unstarted=lastStarted and not F.started and F.isRace and not F.finishedSession and not (meNow and meNow.finished)
+   if not F.online and real-resetAt>RESTART_HOLD and (unstarted or lastTime and F.sessionTime<lastTime-RESTART_BACK) then restarted=true end
+   lastStarted=F.started; lastTime=F.sessionTime
+  end
+ end
  if lastPlayer==nil then lastPlayer=F.player end
  if F.player~=lastPlayer then playerSince=playerSince or real else playerSince=nil end
  local switched=playerSince and real-playerSince>2
  if F.session~=session or restarted or switched then
-  session=F.session; lastPlayer=F.player; playerSince=nil
-  Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
+  -- Première remise à zéro après un rechargement à chaud dans la même séance : ce qui a été gardé est relu.
+  ctx.resumed=Port.keep.resume(F.session,session==nil)
+  session=F.session; lastPlayer=F.player; playerSince=nil; resetAt=real
+  Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer,ctx.keep); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
+  if ctx.resumed then Voice.heardLoad(voice,Port.keep.load('heard'),radio) end
   jlog(string.format('séance %s : %s, %d voitures, circuit de %.0f m, joueur voiture %d%s',tostring(F.session),F.isRace and 'course' or 'hors course',F.count or 0,
    tonumber(F.trackLength) or 0,F.player or -1,restarted and ' (redémarrage)' or switched and ' (autre voiture)' or ''))
   lapLogged=nil
@@ -397,7 +455,7 @@ local function step(dt)
    Timing.update(timing,i,c.spline,c.laps,F.clock,c.valid,neutral or c.pitlane)
    if c.valid then Timing.lap(timing,i,c.lastMs/1000,c.laps) end
   end
-  ctx.now=F.clock; ctx.real=real
+  ctx.now=F.clock; ctx.real=radio
   -- Spotter.step suit toujours la direction de course (appels de stands de l'ingénieur) ; ses annonces se taisent avec
   -- le rôle Spotter coupé (radio).
   protected(Spotter.step,spotter,ctx)
@@ -406,24 +464,34 @@ local function step(dt)
  elseif finishing then
   -- Arrivée : AdvancedIA suspend le pont dès la ligne (garde « finished ») mais publie encore son résultat ; l'arrivée
   -- et le bilan sont dits à la ligne, sans attendre la reconnexion (au retour au stand). Rien d'autre.
-  ctx.now=F.clock; ctx.real=real
+  ctx.now=F.clock; ctx.real=radio
   protected(Spotter.finish,spotter,ctx)
   if cfg.engineerOn then protected(Engineer.debrief,engineer,ctx) end
- elseif linkGone or not cfg.enabled then
+ elseif not cfg.enabled then
   if Voice.busy(voice) or #voice.queue>0 then Voice.stop(voice) end
+ elseif linkGone then
+  -- Liaison perdue : radio arrêtée ; l'essai de la voix (fenêtre de réglages) reste dit.
+  if Voice.busy(voice) or #voice.queue>0 then Voice.purge(voice,notTest,true) end
+ elseif not linkDown and not (link.state=='suspended' and link.reason=='finished') then
+  -- Liaison suspendue (pause, rediffusion, AdvancedIA coupé ou en arrêt d'urgence, en ligne) : la phrase en cours
+  -- finit, plus rien d'autre n'est dit (file vidée, sauf l'essai de la voix). À l'arrivée, le bilan en attente reste.
+  if #voice.queue>0 then Voice.purge(voice,notTest) end
  end
  -- Plan d'arrêt pour AdvancedIA (contrat v1) : écrit à chaque changement ; le stamp avance chaque seconde de simulation.
  -- Selon les réglages seulement : en pause, le plan reste celui d'avant (AdvancedIA ne repasse pas à ses rappels).
  local pitplan=Strategist.pitplan(engineer.strategist,ctx,cfg.enabled and cfg.engineerOn and cfg.strategyOn)
  if pitplan~=pitplanText then pitplanText=pitplan; Port.store(Strategist.pitplanKey,pitplan) end
- if dirtyAt and real-dirtyAt>1 then saveNow() end
- hotkeys()
+end
+-- Réglages enregistrés et raccourcis, à part : une erreur dans l'image ne les arrête pas.
+local function settingsStep()
+ if dirtyAt and Port.clock()-dirtyAt>1 then saveNow() end
+ if F.valid then hotkeys() end
 end
 -- Radio à part (1.3.1) : une erreur ailleurs dans l'image (liaison, chronométrage, stratégie) n'arrête jamais la phrase
 -- en cours ni la suivante, et le son de la voiture revient toujours.
 local journalAt=0
 local function radioStep()
- Voice.step(voice,Port.clock())
+ Voice.step(voice,app.radioNow)
  Port.warmStep()
 end
 local function duckFrame(dt) duckStep(dt or 0) end
@@ -440,7 +508,9 @@ function saveNow()
  Port.saveSettings(out)
 end
 function script.update(dt)
+ radioClock()
  if protected(step,dt) then bootFrames=bootFrames+1 end
+ protected(settingsStep)
  protected(radioStep)
  protected(duckFrame,dt)
  protected(updateTick)
@@ -453,7 +523,12 @@ local function window(fn)
 end
 local function drawMain(a) UI.draw(view,a) end
 -- Overlays, puis le bouton et le panneau d'édition en jeu (au-dessus).
-local function drawHud(a) Overlays.hud(hud,a); Editor.hud(editor,a) end
+-- Un overlay en erreur ne retire ni le bouton ni le panneau d'édition : l'erreur est relancée après eux.
+local function drawHud(a)
+ local ok,err=pcall(Overlays.hud,hud,a)
+ Editor.hud(editor,a)
+ if not ok then error(err,0) end
+end
 function script.SPE__MAIN() app.voicePresent=present; window(drawMain) end
 -- Overlays en jeu (rappel IN_GAME du manifeste), comme SuperHUD et AdvancedIA.
 -- CSP peut dessiner le nouveau bureau avant update() : bureau relu ici aussi (comme SuperHUD).

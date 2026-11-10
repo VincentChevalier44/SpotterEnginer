@@ -2,6 +2,9 @@
 -- défaut). Module pur. Chaque réglage : {clé, défaut, min, max, pas} pour un nombre, {clé, défaut} pour un booléen,
 -- {clé, défaut, {choix}} pour une liste.
 local M={}
+-- Plus grande position enregistrable d'un overlay ou du bouton d'édition (px) : au-delà d'un triple écran 4K (11520 de
+-- large) ; l'affichage borne toujours à l'écran réel (src/overlays.lua).
+M.maxX,M.maxY=16000,9000
 M.schema={
  -- Général
  {'language','FR',{'FR','EN'}},{'enabled',true},{'updateCheck',true},{'volume',1.7,0,2,0.05},{'chirp',true},{'variety',true},{'infoGap',12,0,60,1},{'repeatGap',180,0,600,10},{'duck',true},{'duckLevel',0.85,0.1,1,0.05},
@@ -25,7 +28,7 @@ M.schema={
  -- Overlays : réglages communs (comme SuperHUD et AdvancedIA)
  {'overlaysOn',true},{'clickThrough',true},{'hideReplay',true},{'hidePits',false},{'hotkeys',true},
  -- Édition en jeu (1.2.0) : bouton montré quand la souris bouge, position (-1 : en haut au centre), commune aux bureaux.
- {'editButton',true},{'editorX',-1,-1,7680,1},{'editorY',-1,-1,4320,1},
+ {'editButton',true},{'editorX',-1,-1,M.maxX,1},{'editorY',-1,-1,M.maxY,1},
  {'radioLines',4,1,8,1},{'radioSeconds',10,3,30,1},
 }
 -- Réglages de chaque overlay (Spotter, Ingénieur, Stratégie), comme chaque bloc de SuperHUD : affiché, verrouillé,
@@ -36,7 +39,7 @@ M.overlays={'spotter','engineer','strategy'}
 M.screenDefault={x=1920,y=1080}
 M.overlayKeys={'Show','Locked','X','Y','Scale','Background','Opacity','Content','Accent','Header'}
 for _,o in ipairs(M.overlays) do
- local list={{o..'Show',true},{o..'Locked',true},{o..'X',-1,-1,7680,1},{o..'Y',-1,-1,4320,1},{o..'Scale',1,0.5,2.5,0.05},
+ local list={{o..'Show',true},{o..'Locked',true},{o..'X',-1,-1,M.maxX,1},{o..'Y',-1,-1,M.maxY,1},{o..'Scale',1,0.5,2.5,0.05},
   {o..'Background','solid',{'solid','ghost','transparent'}},{o..'Opacity',0.88,0,1,0.02},{o..'Content',1,0.3,1,0.05},
   {o..'Accent',true},{o..'Header',true}}
  for _,item in ipairs(list) do M.schema[#M.schema+1]=item end

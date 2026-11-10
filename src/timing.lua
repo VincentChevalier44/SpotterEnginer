@@ -5,6 +5,11 @@
 local U=require('src/util')
 local M={}
 M.points=400
+-- Zone de la ligne (part du tour de chaque côté de la spline 0) où la progression n'est jamais recalée d'un tour sur le
+-- compteur d'AC : la ligne de chronométrage n'est pas exactement à la spline 0, et entre les deux le compteur a un tour
+-- d'avance ou de retard (revue 1.3.2 : deux voitures de part et d'autre de la ligne avaient un tour d'écart, aucun écart
+-- n'était connu à la ligne). Le recalage attend la sortie de la zone.
+M.lineZone=0.1
 function M.new() return {cars={},n=M.points} end
 local function car(t,i)
  local c=t.cars[i]
@@ -15,25 +20,29 @@ M.car=car
 -- Remise à zéro (changement de session) : tout est oublié.
 function M.reset(t) t.cars={} end
 -- Une voiture : spline (0..1), laps (tours terminés), now (temps de simulation, s), valid (voiture lue), dirty (dans la
--- voie des stands ou sous neutralisation : le tour en cours ne compte pas dans le rythme).
+-- voie des stands ou sous neutralisation : le tour en cours ne compte pas dans le rythme ; dernier instant gardé,
+-- c.dirtyAt, pour les écarts propres de M.gap). c.ds : dernier déplacement sur le tour (négatif : la voiture recule).
 function M.update(t,i,spline,laps,now,valid,dirty)
  local c=car(t,i)
- if dirty then c.dirty=true end
+ if dirty then c.dirty=true; c.dirtyAt=now end
  if not valid or not U.finite(spline) then c.seen=false; return c end
  local fresh=laps+spline
  if not c.seen or c.progress==nil then
-  c.progress=fresh; c.spline=spline; c.time=now; c.seen=true
+  c.progress=fresh; c.spline=spline; c.time=now; c.seen=true; c.ds=0
   return c
  end
  local ds=U.wrap(spline-c.spline)
  -- Saut (retour aux stands, replacement) : reprise sur la valeur d'AC, sans passages inventés.
  if math.abs(ds)>0.05 or now<c.time then
-  c.progress=fresh; c.spline=spline; c.time=now
+  c.progress=fresh; c.spline=spline; c.time=now; c.ds=0
   return c
  end
+ c.ds=ds
  local p0,p1=c.progress,c.progress+ds
- -- Dérive lente corrigée vers la valeur d'AC quand elles divergent de plus d'un demi-tour (compteur rattrapé).
- if math.abs(p1-fresh)>0.5 and math.abs(p1-fresh)<1.5 then p1=p1+(fresh-p1>0 and 1 or -1); p0=p1-ds end
+ -- Dérive lente corrigée vers la valeur d'AC quand elles divergent de plus d'un demi-tour (compteur rattrapé), hors de
+ -- la zone de la ligne.
+ local off=math.abs(p1-fresh)
+ if off>0.5 and off<1.5 and spline>M.lineZone and spline<1-M.lineZone then p1=p1+(fresh>p1 and 1 or -1); p0=p1-ds end
  if ds>0 and now>c.time then
   local n=t.n
   local k0,k1=math.floor(p0*n),math.floor(p1*n)
@@ -60,8 +69,10 @@ function M.passedAt(t,i,spline)
  return a
 end
 -- Écart en temps de la voiture behind sur la voiture ahead (positif) ; laps : tours d'écart entiers (0 si même tour).
--- Renvoie gap (s) ou nil, laps.
-function M.gap(t,ahead,behind,now)
+-- Renvoie gap (s) ou nil, laps. clean : écart propre seulement (nil si la voiture de devant a été dans la voie des
+-- stands ou sous neutralisation depuis son passage à cet endroit : passage fait dans la voie avant son arrêt, écart
+-- gonflé de tout l'arrêt).
+function M.gap(t,ahead,behind,now,clean)
  local a,b=t.cars[ahead],t.cars[behind]
  if not a or not b or not a.seen or not b.seen then return nil,0 end
  local d=a.progress-b.progress
@@ -71,6 +82,7 @@ function M.gap(t,ahead,behind,now)
  if not at then return nil,0 end
  local g=now-at
  if g<0 or g>600 then return nil,0 end
+ if clean and a.dirtyAt and a.dirtyAt>=at and a.dirtyAt<=now then return nil,0 end
  return g,0
 end
 -- Écart sur la piste (quel que soit le tour) : voiture physiquement devant à moins d'un demi-tour.

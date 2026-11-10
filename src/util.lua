@@ -63,16 +63,22 @@ function U.lapRange(a,b) if a==b then return string.format('T%d',a) end return s
 -- (valeurs nil, clés ajoutées en cours de route), puis l'état neuf recopié ; keep : clés gardées (appris par circuit).
 function U.refill(t,fresh,keep)
  local kept={}
- for _,k in ipairs(keep or {}) do kept[k]=t[k] end
+ if keep then for _,k in ipairs(keep) do kept[k]=t[k] end end
  for k in pairs(t) do t[k]=nil end
  for k,v in pairs(fresh) do t[k]=v end
- for _,k in ipairs(keep or {}) do t[k]=kept[k] end
+ if keep then for _,k in ipairs(keep) do t[k]=kept[k] end end
  return t
 end
 -- Longueur de piste minimale pour les distances (m) : jamais une division par une piste inconnue.
 U.MIN_TRACK=500
--- Distance sur la piste (m) de b devant a (négative : derrière), par la position sur le tour.
-function U.ahead(a,b,length) return U.wrap(b.spline-a.spline)*length end
+-- Distance sur la piste (m) de b devant a (négative : derrière), par la position sur le tour. open : piste point à
+-- point (jamais repliée : l'arrivée n'est pas juste derrière le départ).
+function U.ahead(a,b,length,open)
+ if open then return (b.spline-a.spline)*length end
+ return U.wrap(b.spline-a.spline)*length
+end
+-- Table vidée sur place (table réutilisée d'une image à l'autre).
+function U.wipe(t) for k in pairs(t) do t[k]=nil end return t end
 -- Somme des valeurs t[a..b] (absentes : 0).
 function U.sum(t,a,b) local s=0; for k=a,b do s=s+(tonumber(t[k]) or 0) end; return s end
 return U

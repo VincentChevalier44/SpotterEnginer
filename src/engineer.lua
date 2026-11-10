@@ -20,11 +20,57 @@ function M.new()
   mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
   brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={},debrief=Debrief.new()}
 end
+-- Verrous d'annonce gardés au rechargement à chaud de l'app (CSP recharge le script au moindre fichier changé : tout
+-- l'état repartait de zéro, « usure anormale » redite cinq fois le 05/11/2026, bilan et fenêtre redits). ctx.keep
+-- (facultatif : load(nom) -> texte ou nil, store(nom, texte)) est la mémoire de la partie, gardée au rechargement, pas
+-- d'un lancement du jeu à l'autre. Une seule chaîne courte, nom « locks » :
+--   1|séance|usure dite|km virtuels alors|côtés d'essieu dits (FL 1, FR 2, RL 4, RR 8)|bilan dit|« plus d'arrêt » dit|
+--   fenêtre annoncée (début,fin,optimal ou vide)
+-- Relue une fois par état neuf, seulement pour la même séance ; écrite quand un verrou change (jamais à chaque image).
+-- Après une remise à zéro (nouvelle séance, redémarrage) : jamais relue, récrite vide.
+local LOCKS='locks'
+local function locks(e,ctx)
+ local keep=ctx.keep
+ if not keep then return end
+ local t=e.strategist; local st=e.debrief
+ local session=math.floor(tonumber(ctx.F.session) or -1)
+ local k=e.kept
+ if not k then
+  k={}; e.kept=k
+  local text=not e.cleared and keep.load(LOCKS)
+  local s,wear,km,sides,said,noMore,window
+  if type(text)=='string' then s,wear,km,sides,said,noMore,window=text:match('^1|(%-?%d+)|([01])|([%d%.]+)|(%d+)|([01])|([01])|(.*)$') end
+  if s and tonumber(s)==session then
+   local mask=tonumber(sides)
+   e.wearSaid=wear=='1'; e.wearKm=tonumber(km) or 0
+   e.wearSides.FL=mask%2>=1 or nil; e.wearSides.FR=mask%4>=2 or nil; e.wearSides.RL=mask%8>=4 or nil; e.wearSides.RR=mask%16>=8 or nil
+   st.said=said=='1'; t.noMoreSaid=noMore=='1'
+   local a,b,c=window:match('^(%-?%d+),(%-?%d+),(%-?%d+)$')
+   if a then t.announcedWindow={tonumber(a),tonumber(b),tonumber(c)} end
+   -- Relu : rien à récrire tant que rien ne change.
+   k.session=session; k.wear=e.wearSaid; k.sides=mask; k.said=st.said; k.noMore=t.noMoreSaid; k.window=t.announcedWindow or false
+  end
+ end
+ local ws=e.wearSides
+ local mask=(ws.FL and 1 or 0)+(ws.FR and 2 or 0)+(ws.RL and 4 or 0)+(ws.RR and 8 or 0)
+ local a=t.announcedWindow or false
+ if k.session==session and k.wear==e.wearSaid and k.sides==mask and k.said==st.said and k.noMore==t.noMoreSaid and k.window==a then return end
+ k.session=session; k.wear=e.wearSaid; k.sides=mask; k.said=st.said; k.noMore=t.noMoreSaid; k.window=a
+ keep.store(LOCKS,string.format('1|%d|%d|%.1f|%d|%d|%d|%s',session,e.wearSaid and 1 or 0,e.wearKm,mask,st.said and 1 or 0,t.noMoreSaid and 1 or 0,
+  a and string.format('%d,%d,%d',a[1],a[2],a[3] or 0) or ''))
+end
+M.locks=locks
 -- Changement de séance : tout repart de zéro (clés à nil comprises), sauf les données de la voiture (src/port.lua).
-function M.reset(e)
+-- Verrous gardés (locks) : la première remise à zéro d'un état qui n'a encore rien vu est celle du chargement de l'app
+-- (les verrous de la séance en cours seront relus) ; toute autre les efface (keep facultatif : effacés tout de suite,
+-- sinon récrits vides à l'image suivante).
+function M.reset(e,keep)
  local car=e.strategist.car
+ local again=e.kept~=nil or e.wasReset
  U.refill(e,M.new())
  e.strategist.car=car
+ e.wasReset=true
+ if again then e.cleared=true; if keep then keep.store(LOCKS,'') end end
 end
 local say=Say.as('engineer')
 -- Position à la ligne (« Tu es P5 »), quand elle a changé depuis la dernière entendue : une seule transmission par
@@ -192,18 +238,23 @@ end
 -- Carburant (1.3.1 : un seul calcul pour la radio et les deux overlays, qui affichaient sans la marge et sur le dernier
 -- calcul du plan) : consommation par tour (mesurée, sinon celle d'AC), tours de carburant marge déduite (have), besoin
 -- (target : jusqu'au « box » engagé ou à l'arrêt du plan prêt, sinon jusqu'à l'arrivée), écart (delta, en tours).
--- nil : rien à juger (pas de consommation, pas de mesure).
+-- nil : rien à juger (pas de consommation, pas de mesure). Table gardée, refaite à chaque appel (appelée à chaque
+-- image par les overlays) : à lire tout de suite, jamais à garder.
 function M.fuelStatus(e,F,cfg)
  local me=F.cars[F.player]; local t=e.strategist
  if not me or not me.valid or F.fuelRate==0 then return nil end
  local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
  if not fpl or fpl<=0 then return nil end
  local plan=t.plan
- local total=plan and plan.total or F.laps
+ -- Sans plan (stratégie coupée) : tours de la course comptés par le stratège (course au temps, pilote attardé).
+ local total=plan and plan.total or Strategist.total(t,F,me)
  local stop=t.ready and plan and plan.ok and (t.boxLap or plan.optimal) or nil
  local target=stop and stop-me.laps or (total and total>0 and total-me.laps) or nil
  local have=(F.me.fuel-(cfg.fuelMargin or 0))/fpl
- return {fpl=fpl,laps=F.me.fuel/fpl,have=have,target=target,delta=target and have-target or nil,toStop=stop~=nil}
+ local st=e.fuelView
+ if not st then st={}; e.fuelView=st end
+ st.fpl=fpl; st.laps=F.me.fuel/fpl; st.have=have; st.target=target; st.delta=target and have-target or nil; st.toStop=stop~=nil; st.total=total
+ return st
 end
 -- Carburant : laps de carburant comparés au besoin (jusqu'à l'arrêt prévu ou l'arrivée), à chaque tour.
 local function fuel(e,ctx,lapDone)
@@ -214,7 +265,7 @@ local function fuel(e,ctx,lapDone)
  local st=M.fuelStatus(e,F,cfg)
  if not st or not st.target or st.target<=0 then return end
  local plan=t.plan
- local total=plan and plan.total or F.laps
+ local total=st.total
  local have,delta=st.have,st.delta
  -- Premiers tours (mesures insuffisantes) : aucune consigne, sauf un manque immédiat (moins de deux tours).
  if not Strategist.dataReady(t) and not t.ready and have>=2 then return end
@@ -246,6 +297,14 @@ local function fuel(e,ctx,lapDone)
 end
 -- Pneus : chauffe (cœur sous l'optimum), surchauffe (cœur ou surface au-dessus), usure anormale d'un pneu.
 local TYRE_NAMES={'avant gauche','avant droit','arrière gauche','arrière droit'}
+-- Côté le plus usé d'un essieu (noms : gauche, droit) quand l'écart de km virtuels passe 30 %, sinon nil.
+local FRONT,REAR={'FL','FR'},{'RL','RR'}
+local function uneven(t,a,b,names)
+ local x,y=t[a].vkm,t[b].vkm
+ local hi,lo=math.max(x,y),math.min(x,y)
+ if hi>1 and lo>0 and hi>lo*1.3 then return x>y and names[1] or names[2] end
+ return nil
+end
 local function tyres(e,ctx,dt)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
  -- Passage par les stands retenu pour l'usure anormale (pneus peut-être changés).
@@ -278,12 +337,7 @@ local function tyres(e,ctx,dt)
  -- une seule fois par séance pour le même essieu et le même côté (un circuit qui use un côté plus que l'autre le
  -- referait à chaque train de pneus). Un défaut du pneu (méplat, cloques, grains, crevaison), tenu 1 s, est toujours dit.
  local t=F.me.tyres
- local function off(a,b,axle)
-  local x,y=t[a].vkm,t[b].vkm
-  if math.max(x,y)>1 and math.min(x,y)>0 and math.max(x,y)>math.min(x,y)*1.3 then return axle..(x>y and 'L' or 'R') end
-  return nil
- end
- local side=off(1,2,'F') or off(3,4,'R')
+ local side=uneven(t,1,2,FRONT) or uneven(t,3,4,REAR)
  local defect,why=nil,nil
  for k=1,4 do
   local w=t[k]
@@ -319,13 +373,14 @@ M.pace=pace
 -- changement de séance, et après un redémarrage le bilan de la course d'avant a été dit à tort le 10/11/2026.
 local function debrief(e,ctx)
  local F=ctx.F; local st=e.debrief
+ locks(e,ctx)
  if st.said or not F.isRace or not ctx.cfg.debrief then return end
  local me=F.cars[F.player]
  if not me or not me.valid or (tonumber(me.laps) or 0)<1 then return end
  if not (me.finished or F.finishedSession) then return end
- local d=Debrief.fresh(st,ctx.link.d) or {dnf=not me.finished}
  if not st.at then st.at=ctx.real; return end
  if ctx.real-st.at<Debrief.DELAY then return end
+ local d=Debrief.fresh(st,ctx.link.d) or {dnf=not me.finished}
  st.said=true
  local s=ctx.say
  local parts=Debrief.parts(st,F,d,not Debrief.spotterSays(ctx.cfg),function(id,...) return Say.note(s,id,...) end,
@@ -361,6 +416,9 @@ local function damage(e,ctx)
  e.damage=sum
 end
 -- Conditions : pluie à venir (transition de la météo vers un temps de pluie), pluie qui s'intensifie, adhérence.
+-- Pluie à venir : dite en passant sous chaque palier (minutes) ; les paliers franchis d'un coup sont tenus pour dits
+-- (première estimation à 2 minutes : « une minute » était ensuite dit trois fois, un palier par minute).
+local RAIN_MARKS={15,10,5,2}
 local function weather(e,ctx)
  local F=ctx.F; local cfg=ctx.cfg
  if not cfg.weather then return end
@@ -373,16 +431,16 @@ local function weather(e,ctx)
    e.transAt=now; e.trans=F.transition
    if rate>0 then
     local minutes=math.floor((0.5-F.transition)/rate/60+0.5)
-    for _,mark in ipairs({15,10,5,2}) do
-     if minutes<=mark and minutes>=1 and not e.rainSaid[mark] then
-      e.rainSaid[mark]=true
+    for k=1,#RAIN_MARKS do
+     if minutes<=RAIN_MARKS[k] and minutes>=1 and not e.rainSaid[RAIN_MARKS[k]] then
+      for j=k,#RAIN_MARKS do if minutes<=RAIN_MARKS[j] then e.rainSaid[RAIN_MARKS[j]]=true end end
       say(ctx,'rainIn',3,minutes==1 and {'rainIn','oneMinute'} or {'rainIn',{n=minutes},'minutes'},{ttl=30})
       break
      end
     end
    end
   end
- else e.transAt=nil; e.rainSaid={} end
+ elseif e.transAt then e.transAt=nil; e.rainSaid={} end
  if not e.rainAt or now-e.rainAt>=120 then
   if e.rainAt and F.rain-e.rain>0.08 and F.rain>0.05 then say(ctx,'rain',3,{'rain'},{ttl=15,cooldown=300}) end
   e.rainAt=now; e.rain=F.rain
@@ -398,6 +456,7 @@ local function weather(e,ctx)
   e.gripRef=e.grip; e.gripAt=now
  end
 end
+M.weather=weather
 -- Vent au freinage : composante du vent dans l'axe de la voiture au début d'un gros freinage.
 local function wind(e,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
@@ -447,6 +506,7 @@ end
 function M.step(e,ctx,dt)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid then return end
+ locks(e,ctx)
  local lapDone=me.laps~=e.lap and e.lap>=0
  -- Tour qui vient de finir passé par la voie des stands (tour d'entrée ou de sortie) : ni rythme ni carburant jugés.
  if me.laps~=e.lap then e.lastLapPit=e.inPitLap; e.inPitLap=me.pitlane; e.lap=me.laps end

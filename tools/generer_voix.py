@@ -14,6 +14,9 @@ pour les crêtes que l'encodage MP3 recrée). Sans ffmpeg, les clips restent tel
 Signal d'ouverture de la radio (Catalog.toneFile, joué par l'app au début de chaque transmission) : tonalité numérique
 de deux notes brèves (85 ms) suivie de 45 ms de blanc.
 
+Le jeu doit être fermé : les clips sont écrits dans le dossier de l'app (vox/, sounds/), que CSP recharge en jeu à chaque
+fichier changé. Chaque clip est écrit à côté (.tmp) puis mis en place d'un seul coup : une interruption ne laisse jamais
+un clip tronqué, qui passerait ensuite pour présent.
 Nécessite une connexion (service de synthèse de Microsoft Edge), Python avec edge-tts et lupa.
 Usage :  python tools/generer_voix.py            (seulement les clips absents, et le signal s'il manque)
          python tools/generer_voix.py --force    (refaire les clips 35 et plus, nombres, durées, positions, signal)
@@ -21,6 +24,7 @@ Usage :  python tools/generer_voix.py            (seulement les clips absents, e
 """
 from pathlib import Path
 import asyncio
+import os
 import re
 import shutil
 import subprocess
@@ -51,6 +55,16 @@ FINAL_RMS = -14.0
 PEAK_MAX = -0.5
 # Mesure du niveau sans aucun silence de bord (sinon les clips courts, « un », paraissent plus faibles).
 MEASURE = TRIM.replace('start_silence=0.02', 'start_silence=0').replace('start_silence=0.06', 'start_silence=0')
+
+
+def deliver(source, target):
+    """Clip mis en place d'un seul coup : copié à côté (.tmp, même dossier), puis renommé."""
+    tmp = target.with_name(target.name + '.tmp')
+    try:
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def mean_volume(path, chain):
@@ -123,11 +137,14 @@ def radio_tone(rel, force):
     if not FFMPEG or target.exists() and not force:
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([FFMPEG, '-hide_banner', '-loglevel', 'error', '-y',
-                    '-f', 'lavfi', '-i', 'sine=f=1750:d=0.04:r=24000', '-f', 'lavfi', '-i', 'sine=f=2350:d=0.045:r=24000',
-                    '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono:d=0.045', '-filter_complex',
-                    '[0][1][2]concat=n=3:v=0:a=1,afade=t=in:d=0.004,highpass=f=300,lowpass=f=3400,volume=4dB[a]',
-                    '-map', '[a]', '-ac', '1', '-c:a', 'pcm_s16le', str(target)], check=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        made = Path(tmp) / 'tone.wav'
+        subprocess.run([FFMPEG, '-hide_banner', '-loglevel', 'error', '-y',
+                        '-f', 'lavfi', '-i', 'sine=f=1750:d=0.04:r=24000', '-f', 'lavfi', '-i', 'sine=f=2350:d=0.045:r=24000',
+                        '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono:d=0.045', '-filter_complex',
+                        '[0][1][2]concat=n=3:v=0:a=1,afade=t=in:d=0.004,highpass=f=300,lowpass=f=3400,volume=4dB[a]',
+                        '-map', '[a]', '-ac', '1', '-c:a', 'pcm_s16le', str(made)], check=True)
+        deliver(made, target)
     print(f"  {rel}  (signal d'ouverture)")
 
 
@@ -181,9 +198,9 @@ async def one(lang, name, text, redo, rate, pitch, force, sem, report):
                         out = Path(tmp) / 'clip.mp3'
                         if not encode(raw, TRIM + ',' + PAUSE + ',' + COMP + ',' + RADIO, out, tmp):
                             raise RuntimeError(f'crête au-dessus de {PEAK_MAX} dBTP')
-                        shutil.copyfile(out, target)
+                        deliver(out, target)
                     else:
-                        shutil.copyfile(raw, target)
+                        deliver(raw, target)
                 report['done'] += 1
                 print(f'  {lang}/{name}  «{text}»')
                 return

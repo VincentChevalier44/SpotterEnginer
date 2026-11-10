@@ -95,9 +95,12 @@ function ui.pushStyleColor() end
 function ui.popStyleColor() end
 -- ac
 ac={FolderID={ACAppsLua=1,Logs=2},AudioChannel={Main='main'},StructItem={}}
-H.store={}
-function ac.store(k,v) H.store[k]=v end
-function ac.load(k) return H.store[k] end
+-- Mémoire de la partie : vidée à la relance du jeu (ici : l'horloge de l'hôte revenue en arrière depuis la dernière
+-- écriture) ; gardée au rechargement de l'app dans la même partie.
+H.store={}; H.storeAt=0
+local function sameGame() if H.clock<H.storeAt then H.store={} end; H.storeAt=H.clock end
+function ac.store(k,v) sameGame(); H.store[k]=v end
+function ac.load(k) sameGame(); return H.store[k] end
 H.appsDir='C:/AC/apps/lua'
 function ac.dirname() return H.appsDir..'/SpotterEnginer' end
 function ac.getFolder() return H.appsDir end
@@ -154,7 +157,7 @@ function ac.AudioEvent.fromFile(p)
  function ev:start() self.startedAt=H.clock; H.played[#H.played+1]=self.path end
  function ev:stop() self.startedAt=nil end
  function ev:isPlaying() return self.startedAt~=nil and H.clock-self.startedAt<0.8 end
- function ev:dispose() end
+ function ev:dispose() H.disposed=(H.disposed or 0)+1 end
  function ev:setVolumeChannel() end
  return ev
 end

@@ -14,7 +14,8 @@
 -- - rythme (contre le harcèlement) : une information (priorité 4 ou 5) attend infoGap s après la précédente et quiet s
 --   de silence ; un même texte de l'ingénieur (priorité 3 et plus) n'est pas redit avant repeatGap s, sauf un état
 --   nouveau (item.fresh : position) ; le spotter (voiture lente, piste glissante, retardataire…) n'est jamais
---   concerné ; la sécurité (1 et 2) n'attend jamais ;
+--   concerné ; la sécurité (1 et 2) n'attend jamais ; une information de l'ingénieur retenue par ce rythme reste
+--   valable le temps d'attendre son tour (voir life) : elle est retardée, pas perdue ;
 -- - une annonce est une suite de clips (phrase composée : « écart devant », « un », « virgule », « deux ») ; s'il
 --   manque un clip, elle est seulement écrite sur la radio (précédée du signal radio s'il est réglé) ;
 -- - signal d'ouverture de la radio (item.chirp, réglage « Signal radio ») : brève tonalité au début de chaque
@@ -90,7 +91,42 @@ end
 -- Annonce entendue : dite jusqu'au bout, ou coupée après heardAfter s de voix.
 local function markDone(v,item,now)
  v.done[item.key]=now
- if item.sense or item.text then v.heard[item.sense or item.text]=now end
+ if item.sense or item.text then
+  v.heard[item.sense or item.text]=now
+  -- Mémoire des annonces entendues gardée au rechargement de l'app (SpotterEnginer.lua) : jamais d'erreur remontée.
+  if v.onHeard then pcall(v.onHeard,item) end
+ end
+end
+-- Annonces entendues depuis moins de repeatGap s, en texte (« sens<TAB>âge en secondes », une par ligne, les max plus
+-- récentes) ; relues par M.heardLoad après un rechargement de l'app : l'ingénieur ne redit pas ce qu'il vient de dire.
+function M.heardText(v,now,max)
+ local list={}
+ for sense,at in pairs(v.heard) do
+  if now-at<v.repeatGap and now>=at and not sense:find('[\t\n]') then list[#list+1]={sense,now-at} end
+ end
+ table.sort(list,function(a,b) return a[2]<b[2] end)
+ local out={}
+ for k=1,math.min(#list,max or 40) do out[k]=string.format('%s\t%.0f',list[k][1],list[k][2]) end
+ return table.concat(out,'\n')
+end
+function M.heardLoad(v,text,now)
+ if type(text)~='string' then return 0 end
+ local n=0
+ for sense,age in text:gmatch('([^\t\n]+)\t(%d+)') do v.heard[sense]=now-tonumber(age); n=n+1 end
+ return n
+end
+-- Durée de validité d'une annonce en file. Une information de l'ingénieur (priorité 4 ou 5) attend son tour derrière
+-- infoGap : elle reste valable le temps de laisser passer HOLD_TURNS informations (infoGap + quiet chacune) plus HOLD s
+-- (trois informations à la ligne sont dites toutes les trois), HOLD_MAX s au plus (jamais une information dite une
+-- minute trop tard), sauf une information d'un instant (ttl sous HOLD_MIN s), qui périme comme elle le demande.
+local HOLD,HOLD_TURNS,HOLD_MIN,HOLD_MAX=5,3,10,45
+local function life(v,q)
+ local ttl=q.ttl or M.TTL
+ if q.prio>=4 and q.role=='engineer' and not q.replay and ttl>=HOLD_MIN then
+  local wait=math.min(HOLD_MAX,HOLD_TURNS*(v.infoGap+v.quiet)+HOLD)
+  if wait>ttl then return wait end
+ end
+ return ttl
 end
 local function stopCurrent(v)
  if v.handle then pcall(v.port.stop,v.handle) end
@@ -118,9 +154,9 @@ local function pick(v,now)
   -- Redite jugée sur le sens (q.sense : clips de base et valeurs, src/say.lua) : une même annonce dite avec une autre
   -- formulation (1.3.0) reste une redite.
   local heard=not q.replay and not q.fresh and q.role=='engineer' and q.prio>=3 and v.repeatGap>0 and (q.sense or q.text) and v.heard[q.sense or q.text]
-  if now-q.at>(q.ttl or M.TTL) or heard and now-heard<v.repeatGap then
+  local expired=now-q.at>life(v,q)
+  if expired or heard and now-heard<v.repeatGap then
    table.remove(v.queue,i)
-   local expired=now-q.at>(q.ttl or M.TTL)
    -- Périmée sans avoir été dite : le délai de sa clé ne compte pas (elle peut être redite dès que vraie).
    if expired and not q.replay and v.last[q.key]==q.at then v.last[q.key]=nil end
    if v.onEvent then pcall(v.onEvent,expired and 'expired' or 'repeat',q) end
@@ -239,9 +275,15 @@ function M.step(v,now)
  end
 end
 function M.busy(v) return v.current~=nil end
+-- Annonces écartées de la file (drop(q) vrai) ; cut : celle en cours aussi, si elle l'est. Liaison suspendue ou perdue
+-- (tout sauf l'essai de la voix), rôle coupé, langue changée (SpotterEnginer.lua).
+function M.purge(v,drop,cut)
+ for i=#v.queue,1,-1 do if drop(v.queue[i]) then table.remove(v.queue,i) end end
+ if cut and v.current and drop(v.current) then stopCurrent(v) end
+end
 -- Annonce de cette clé en attente dans la file.
 function M.pending(v,key)
- for i=1,#v.queue do local q=v.queue[i]; if q.key==key and v.clock-q.at<=(q.ttl or M.TTL) then return true end end
+ for i=1,#v.queue do local q=v.queue[i]; if q.key==key and v.clock-q.at<=life(v,q) then return true end end
  return false
 end
 -- Une annonce de sécurité attend (priorité 1 ou 2) : le son de la voiture est déjà baissé.

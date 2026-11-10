@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.3.1. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.3.2. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -129,7 +129,7 @@ Until the copy starts, **Cancel** stops everything and the app folder is never t
 - A failed copy puts the installed version back at once (*Cannot write to the app folder: current version kept*). If that fails too, the block reads *Recovery impossible: restart the game; if the problem stays, reinstall the app*.
 - An install cut short by a crash or a power cut is **finished or undone at the next launch**, before anything else loads: from the extracted package when it is complete, otherwise by putting the starting version back. Two attempts at most, never a loop. The block then reads *Installation interrupted (game closed or crash): … restored at launch*.
 - A freshly installed version that **fails to start twice** in a row is rolled back automatically at the next launch.
-- **Roll back to x** puts the previous version back the same way (only when stopped, and only when the kept version is complete).
+- **Roll back to x** puts the previous version back the same way (only when stopped, only when the kept version is complete, and only when it was saved from under the version now installed: after a manual install over it, the button is no longer offered).
 - Other messages: *GitHub unreachable: check the connection*, *GitHub refuses for now (request limit): try again in an hour*, *Published release is incomplete on GitHub: try again later*, *Corrupted file: update cancelled, current version kept*.
 - With a CSP version that lacks network or file access, the block reads *Updating from the app is not available here*: update by hand (below).
 
@@ -157,7 +157,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.1). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.2). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -293,7 +293,7 @@ Same settings as in SuperHUD and AdvancedIA.
 - number of lines and duration of the radio messages.
 
 **In-game editing (new in 1.2.0, no pause menu or pits needed):**
-- while driving, move the mouse: a small **OVERLAYS** button shows for 3 seconds at the top centre of the screen (drag it elsewhere if you like; its position is kept);
+- while driving, move the mouse: a small **OVERLAYS** button shows for 3 seconds at the top centre of the screen (not when you steer with the mouse: hover it, pause, or use Ctrl+Alt+K) (drag it elsewhere if you like; its position is kept);
 - click it: the edit panel opens under the button and every overlay shown is unlocked for the edit;
 - drag an overlay to move it, pull its bottom-right corner for the size; the overlay you touch is picked in the panel (thicker frame, name at the bottom);
 - in the panel: show or hide each overlay of this desktop, then for the picked one its size, background (**Solid**, **Ghost**, **Transparent**), background and content opacity, decorative band, header and **Recenter**;
@@ -489,7 +489,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 225 calls (23 of them alternative wordings), 100 numbers (0 to 99), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 972 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 226 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 974 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).
@@ -612,8 +612,8 @@ Group **Each overlay**: **Spotter overlay**, **Engineer overlay**, **Strategy ov
 |---|---|---|
 | Show the overlay | on | — |
 | Locked | on | — |
-| Horizontal position (px) | AUTO | AUTO, 0–7680 |
-| Vertical position (px) | AUTO | AUTO, 0–4320 |
+| Horizontal position (px) | AUTO | AUTO, 0–16000 |
+| Vertical position (px) | AUTO | AUTO, 0–9000 |
 | Scale | 1.00 | 0.50–2.50 |
 | Background | Solid | Solid, Ghost, Transparent |
 | Background opacity | 0.88 | 0–1 |

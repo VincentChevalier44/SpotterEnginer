@@ -16,11 +16,19 @@ function M.byPosition(F,pos)
  for i=0,F.count-1 do local c=F.cars[i]; if c.valid and c.position==pos then return i end end
  return nil
 end
--- Voitures devant et derrière au classement d'AC (indices), ou nil ; place du joueur inconnue : aucune.
+-- Voitures devant et derrière au classement d'AC (indices), ou nil ; place du joueur inconnue : aucune. Un seul
+-- parcours des voitures (appelé plusieurs fois par seconde).
 function M.neighbours(F,me)
  local pos=tonumber(me.position) or 0
  if pos<=0 then return nil,nil end
- return M.byPosition(F,pos-1),M.byPosition(F,pos+1)
+ local ahead,behind=nil,nil
+ for i=0,F.count-1 do
+  local c=F.cars[i]
+  if c.valid then
+   if c.position==pos+1 then behind=behind or i elseif pos>1 and c.position==pos-1 then ahead=ahead or i end
+  end
+ end
+ return ahead,behind
 end
 -- Tours restants au joueur (plan de l'ingénieur, qui compte les tours de retard et les courses au temps ; sinon
 -- nombre de tours de la séance), ou nil (inconnu).
@@ -75,8 +83,8 @@ function M.lastLapAdvice(ctx)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid then return nil end
  local ahead,behind=M.neighbours(F,me)
- local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now) or nil
- local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now) or nil
+ local ga=ahead and Timing.gap(ctx.timing,ahead,F.player,ctx.now,true) or nil
+ local gb=behind and Timing.gap(ctx.timing,F.player,behind,ctx.now,true) or nil
  local close=gb and gb<M.GAP.lastDefend
  local reach=ga and ga<M.GAP.lastReach
  if close and (not reach or gb<=ga) then return 'lastDefend' end

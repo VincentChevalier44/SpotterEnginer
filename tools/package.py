@@ -3,10 +3,12 @@ manifeste, icône, modules, signal radio, voix, polices) et les notices du pilot
 SpotterEnginer-<version>.zip et son empreinte SpotterEnginer-<version>.sha256 (« <sha256>  <nom du zip> »). Les tests,
 les outils et la documentation technique n'y sont jamais.
 Le paquet est ensuite contrôlé par le vrai module de mise à jour (src/update.lua, sous lupa), comme l'app le fera :
-chemins sûrs, fichiers indispensables, modules requis, version du manifeste, nom accepté par M.release, taille bornée,
-pont compatible avec AdvancedIA installé.
+chemins sûrs, fichiers indispensables, modules requis, version du manifeste, nom accepté par M.release, taille bornée
+(avec une marge : la borne est celle des versions déjà installées), pont compatible avec AdvancedIA installé. Chaque
+module Lua du paquet est compilé et les deux modules de la mise à jour sont chargés (contrat de démarrage du haut de
+SpotterEnginer.lua) : une version dont ces modules ne se chargent pas ne pourrait ni se défaire ni se mettre à jour.
 Rien n'est écrit dans le dossier de l'app (CSP la recharge en jeu dès qu'un de ses fichiers change) : paquet dans le
-dossier temporaire par défaut.
+dossier temporaire par défaut, dossier de sortie refusé s'il est dans l'app.
 Usage : python tools/package.py [dossier de sortie]"""
 from pathlib import Path
 import hashlib
@@ -18,6 +20,9 @@ from lupa import LuaRuntime
 APP = Path(__file__).resolve().parents[1]
 PREFIX = 'apps/lua/SpotterEnginer/'
 NOTICES = ['README.md', 'CHANGELOG.md', 'COMPATIBILITY.md', 'LICENSE']
+# Part de M.sizeMax (src/update.lua) qu'un paquet peut atteindre : au-delà, les versions déjà installées (qui portent
+# leur propre borne) seraient bientôt incapables de l'installer seules ; relever la borne ne les atteint pas.
+SIZE_MARGIN = 0.8
 
 
 def runtime():
@@ -41,7 +46,8 @@ def main():
     up = lua.eval("(require('src/update'))")
     version = up.manifestVersion((APP / 'manifest.ini').read_text(encoding='utf-8'))
     assert version, 'version du manifeste illisible'
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.gettempdir()) / 'SpotterEnginer-dist'
+    out = (Path(sys.argv[1]) if len(sys.argv) > 1 else Path(tempfile.gettempdir()) / 'SpotterEnginer-dist').resolve()
+    assert out != APP and APP not in out.parents, f'dossier de sortie dans le dossier de l\'app (rechargée en jeu) : {out}'
     out.mkdir(parents=True, exist_ok=True)
     zip_path = out / f'{up.assetPrefix}{version}.zip'
     sha_path = out / f'{up.assetPrefix}{version}.sha256'
@@ -69,7 +75,13 @@ def check(lua, up, zip_path, sha_path, version):
         texts = {n: archive.read(n) for n in names}
     for bad in ('/tests/', '/tools/', '/docs/', '__pycache__', '.pyc', '/dist/'):
         assert not any(bad in n for n in names), bad
-    assert up.content(entries), 'contenu refusé (chemins ou fichiers indispensables)'
+    assert up.content(entries), 'contenu refusé (chemins, doublons à la casse près ou fichiers indispensables)'
+    # Fichier vide : la comparaison du paquet extrait ne saurait pas le distinguer d'une lecture en échec.
+    empty = [n for n in names if not n.endswith('/') and not texts[n]]
+    assert not empty, f'fichiers vides : {empty}'
+    size = zip_path.stat().st_size
+    assert size <= SIZE_MARGIN * up.sizeMax, f'paquet de {size} octets : plus de {SIZE_MARGIN:.0%} de la borne des versions installées ({int(up.sizeMax)})'
+    modules(lua, names, texts)
 
     def read(name):
         raw = texts.get(name)
@@ -101,7 +113,32 @@ def check(lua, up, zip_path, sha_path, version):
         res = up.compatible(read(PREFIX + 'src/bridge_layout.lua'), companion)
         fits = res if not isinstance(res, tuple) else res[0]
         assert fits is True, f'pont incompatible avec AdvancedIA installé : {res}'
-    print('contrôles de l\'app : contenu, modules, version, nom, empreinte, pont' + (' (AdvancedIA installé)' if companion else ''))
+    print('contrôles de l\'app : contenu, modules compilés, contrat de démarrage, version, nom, taille, empreinte, pont'
+          + (' (AdvancedIA installé)' if companion else ''))
+
+
+def modules(lua, names, texts):
+    """Chaque module Lua du paquet se compile, et les deux modules de la mise à jour se chargent et tiennent le contrat de
+    démarrage. lupa embarque ici Lua 5.5, pas le LuaJIT de CSP : la compilation attrape les fautes de syntaxe communes
+    aux deux, pas une écriture propre à Lua 5.3+ que LuaJIT refuserait (les tests ne la voient pas non plus)."""
+    compile_ = lua.eval("function(text,name) local f,e=load(text,'@'..name); return e or '' end")
+    bad = [e for e in (compile_(texts[n].decode('utf-8'), n) for n in names if n.endswith('.lua')) if e]
+    assert not bad, f'modules qui ne se compilent pas : {bad}'
+    for rel in ('src/update.lua', 'src/remote.lua'):
+        assert texts[PREFIX + rel] == (APP / rel).read_bytes(), f'{rel} du paquet différent de celui chargé ici'
+    why = lua.eval("""(function()
+      local okU,Update=pcall(require,'src/update'); if not okU or type(Update)~='table' then return 'src/update : '..tostring(Update) end
+      local okR,Remote=pcall(require,'src/remote'); if not okR or type(Remote)~='table' then return 'src/remote : '..tostring(Remote) end
+      if type(Update.recover)~='function' or type(Update.recoverText)~='function' or type(Remote.new)~='function' then return 'Update.recover, Update.recoverText ou Remote.new absent' end
+      local okP,port=pcall(Remote.new,function() end)
+      if not okP or type(port)~='table' then return 'Remote.new : '..tostring(port) end
+      if port.ready~=false then return 'port actif hors de CSP' end
+      for _,name in ipairs({'restart','log','bootOk'}) do if type(port[name])~='function' then return 'port.'..name..' absent' end end
+      if port.work~=nil and type(port.work)~='string' then return 'port.work' end
+      local okV,r=pcall(Update.recover,port); if not okV or r~=nil then return 'Update.recover(port inerte) : '..tostring(r) end
+      return ''
+    end)()""")
+    assert why == '', f'contrat de démarrage : {why}'
 
 
 if __name__ == '__main__':

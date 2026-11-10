@@ -31,8 +31,8 @@ local function trend(d)
 end
 -- s : {now, laps (tours finis), lapTime (dernier tour, s), fuel (L), kmF, kmR (km virtuels moyens par essieu),
 --      pit (voie des stands), road, ambient (°C), neutral (VSC/SC/FCY, drapeau rouge), valid (tour en cours valide)}
--- curves : {F, R} courbes d'usure ou vides. Renvoie vrai quand un tour vient de finir.
-function M.update(d,s,curves)
+-- Renvoie vrai quand un tour vient de finir.
+function M.update(d,s)
  if s.now-d.tempAt>=15 then d.tempAt=s.now; U.push(d.temps,{s.now,s.road+0.5*(s.ambient or s.road)}); d.roadTrend=trend(d) end
  -- Pneus changés : km virtuels revenus vers zéro.
  if d.lastKmF and s.kmF<d.lastKmF-0.3 then d.tyreAge=0; d.outLap=true; if d.start then d.start.kmF=s.kmF; d.start.kmR=s.kmR end end
@@ -57,7 +57,7 @@ function M.update(d,s,curves)
  local st=d.start
  local rec={lap=s.laps,time=s.lapTime,fuelUsed=st.fuel-s.fuel,kmF=s.kmF-st.kmF,kmR=s.kmR-st.kmR,
   fuelMid=(st.fuel+s.fuel)*0.5,kmMidF=(st.kmF+s.kmF)*0.5,kmMidR=(st.kmR+s.kmR)*0.5,age=d.tyreAge,
-  pit=d.lapPit,neutral=d.lapNeutral,invalid=d.lapInvalid,out=d.outLap,road=s.road}
+  pit=d.lapPit,neutral=d.lapNeutral,invalid=d.lapInvalid,out=d.outLap}
  d.records[#d.records+1]=rec; if #d.records>200 then table.remove(d.records,1) end
  local okTime=U.finite(rec.time) and rec.time>10
  -- Tour 1 (départ arrêté) jamais propre ; tour invalide jamais meilleur tour.
@@ -74,6 +74,10 @@ function M.update(d,s,curves)
  d.lapPit=false; d.lapNeutral=false; d.lapInvalid=false; d.outLap=false
  return true
 end
+-- Pneus sans usure (multiplicateur d'usure d'AC à 0) : les km virtuels mesurés sur les tours propres restent à zéro.
+-- Sans courbe d'usure, la perte par tour d'âge n'a alors aucun sens : l'âge ne revient jamais à zéro (un train neuf se
+-- voit aux km qui reculent) et l'a priori donnait une dégradation et des arrêts « pneus » fantômes.
+function M.noWear(d) return d.kmF==0 and d.kmR==0 end
 -- Rythme de base et sensibilité : temps corrigé du carburant = base + gripK × perte d'adhérence (avec courbe), ou
 -- base + degLinear × âge (sans courbe). Régression sur les tours propres ; bornée par les valeurs a priori quand
 -- l'écart d'usure est encore trop faible pour la mesurer.
@@ -94,7 +98,8 @@ function M.fit(d,curves,fuelK,priorGripK,priorDeg)
  local a,b=U.linear(xs,ys)
  local prior=withCurve and priorGripK or priorDeg
  local slope
- if #xs>=5 and spread>=(withCurve and 1.0 or 4) then slope=U.clamp(b,prior*0.3,prior*3) else slope=prior end
+ if not withCurve and M.noWear(d) then slope=0
+ elseif #xs>=5 and spread>=(withCurve and 1.0 or 4) then slope=U.clamp(b,prior*0.3,prior*3) else slope=prior end
  -- Base recalculée avec la pente retenue (moyenne des résidus).
  local sum=0
  for k=1,#xs do sum=sum+ys[k]-slope*xs[k] end
@@ -129,16 +134,18 @@ function M.trackSegment(snap,n,entry,exit)
 end
 -- Arrêts observés (joueur et IA) : temps passé dans la voie des stands comparé au temps du même tronçon en piste ;
 -- perte de voie = perte totale moins l'arrêt immobile. i : indice de la voiture ; capture(i) -> instants de passage
--- de la voiture (copie, prise à l'entrée dans la voie, avant que la traversée de la voie ne les remplace), nombre de
--- points et durée de son dernier tour.
+-- de la voiture (copie, prise à l'entrée dans la voie, avant que la traversée de la voie ne les remplace) et nombre de
+-- points. Seul un passage vu en entier est mesuré : une voiture déjà dans la voie à la première image, ou posée à son
+-- emplacement (retour au stand, sous ENTRY_KMH) n'y est pas entrée par la piste (demi-voie mesurée, perte trop faible).
+M.ENTRY_KMH=20
 function M.observePit(d,i,inLane,kmh,now,spline,capture)
  local p=d.pits[i]
- if not p then p={inLane=false,enterAt=0,enterSpline=0,stillFor=0,last=now}; d.pits[i]=p end
+ if not p then p={inLane=inLane,enterAt=0,enterSpline=0,stillFor=0,last=now}; d.pits[i]=p end
  local dt=math.max(0,math.min(1,now-p.last)); p.last=now
  if inLane and not p.inLane then
   p.inLane=true; p.enterAt=now; p.enterSpline=spline; p.stillFor=0
-  p.snap,p.points,p.lapTime=nil,nil,nil
-  if capture then p.snap,p.points,p.lapTime=capture(i) end
+  p.snap,p.points=nil,nil
+  if capture and kmh>=M.ENTRY_KMH then p.snap,p.points=capture(i) end
  elseif inLane then if kmh<1 then p.stillFor=p.stillFor+dt end
  elseif p.inLane then
   p.inLane=false
@@ -169,6 +176,7 @@ function M.model(d,car,cfg,pace,fuelK)
  m.km0F=car.km0F or 0; m.km0R=car.km0R or 0; m.age0=d.tyreAge
  m.gripK=d.gripK or M.gripPrior(pace)
  m.degLinear=d.degLinear or cfg.degPrior or m.degLinear
+ if M.noWear(d) then m.degLinear=0 end
  m.base=d.base or (pace and pace-m.fuelK*m.fuel*0.5) or (d.best and d.best-m.fuelK*m.fuel*0.5) or m.base
  m.warmup=cfg.warmup or m.warmup
  m.pitLane=d.laneLoss or cfg.pitLane or m.pitLane

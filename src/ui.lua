@@ -201,6 +201,7 @@ local function updateBlock(app,x,y,w)
  y=y+row(app,'updateCheck',x,y,w)
  return y+W.message(U2.kept,x,y+4,w,'mut')+10
 end
+local HOME_ROWS={'volume','spotterVolume','engineerVolume','duck','duckLevel'}
 local function home(app,x,y,w)
  y=y+linkPanel(app,x,y,w)+14
  local tw=(w-30)/4
@@ -211,7 +212,7 @@ local function home(app,x,y,w)
  y=y+84
  W.heading(L.t.home.voices,x,y,w,string.format(L.t.home.voicesOf,app.voicePresent or 0,app.voiceTotal or 0)); y=y+30
  -- Volumes de la radio, réglables ici avec l'essai de la voix juste dessous.
- for _,key in ipairs({'volume','spotterVolume','engineerVolume','duck','duckLevel'}) do y=y+row(app,key,x,y,w) end
+ for _,key in ipairs(HOME_ROWS) do y=y+row(app,key,x,y,w) end
  y=missingClips(app,x,y+8,w)
  y=y+W.message(L.t.home.silent,x,y,w,'mut')+10
  voiceTest(app,x,y,'')
@@ -542,6 +543,7 @@ local function updateHeader(app,v,x,limit)
  if busy and not Update.reported(u) then return x+W.chip(busy,x,15,'c')+12 end
  return x+4
 end
+local LANGUAGES={'FR','EN'}
 function M.draw(v,app)
  if not v.fonts then v.fonts=true; if W.fontDir~=app.fontDir then W.setFonts(app.fontDir) end end
  app.view=v
@@ -567,7 +569,7 @@ function M.draw(v,app)
  local right=w-12
  if W.switch('master',right-30,16,app.cfg.enabled,L.t.keys.enabled[2]) then app.set('enabled',not app.cfg.enabled) end
  right=right-44
- local picked=W.segment('lang',{'FR','EN'},right-76,12,76,24,app.cfg.language=='EN' and 2 or 1)
+ local picked=W.segment('lang',LANGUAGES,right-76,12,76,24,app.cfg.language=='EN' and 2 or 1)
  if picked then app.set('language',picked==2 and 'EN' or 'FR') end
  right=right-90
  local cw=W.dotChipWidth(chip)

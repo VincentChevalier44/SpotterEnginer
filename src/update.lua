@@ -1,8 +1,9 @@
--- Mise à jour de SpotterEnginer depuis GitHub : module repris d'AdvancedIA (Beta 1.51, avec les constantes prévues pour
--- sa Beta 1.52 : préfixe des paquets et libellé des versions) ; les mentions « Beta 1.xx » ci-dessous sont l'historique
--- d'AdvancedIA. Mêmes règles : vérification au lancement, empreinte SHA-256, sauvegarde, installation à l'arrêt, retour
--- arrière. En plus (SpotterEnginer dépend d'AdvancedIA) : le paquet n'est installé, et la version précédente n'est
--- rétablie, que si son pont (src/bridge_layout.lua, version) est celui d'AdvancedIA installé (M.compatible).
+-- Mise à jour de SpotterEnginer depuis GitHub : module repris d'AdvancedIA (les mentions « Beta 1.xx » ci-dessous sont
+-- son historique). Vérification au lancement, empreinte SHA-256, sauvegarde, installation à l'arrêt, retour arrière.
+-- En plus (SpotterEnginer dépend d'AdvancedIA) : le paquet n'est installé, et la version précédente n'est rétablie,
+-- que si son pont (src/bridge_layout.lua, version) est celui d'AdvancedIA installé (M.compatible).
+-- L'empreinte vient de la même publication que le paquet : elle garantit le transport, pas l'éditeur (aucune signature) ;
+-- d'où l'adresse exacte exigée (M.release), l'installation sur clic seulement et jamais vers une version plus ancienne.
 -- Logique pure, sans réseau ni fichiers. Le port
 -- (src/remote.lua en jeu, une imitation dans les tests) fait les requêtes, l'empreinte, les copies et le redémarrage.
 -- Tout le travail se fait hors du dossier de l'app (cfg/extension/state de CSP, jamais rechargé en direct) : paquet
@@ -20,6 +21,9 @@
 -- Contrat figé du haut de SpotterEnginer.lua (lu avant tout autre module, par toutes les versions à venir) : M.recover(port)
 -- et son résultat {outcome, kind, from, to, file, failed, restart}, Remote.new(onRelease), port.ready, port.work,
 -- port.restart, port.log, port.bootOk. Ne jamais changer ces noms ni leur sens.
+-- Une copie interrompue peut laisser ce module et src/remote.lua de deux versions le temps d'un lancement : M.recover
+-- n'appelle que les fonctions du port de la 1.1.0, et toute fonction du port ajoutée depuis est facultative ici
+-- (has(port,…)) : sourceOver, sourceSetOver, sourceListed, step, et le rappel beforeCopy posé par le script principal.
 -- Événements du journal (u.events) : textes prêts, versés au journal de session par le script principal.
 -- Beta 1.37 : dossier de travail nettoyé (M.tidy) au lancement sans repère ni démarrage surveillé, et dès qu'une version
 -- tout juste installée a démarré (port.bootOk, puis M.tidy) : aucun reste après une mise à jour réussie.
@@ -32,13 +36,14 @@ M.prefix='apps/lua/SpotterEnginer/'
 -- Paquets publiés : SpotterEnginer-<version>.zip et son empreinte (.sha256 ou .zip.sha256) ; versions écrites sans
 -- préfixe (« 1.1.0 »).
 M.assetPrefix='SpotterEnginer-'
-M.labelPrefix=''
 M.required={'manifest.ini','SpotterEnginer.lua','src/update.lua','src/remote.lua','src/bridge_layout.lua'}
 M.headers={['User-Agent']='SpotterEnginer',['Accept']='application/vnd.github+json'}
 -- AdvancedIA, dont SpotterEnginer dépend : dossiers possibles (nouveau nom d'abord) et fichier du pont partagé.
 M.companion={folders={'AdvancedIA','ACAdvancedIA'},layout='src/bridge_layout.lua',name='AdvancedIA'}
 M.notesMax=40
 M.lineMax=200
+-- Borne lue par les versions déjà installées : un paquet plus gros ne s'installerait plus seul chez elles
+-- (tools/package.py garde une marge).
 M.sizeMax=16*1024*1024
 M.eventsMax=32
 M.checkGap=60
@@ -55,7 +60,7 @@ function M.version(text)
  local out={}; for n in s:gmatch('%d+') do out[#out+1]=tonumber(n) end
  return out
 end
-function M.label(text) local v=M.version(text); return v and M.labelPrefix..table.concat(v,'.') or nil end
+function M.label(text) local v=M.version(text); return v and table.concat(v,'.') or nil end
 -- a plus récente que b (versions illisibles : jamais).
 function M.newer(a,b)
  local x,y=M.version(a),M.version(b)
@@ -65,6 +70,7 @@ function M.newer(a,b)
 end
 local function str(v) return type(v)=='string' and v or nil end
 local function starts(s,p) return type(s)=='string' and s:sub(1,#p)==p end
+local function has(port,name) return type(port[name])=='function' end
 -- Coupure d'un texte UTF-8 à n octets au plus, jamais au milieu d'un caractère.
 function M.cut(text,n)
  if #text<=n then return text end
@@ -86,21 +92,24 @@ function M.notes(body)
  return out
 end
 -- Dernière version publiée (réponse de l'API GitHub décodée). Le paquet et son empreinte doivent porter le numéro de la
--- version et venir des téléchargements du dépôt : aucune autre adresse n'est suivie.
+-- version et avoir exactement l'adresse de téléchargement de ce tag dans ce dépôt (ni autre dépôt, ni « /../ ») : aucune
+-- autre adresse n'est suivie. Tag « v1.4.0 » : un numéro à point (« 2026 » ou « release-12 » battraient toute version),
+-- écrit avec les seuls caractères qu'une adresse garde tels quels.
 function M.release(data)
  if type(data)~='table' or data.draft==true or data.prerelease==true then return nil,'format' end
- local tag=str(data.tag_name); local version=M.label(tag)
- if not version then return nil,'format' end
- local number=table.concat(M.version(tag),'.')
- local zipName=M.assetPrefix..number..'.zip'
+ local tag=str(data.tag_name)
+ if not tag or not tag:find('^[%w%._%-]+$') or not tag:find('%d+%.%d+') then return nil,'format' end
+ local version=M.label(tag)
+ local zipName=M.assetPrefix..version..'.zip'
+ local base=M.download..tag..'/'
  local r={version=version,tag=tag,notes=M.notes(data.body),published=str(data.published_at) and data.published_at:sub(1,10) or '',
   page=starts(data.html_url,M.page) and data.html_url or M.page}
  if type(data.assets)=='table' then
   for _,asset in ipairs(data.assets) do
    local name=type(asset)=='table' and str(asset.name); local url=type(asset)=='table' and str(asset.browser_download_url)
-   if name and url and starts(url,M.download) then
+   if name and url==base..name then
     if name==zipName then r.zip={name=name,url=url,size=tonumber(asset.size) or 0}
-    elseif name==zipName..'.sha256' or name==M.assetPrefix..number..'.sha256' then r.sha={name=name,url=url} end
+    elseif name==zipName..'.sha256' or name==M.assetPrefix..version..'.sha256' then r.sha={name=name,url=url} end
    end
   end
  end
@@ -115,24 +124,37 @@ function M.digest(text,zipName)
  if not hash or #hash~=64 or name~=zipName then return nil end
  return hash:lower()
 end
--- Chemin d'une entrée du paquet, sous apps/lua/SpotterEnginer/ : segments non vides, ni « . » ni « .. », sans « \ » ni « : »
--- (une entrée de dossier finit par « / »).
-local function safe(name)
- if type(name)~='string' or not starts(name,M.prefix) or name:find('\\',1,true) or name:find(':',1,true) then return false end
- local rest=name:sub(#M.prefix+1)
- if rest:sub(-1)=='/' then rest=rest:sub(1,-2) end
- if rest=='' then return true end
- for segment in (rest..'/'):gmatch('([^/]*)/') do if segment=='' or segment=='.' or segment=='..' then return false end end
+-- Chemin relatif sûr sous Windows : sans « \ » ni « : », segments non vides, ni « . » ni « .. », jamais finis par un
+-- point ou une espace (Windows les retire : « manifest.ini. » écraserait le manifeste), sans caractère de contrôle ni
+-- interdit, jamais un nom réservé (CON, NUL, COM1…, avec ou sans extension).
+local reserved={con=true,prn=true,aux=true,nul=true}
+for i=1,9 do reserved['com'..i]=true; reserved['lpt'..i]=true end
+function M.safeRel(rel)
+ if type(rel)~='string' or rel=='' or rel:find('[\\:%c<>"|%?%*]') then return false end
+ for segment in (rel..'/'):gmatch('([^/]*)/') do
+  local last=segment:sub(-1)
+  if segment=='' or last=='.' or last==' ' or reserved[(segment:match('^[^%.]*'):gsub(' +$','')):lower()] then return false end
+ end
  return true
 end
--- Contenu du paquet : chemins sûrs, avec les fichiers indispensables (dont le module de mise à jour lui-même : une version
--- sans lui ne pourrait plus se mettre à jour).
+-- Chemin d'une entrée du paquet, sous apps/lua/SpotterEnginer/ (une entrée de dossier finit par « / »).
+local function safe(name)
+ if not starts(name,M.prefix) then return false end
+ local rest=name:sub(#M.prefix+1)
+ if rest:sub(-1)=='/' then rest=rest:sub(1,-2) end
+ return rest=='' or M.safeRel(rest)
+end
+-- Contenu du paquet : chemins sûrs, jamais deux entrées de même nom à la casse près (un seul fichier sous Windows), avec
+-- les fichiers indispensables (dont le module de mise à jour lui-même : une version sans lui ne pourrait plus se mettre
+-- à jour).
 function M.content(entries)
  if type(entries)~='table' or #entries==0 then return false end
- local seen={}
+ local seen,folded={},{}
  for _,name in ipairs(entries) do
   if not safe(name) then return false end
-  seen[name]=true
+  local key=name:lower()
+  if folded[key] then return false end
+  folded[key]=true; seen[name]=true
  end
  for _,file in ipairs(M.required) do if not seen[M.prefix..file] then return false end end
  return true
@@ -166,11 +188,12 @@ function M.manifestVersion(text)
  return M.label(('\n'..text):match('\n[ \t]*VERSION[ \t]*=[ \t]*([^\r\n]+)'))
 end
 -- À l'arrêt seulement : pause, ou voiture du joueur arrêtée à son emplacement des stands (pas dans la voie). frame :
--- image lue par src/port.lua (paused) ; player : sa voiture (inPit, kmh).
+-- image lue par src/port.lua (valid, paused) ; player : sa voiture (valid, inPit, kmh). Une image ou une voiture que
+-- CSP n'a pas pu lire (valid à false : valeurs de l'image d'avant) ne vaut jamais arrêt.
 function M.stopped(frame,player)
- if frame==nil then return false end
+ if frame==nil or frame.valid==false then return false end
  if frame.paused==true then return true end
- return player~=nil and player.inPit==true and (tonumber(player.kmh) or 99)<1
+ return player~=nil and player.valid~=false and player.inPit==true and (tonumber(player.kmh) or 99)<1
 end
 -- Version du pont écrite dans un src/bridge_layout.lua (L.version=N), ou nil.
 function M.bridgeVersion(text)
@@ -200,7 +223,8 @@ end
 
 function M.new(installed)
  return {phase='idle',installed=installed,error='',status=0,detail='',release=nil,previous=nil,updated=nil,serial=0,
-  after='',events={},gen=0,askedAt=-math.huge,startedAt=0,now=0,restartAt=nil,restartLate=false,brokenFile=nil,warning=nil}
+  after='',events={},gen=0,askedAt=-math.huge,startedAt=0,now=0,restartAt=nil,restartLate=false,brokenFile=nil,warning=nil,
+  target=nil,refused=nil,published={}}
 end
 -- Événement du journal : niveau et texte ; les plus anciens sont oubliés au-delà de M.eventsMax non versés.
 local function event(u,level,text)
@@ -228,7 +252,7 @@ local failures={network='echec reseau',rate='GitHub refuse temporairement (limit
  layout='refusee : fichier du pont illisible'}
 -- kept : la version installée n'a pas changé (dit au journal) ; detail : erreur de CSP ou fichier en cause.
 local function fail(u,code,status,detail,kept)
- u.phase='failed'; u.error=code; u.status=status or 0; u.detail=detail or ''; u.serial=u.serial+1
+ u.phase='failed'; u.error=code; u.status=status or 0; u.detail=detail or ''; u.serial=u.serial+1; u.refused=nil
  local text='mise a jour: '..failures[code]..((status or 0)>0 and ' (statut '..status..')' or '')..((detail or '')~='' and ' : '..detail or '')
  event(u,code=='driving' and 'INFO' or 'WARN',text..(kept and ', version actuelle conservee' or ''))
 end
@@ -327,23 +351,37 @@ end
 -- Texte du journal (de session et de CSP) d'une reprise faite au chargement.
 local recoverTexts={
  finished=function(r) return 'INFO','mise a jour: copie reprise au lancement, '..(r.kind=='update' and 'installation' or 'retour arriere')..' termine ('..r.from..' -> '..r.to..')' end,
- completed=function(r) return 'INFO','mise a jour: copie reprise au lancement, '..(r.kind=='update' and 'installation' or 'retour arriere')..' termine ('..r.from..' -> '..r.to..')' end,
  restored=function(r) return 'WARN','mise a jour: copie interrompue ('..r.from..' -> '..r.to..'), '..r.from..' remise en place au lancement' end,
  autorollback=function(r) return 'WARN','mise a jour: la '..r.from..' n a pas demarre deux fois de suite, '..r.to..' remise en place automatiquement' end,
  bootfailed=function(r) return 'ERROR','mise a jour: la '..r.from..' n a pas demarre deux fois de suite et la version precedente est incomplete : reinstallez l app' end,
  cleared=function(r) return 'WARN','mise a jour: repere d une copie interrompue leve sans rien copier ('..(r.installed and 'version installee '..r.installed or 'repere illisible')..')' end,
  gaveup=function(r) return 'ERROR','mise a jour: reprise abandonnee apres '..M.recoverTries..' essais ('..(r.from or '?')..' -> '..(r.to or '?')..') : reinstallez l app ('..(r.file or '?')..')' end,
  failed=function(r) return 'ERROR','mise a jour: reprise impossible ('..(r.from or '?')..' -> '..(r.to or '?')..(r.failed and ', '..r.failed or '')..') : relancez le jeu ; si le probleme reste, reinstallez l app ('..(r.file or '?')..')' end}
+recoverTexts.completed=recoverTexts.finished
 function M.recoverText(r)
  local f=r and recoverTexts[r.outcome]
  if not f then return nil end
  return f(r)
 end
--- Au lancement : compte rendu de la reprise (M.recover) et de la dernière opération, version précédente proposée (seulement
--- complète), abandon d'une reprise précédente rappelé tant que la même version reste installée.
-function M.start(u,port,recovered)
+-- Version précédente proposée au retour arrière : sauvegarde complète d'une autre version, et prise par-dessus la version
+-- installée. La sauvegarde ne garde que les fichiers qu'une mise à jour a remplacés : posée sur une autre version
+-- (installée à la main depuis), elle mêlerait deux versions. Le port le dit (sourceOver : version par-dessus laquelle
+-- elle vaut, écrite avec elle). Sauvegarde d'avant ce repère (1.3.1 et plus anciennes) : gardée seulement quand le
+-- compte rendu de ce lancement prouve que la mise à jour vient d'installer cette version depuis elle (proven : sa
+-- version de départ) ; le repère est alors écrit. Sans preuve, rien n'est proposé.
+local function previous(u,port,proven)
  local backup=port.sourceVersion('backup')
- u.previous=backup~=u.installed and port.sourceComplete('backup') and backup or nil
+ if not backup or backup==u.installed or not port.sourceComplete('backup') or not has(port,'sourceOver') then return nil end
+ local over=port.sourceOver('backup')
+ if over==nil and proven==backup then
+  if has(port,'sourceSetOver') then port.sourceSetOver('backup',u.installed) end
+  over=u.installed
+ end
+ return over==u.installed and backup or nil
+end
+-- Au lancement : compte rendu de la reprise (M.recover) et de la dernière opération, version précédente proposée (voir
+-- previous), abandon d'une reprise précédente rappelé tant que la même version reste installée.
+function M.start(u,port,recovered)
  local note=port.failed()
  if note then
   local version=note:match('\ninstalled ([^\n]+)')
@@ -358,6 +396,7 @@ function M.start(u,port,recovered)
  -- Fichiers copiés au chargement : redémarrage à la première image ; le compte rendu est lu au lancement suivant.
  if recovered and recovered.restart then
   u.phase='restarting'; u.after=recovered.kind=='rollback' and 'rollback' or 'update'; u.restartPending=true; u.serial=u.serial+1
+  u.target=recovered.outcome=='restored' and recovered.from or recovered.to
   event(u,'INFO','mise a jour: redemarrage de l app pour charger une version complete')
   return
  end
@@ -367,6 +406,7 @@ function M.start(u,port,recovered)
   event(u,'INFO',kind=='update' and 'mise a jour reussie: '..from..' -> '..to or kind=='rollback' and 'retour arriere termine'..(auto and ' (automatique)' or '')..': '..from..' -> '..to
    or 'installation interrompue rattrapee: '..from..' remise en place, '..to..' a refaire')
  end
+ u.previous=previous(u,port,kind=='update' and to==u.installed and from or nil)
  M.tidy(u,port)
 end
 -- Nettoyage du dossier de travail (Beta 1.37) : seulement sans repère (aucune copie à reprendre) ni démarrage surveillé
@@ -410,6 +450,8 @@ end
 -- échoue aussi, état terminal (repère gardé : reprise au prochain lancement).
 local function place(u,port,kind,to,now)
  u.phase='saving'
+ -- Fichiers de l'app tenus ouverts (clips de voix préchargés) rendus avant la copie, si le script principal le propose.
+ if has(port,'beforeCopy') then pcall(port.beforeCopy) end
  -- Version de départ lue dans le manifeste installé (celle que la reprise retrouvera).
  local from=port.installedVersion() or u.installed
  local saved,missing,kept=port.snapshot(targets[kind])
@@ -434,10 +476,23 @@ local function place(u,port,kind,to,now)
  -- « Beta 1.45 -> Beta 1.45 ».
  if not port.report(kind..' '..(kind=='update' and u.installed or from)..' -> '..to) then event(u,'WARN','mise a jour: compte rendu non ecrit') end
  if kind=='update' then port.bootSet(to,from,0) else port.bootClear() end
- u.phase='restarting'; u.after=kind; u.restartAt=now; u.serial=u.serial+1
+ u.phase='restarting'; u.after=kind; u.target=to; u.restartAt=now; u.serial=u.serial+1
  event(u,'INFO',string.format('mise a jour: %s%s (%d fichiers compares, %d copies en %.0f ms ; %d fichiers gardes en %.0f ms), radio arretee, son de la voiture rendu et redemarrage de l app',
   to,kind=='update' and ' installee' or ' retablie',stats and stats.compared or 0,stats and stats.copied or 0,stats and stats.ms or 0,kept and kept.saved or 0,kept and kept.ms or 0))
  port.restart()
+end
+-- Pont d'un paquet (texte de son src/bridge_layout.lua, manifeste lu par manifest()) comparé à celui d'AdvancedIA
+-- installé : jamais un spotter muet après une mise à jour. Refus : version d'AdvancedIA requise gardée (r.needs).
+local function fits(r,port,layout,manifest)
+ local ok,why=M.compatible(layout,port.companionLayout())
+ if not ok then r.needs=M.manifestKey(manifest(),'REQUIRES_ADVANCEDIA') end
+ return ok,why
+end
+-- Paquet extrait (next) contrôlé de même à l'image de la copie : AdvancedIA a pu se mettre à jour depuis l'extraction
+-- (paquet gardé pour un nouveau clic).
+local function stagedFits(u,port)
+ if not has(port,'sourceText') or not has(port,'companionLayout') then return true end
+ return fits(u.release,port,port.sourceText('next',M.companion.layout),function() return port.sourceText('next','manifest.ini') end)
 end
 -- Installation (un clic, à l'arrêt) : paquet déjà extrait et intact repris tel quel ; sinon téléchargement, contrôles et
 -- extraction ; copie finale à l'image suivante si le pilote est toujours à l'arrêt.
@@ -468,9 +523,8 @@ function M.install(u,port,stopped)
    if not M.content(entries) or M.manifestVersion(port.entry(data,M.prefix..'manifest.ini'))~=r.version then fail(u,'content',0,nil,true); return end
    local loads,module=M.requires(entries,function(name) return port.entry(data,name) end)
    if not loads then fail(u,'content',0,'module absent : '..module,true); return end
-   -- Pont du paquet comparé à celui d'AdvancedIA installé : jamais un spotter muet après une mise à jour.
-   local fits,why=M.compatible(port.entry(data,M.prefix..M.companion.layout),port.companionLayout())
-   if not fits then r.needs=M.manifestKey(port.entry(data,M.prefix..'manifest.ini'),'REQUIRES_ADVANCEDIA'); fail(u,why,0,nil,true); return end
+   local ok,why=fits(r,port,port.entry(data,M.prefix..M.companion.layout),function() return port.entry(data,M.prefix..'manifest.ini') end)
+   if not ok then fail(u,why,0,nil,true); return end
    u.phase='staging'
    port.stage(data,M.files(entries),function(err3)
     if not live(u,gen) then return end
@@ -487,13 +541,16 @@ end
 -- à l'arrêt (hors du dessin de la fenêtre).
 function M.rollback(u,port,stopped)
  if M.busy(u) or not u.previous then return false end
- if not stopped then fail(u,'driving'); return false end
- if port.sourceVersion('backup')~=u.previous or not port.sourceComplete('backup') then fail(u,'write',0,'version precedente incomplete',true); return false end
+ if not stopped then fail(u,'driving'); u.refused='rollback'; return false end
+ if previous(u,port)~=u.previous then fail(u,'write',0,'version precedente incomplete',true); return false end
  -- La version précédente peut attendre un autre pont qu'AdvancedIA installé : même contrôle qu'à l'installation. La
- -- sauvegarde ne garde que les fichiers que la mise à jour a remplacés : sans pont gardé, c'est celui de l'app.
- local layout=port.sourceText('backup',M.companion.layout) or port.appText(M.companion.layout)
- local fits,why=M.compatible(layout,port.companionLayout())
- if not fits then fail(u,why,0,nil,true); return false end
+ -- sauvegarde ne garde que les fichiers que la mise à jour a remplacés : sans pont gardé, c'est celui de l'app ; un pont
+ -- gardé mais illisible est refusé (jamais jugé sur celui de l'app).
+ local layout=port.sourceText('backup',M.companion.layout)
+ if layout==nil and not (has(port,'sourceListed') and port.sourceListed('backup',M.companion.layout)) then layout=port.appText(M.companion.layout) end
+ local ok,why=M.compatible(layout,port.companionLayout())
+ -- Refus d'un retour arrière : jamais publié comme une mise à jour incompatible (M.status).
+ if not ok then fail(u,why,0,nil,true); u.refused='rollback'; return false end
  u.phase='rollbackReady'; u.serial=u.serial+1
  event(u,'INFO','mise a jour: retour a la '..u.previous..' demande')
  return true
@@ -503,9 +560,13 @@ end
 function M.tick(u,port,stopped,now)
  u.now=now
  if u.restartPending then u.restartPending=false; u.restartAt=now; port.restart(); return end
+ -- Paquet extrait comparé au paquet par petites tranches (port.step) : jamais une longue image en piste.
+ if u.phase=='staging' and has(port,'step') then port.step() end
  local phase=u.phase
  if phase=='ready' then
-  if stopped and u.release then place(u,port,'update',u.release.version,now)
+  if stopped and u.release then
+   local ok,why=stagedFits(u,port)
+   if ok then place(u,port,'update',u.release.version,now) else fail(u,why,0,nil,true) end
   else u.gen=u.gen+1; u.phase='available'; u.serial=u.serial+1; event(u,'INFO','mise a jour: copie reportee (pilote reparti), paquet garde : nouveau clic a l arret') end
  elseif phase=='rollbackReady' then
   if stopped and u.previous then place(u,port,'rollback',u.previous,now)
@@ -559,14 +620,47 @@ function M.offered(u) return M.fresh(u) and (u.phase=='available' or u.phase=='f
 -- État publié pour AdvancedIA (contrat v1 avec sa session, ac.store('SpotterEnginer.update')) : 200 octets au plus,
 -- « v=1;installed=…;latest=…;state=available|uptodate|checking|error|incompatible[;needs=…] ».
 M.statusKey='SpotterEnginer.update'
+-- Appelé à chaque image : le texte n'est refait que si l'état a changé (vue, phase, u.serial, version publiée).
+-- Les vues sans état propre publient ce qui est vrai, jamais le texte d'avant resté dans ac.store : redémarrage en
+-- cours et compte rendu d'une mise à jour (la version en place est la dernière connue : « uptodate », ou « available »
+-- si une plus récente est connue : celle qu'un retour arrière vient de quitter, celle à refaire), aucune version
+-- publiée (« uptodate »). Avant toute vérification, et pour un retour arrière demandé ou refusé (en conduite, pont) :
+-- nil, rien n'est écrit (l'état d'avant reste vrai).
+M.statusMax=200
+M.needsMax=60
 local statusStates={available='available',driving='available',ready='available',downloading='available',verifying='available',
- installing='available',uptodate='uptodate',checking='checking',aaiOld='incompatible',aaiNewer='incompatible',aaiMissing='incompatible'}
+ installing='available',uptodate='uptodate',checking='checking',aaiOld='incompatible',aaiNewer='incompatible',aaiMissing='incompatible',
+ errNet='error',errRate='error',errFormat='error',errHash='error',errWrite='error',broken='error'}
+local function statusText(u,view)
+ if u.phase=='rollbackReady' or u.phase=='failed' and u.refused=='rollback' then return nil end
+ local state=statusStates[view]
+ local installed,latest,needs=u.installed,u.release and u.release.version,nil
+ if state=='incompatible' then
+  -- Valeur venue du manifeste du paquet : jamais un séparateur du contrat, longueur bornée.
+  needs=M.cut((tostring(u.release and u.release.needs or '?'):gsub('[;=%c]',' ')),M.needsMax)
+ elseif not state then
+  local done=u.updated
+  if u.phase=='restarting' then
+   installed=u.target or installed
+   if u.after=='rollback' then latest=latest or u.installed end
+  elseif u.phase=='checking' then state='checking'
+  elseif done then latest=latest or done.kind=='rollback' and done.from or done.kind=='recovered' and done.to or nil
+  elseif u.phase~='none' then return nil end
+  if not state then
+   if latest and M.newer(latest,installed) then state='available' else state='uptodate'; latest=installed end
+  end
+ end
+ local text='v=1;installed='..tostring(installed or '?')..';latest='..tostring(latest or installed or '?')..';state='..state
+ if needs then text=text..';needs='..needs end
+ return M.cut(text,M.statusMax)
+end
 function M.status(u,stopped)
  local view=M.view(u,stopped)
- local state=statusStates[view] or (view:sub(1,3)=='err' or view=='broken') and 'error' or nil
- if not state then return nil end
- local text='v=1;installed='..tostring(u.installed or '?')..';latest='..tostring(u.release and u.release.version or u.installed or '?')..';state='..state
- if state=='incompatible' then text=text..';needs='..tostring(u.release and u.release.needs or '?') end
- return text:sub(1,200)
+ local c=u.published
+ if not c then c={}; u.published=c end
+ if c.view~=view or c.phase~=u.phase or c.serial~=u.serial or c.release~=u.release then
+  c.view=view; c.phase=u.phase; c.serial=u.serial; c.release=u.release; c.text=statusText(u,view)
+ end
+ return c.text
 end
 return M
