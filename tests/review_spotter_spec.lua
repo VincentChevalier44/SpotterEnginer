@@ -337,4 +337,17 @@ function T.neighbours_match_by_position()
  F.cars[0].position=0; a,b=Position.neighbours(F,F.cars[0])
  check(a==nil and b==nil,'unknown place: nobody')
 end
+-- 1.3.3. « wrong » d'AdvancedIA 1.59 = la voiture recule sur le tour, marche arrière comprise : le joueur qui recule
+-- nez dans le bon sens n'est jamais dit « à contresens » ; celui qui roule vraiment à contresens l'est toujours.
+function T.reversing_is_not_wrong_way()
+ for _,case in ipairs({{-4,false},{6,true},{0,true}}) do
+  local ctx,v=scene({},{kmh=20})
+  ctx.link.cars[0]={valid=true,incident=false,onTrack=true,still=0,spin=false,wrong=true}
+  ctx.F.me.vz=case[1]
+  local em=Emergency.new(); em.moved=true
+  for k=1,5 do at(ctx,1+k*0.1); Emergency.step(em,ctx,0.1) end
+  local q=queued(v,'stranded')
+  check((q~=nil and q.text:find('contresens',1,true)~=nil)==case[2],'vz '..case[1]..': wrong way said = '..tostring(case[2]))
+ end
+end
 return T

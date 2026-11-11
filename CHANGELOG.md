@@ -2,6 +2,14 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.3 — 11 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.
+
+### Fixed: "You're facing the wrong way!" while reversing
+- From AdvancedIA Beta 1.59 on, the bridge really publishes its "wrong way" state (it was always off before). It means "the car goes backwards along the lap", which is also true when you reverse out of a wall with the nose pointing the right way. The spotter no longer says *"You're facing the wrong way! Turn around when it's clear."* while your car moves backwards; a car really driven against the track is still called.
+- Checked against the bridge of AdvancedIA Beta 1.59: same format, and the spin and off-track readings need no change.
+
 ## 1.3.2 — 10 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Second full adversarial review: every finding fixed, each with its test (222 checks).

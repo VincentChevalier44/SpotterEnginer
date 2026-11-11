@@ -76,8 +76,30 @@ def runtime(host=False):
     # Pont réel d'AdvancedIA, chargé sous le nom 'aai/bridge' (il lit src/bridge_layout, identique dans les deux apps).
     bridge = AAI / 'src' / 'bridge.lua'
     if bridge.exists():
-        lua.execute("local src=... ; package.preload['aai/bridge']=function() return assert(load(src,'@AdvancedIA/src/bridge.lua'))() end",
-                    bridge.read_text(encoding='utf-8'))
+        # Depuis la Beta 1.59, bridge.lua lit ses constantes dans SA configuration (require('src/config').K) : ses
+        # require('src/…') sont résolus dans le dossier d'AdvancedIA (modules gardés à part), jamais dans cette app.
+        lua.execute("""
+          local read=...
+          local loaded={}
+          local function areq(name)
+            if loaded[name]~=nil then return loaded[name] end
+            -- Bibliothèque « bit » de LuaJIT (lue par src/util.lua d'AdvancedIA), absente de lupa : opérateurs de Lua 5.3+.
+            if name=='bit' then
+              loaded.bit=load([[local function w(x) x=x&0xFFFFFFFF; return x>=0x80000000 and x-0x100000000 or x end
+                return {tobit=function(x) return w(math.floor(x)) end,band=function(a,b) return w(a&b) end,bor=function(a,b) return w(a|b) end,
+                 bxor=function(a,b) return w(a~b) end,bnot=function(a) return w(~a) end,lshift=function(a,n) return w(a<<(n&31)) end,
+                 rshift=function(a,n) return w((a&0xFFFFFFFF)>>(n&31)) end}]])()
+              return loaded.bit
+            end
+            if name:sub(1,4)~='src/' then return require(name) end
+            local src=assert(read(name),'module AdvancedIA absent : '..name)
+            local env=setmetatable({require=areq},{__index=_G,__newindex=_G})
+            local m=assert(load(src,'@AdvancedIA/'..name..'.lua','t',env))()
+            if m==nil then m=true end
+            loaded[name]=m; return m
+          end
+          package.preload['aai/bridge']=function() return areq('src/bridge') end
+        """, lambda name: (AAI / (name + '.lua')).read_text(encoding='utf-8') if (AAI / (name + '.lua')).exists() else None)
     lua.execute("""
       setmetatable(_G, {
         __index=function(_,k) error('undeclared global read: '..tostring(k),2) end,

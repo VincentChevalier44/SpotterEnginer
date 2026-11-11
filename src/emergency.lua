@@ -38,6 +38,8 @@ M.OFF_HOLD=0.3
 -- vitesse × lacet (accélération latérale qu'il faudrait pour tourner ainsi) au-delà de SPIN.lat m/s² (3,5 g : la voiture
 -- pivote, elle ne tourne pas). Un tête-à-queue lent, sous ce seuil, est vu par l'arrêt sur la piste.
 M.SPIN={yaw=2.0,hold=0.3,lat=35}
+-- Marche arrière du joueur : vitesse le long de la voiture (m/s) sous laquelle il recule (F.me.vz ; inconnue : 0).
+M.REVERSE=-1
 local MIN_TRACK=U.MIN_TRACK
 function M.new()
  return {contactAt=-1e9,noneAt=-1e9,aT=nil,aK=0,bT=nil,bK=0,prevAt=nil,hit=-1,kmhPrev=0,dmgBase=nil,suspBase=nil,contact=nil,reportUntil=-1e9,blown={},spinWas=false,wrongWas=false,
@@ -152,7 +154,9 @@ local function stranded(em,ctx,me,dt)
  local yaw=math.abs(tonumber(F.me.yaw) or 0)
  em.yawFor=running and yaw>M.SPIN.yaw and yaw*me.kmh/3.6>=M.SPIN.lat and em.yawFor+dt or 0
  local spin=running and (lc and lc.spin and lc.incident or em.yawFor>=M.SPIN.hold) or false
- local wrong=running and lc and lc.wrong or false
+ -- « wrong » d'AdvancedIA (1.59) : la voiture recule sur le tour, marche arrière comprise. Le joueur qui recule nez
+ -- dans le bon sens (sortie d'un mur) n'est pas à contresens (1.3.3) : jugé seulement s'il ne recule pas le long de sa voiture.
+ local wrong=running and lc and lc.wrong and (tonumber(F.me.vz) or 0)>M.REVERSE or false
  em.stopFor=running and me.kmh<M.STOP.kmh and em.stopFor+dt or 0
  if ctx.now-em.checkAt>=M.TRAFFIC.every or ctx.now<em.checkAt then em.checkAt=ctx.now; em.traffic=M.arriving(ctx,M.TRAFFIC.eta) end
  if not em.stranded and running and (spin and not em.spinWas or wrong and not em.wrongWas or em.stopFor>=M.STOP.hold) then

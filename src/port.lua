@@ -458,6 +458,8 @@ function M.read(F,dt)
   me.hit=num(car.collidedWith,-1)
   -- Vitesse de lacet (rad/s, 1.3.1 : tête-à-queue du joueur, src/emergency.lua).
   local okY,yaw=pcall(function() return car.localAngularVelocity.y end); me.yaw=okY and num(yaw) or 0
+  -- Vitesse le long de la voiture (m/s, négative : elle recule ; 1.3.3 : marche arrière, jamais « à contresens »).
+  local okZ,vz=pcall(function() return car.localVelocity.z end); me.vz=okZ and num(vz) or 0
   pcall(readWheels,me,car)
  end
  return true
