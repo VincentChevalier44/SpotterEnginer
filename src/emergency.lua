@@ -146,7 +146,7 @@ end
 local function stranded(em,ctx,me,dt)
  local F=ctx.F; local d=ctx.link.d
  local lc=Link.car(ctx.link,F.player)
- local held=d and (d.red or d.standing=='grid' or d.standing=='lights')
+ local held=d and (d.red or d.standing=='grid' or d.standing=='lights' or d.standing=='form' or d.standing=='roll')
  -- Arrêt sur la piste jugé seulement après avoir roulé au-dessus de STOP.moved km/h depuis le départ ou la sortie des
  -- stands (jamais au départ arrêté ni à une sortie lente de la voie).
  if me.pitlane or not F.started then em.moved=false elseif me.kmh>M.STOP.moved then em.moved=true end

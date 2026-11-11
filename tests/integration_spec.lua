@@ -177,6 +177,9 @@ function T.pitplan_published()
  race(true,200,false)
  local s=H.store['SpotterEnginer.pitplan']
  check(type(s)=='string' and s:match('^v=1;lap=%d+;compound=%-;state=%a+;window=%d+%-%d+;boxcalls=[01];stamp=%d+$') and #s<=160,'pitplan written: '..tostring(s))
+ -- Duel de stratégie (1.3.4, clé SpotterEnginer.strategy, contrat v1) : écrit par l'app pendant la course.
+ local u=H.store['SpotterEnginer.strategy']
+ check(type(u)=='string' and u:match('^v=1;mode=%a+;rival=%-?%d+;gain=%-?%d+%.%d;lap=%d+;stamp=%d+$') and #u<=160,'strategy written: '..tostring(u))
 end
 function T.pit_loss_learnt_from_ai_stop()
  race(true,260,false)

@@ -478,4 +478,33 @@ function M.pitplan(t,ctx,on)
  end
  return c.text
 end
+-- Duel de stratégie publié pour AdvancedIA (1.3.4, contrat v1 avec sa session, 11/11/2026 ; lu pour son affichage et
+-- son journal seulement, jamais pour ses IA) : ac.store('SpotterEnginer.strategy','v=1;mode=undercut|overcut|cover|none;
+-- rival=<indice d'AC|-1>;gain=<s, une décimale|-1.0>;lap=<tour d'arrêt|0>;stamp=<s>'), 160 octets au plus.
+-- mode : undercut (on rentre avant la voiture de devant ; gain = ce que l'arrêt avancé fait gagner sur elle), cover (la
+-- voiture de derrière menace d'un undercut), overcut (on reste dehors face à la voiture de devant), none (pas de duel,
+-- plan pas prêt, arrêt trop loin, voie des stands, neutralisation, hors course, réglages coupés). rival : la voiture
+-- du duel. lap : tour d'arrêt du plan (celui du « box » engagé). stamp : comme pitplan (périmé après 6 s sans avancer).
+M.strategyKey='SpotterEnginer.strategy'
+function M.strategy(t,ctx,on)
+ local F=ctx.F; local plan=t.plan; local me=F.cars and F.cars[F.player]; local du=t.duel
+ local stamp=math.max(0,math.floor(tonumber(F.clock) or 0))
+ local mode,rival,gain,lap='none',-1,-1,0
+ if on and ctx.cfg.duels and F.isRace and me and me.valid and not me.pitlane and not me.finished and t.ready and du
+  and not Link.neutralised(ctx.link.d) and duelRange(t,me) then
+  if du.undercut and du.ahead then mode='undercut'; rival=du.ahead.index; gain=math.max(0,tonumber(du.undercutGain) or 0)
+  elseif du.threat and du.behind then mode='cover'; rival=du.behind.index
+  elseif du.overcut and du.ahead then mode='overcut'; rival=du.ahead.index end
+  if mode~='none' then lap=t.boxLap or plan.optimal or 0 end
+ end
+ -- Gain publié au dixième : le texte ne change pas pour un écart de calcul.
+ if gain>=0 then gain=math.floor(gain*10+0.5)/10 end
+ local c=t.duelPublished
+ if not c then c={}; t.duelPublished=c end
+ if c.mode~=mode or c.rival~=rival or c.gain~=gain or c.lap~=lap or c.stamp~=stamp then
+  c.mode,c.rival,c.gain,c.lap,c.stamp=mode,rival,gain,lap,stamp
+  c.text=string.format('v=1;mode=%s;rival=%d;gain=%.1f;lap=%d;stamp=%d',mode,rival,gain,lap,stamp)
+ end
+ return c.text
+end
 return M

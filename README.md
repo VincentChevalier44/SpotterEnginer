@@ -14,7 +14,7 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 > **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.3.3. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** 1.3.4. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -135,6 +135,8 @@ Until the copy starts, **Cancel** stops everything and the app folder is never t
 
 **Work folder.** Everything is prepared in CSP's state folder, `Documents/Assetto Corsa/cfg/extension/state/SpotterEnginer-update`, never in the app folder (CSP reloads the app as soon as one of its files changes). It holds `next/` (the extracted package), `current/` (the files about to be replaced), `backup/` (the previous version) and small state files (`installing.txt`, `updated.txt`, `boot.txt`, `failed.txt`). Once a new version has started properly, the leftovers are tidied away; `backup/` is kept.
 
+**Strategy duel for AdvancedIA (new in 1.3.4, contract v1).** SpotterEnginer publishes the engineer's undercut / overcut verdict (`ac.store` key `SpotterEnginer.strategy`): `v=1;mode=undercut|overcut|cover|none;rival=<AC car index|-1>;gain=<s, one decimal|-1.0>;lap=<stop lap|0>;stamp=<s>`, 160 characters at most, written when it changes. `undercut`: stop before the car ahead (`gain` is what the early stop wins on it); `cover`: the car behind threatens an undercut; `overcut`: stay out against the car ahead; `none`: no duel, plan not ready, stop more than 4 laps away, pit lane, neutralisation, not a race, or the engineer, the strategy or the **Undercut / overcut** setting switched off. `stamp` is the simulation time in whole seconds, as for the pit plan. AdvancedIA reads it for its display and its log only, never for its AI.
+
 **Pit plan for AdvancedIA (new in 1.2.0, contract v1).** SpotterEnginer also publishes its pit plan (`ac.store` key `SpotterEnginer.pitplan`): `v=1;lap=<N>;compound=-;state=planned|boxnow|done|none;window=<a>-<b>;boxcalls=0|1;stamp=<s>`, 160 characters at most. From AdvancedIA Beta 1.59, its pit overlay follows this plan: a short notice when the window opens, then *box this lap* only on the planned lap.
 - `lap`: the lap in progress when entering the pits (the lap of the engineer's "box", fixed once "box next lap" is said).
 - `compound`: always `-`, since the strategy model does not choose a compound; AdvancedIA's own rules stay the reference for tyres.
@@ -157,7 +159,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.3). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.4). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -489,7 +491,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 226 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 974 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 227 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 976 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).

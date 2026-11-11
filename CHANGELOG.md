@@ -2,6 +2,17 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.4 — 11 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Needed for the formation lap and rolling start option of AdvancedIA Beta 1.60.
+
+### Formation lap and rolling start (AdvancedIA Beta 1.60, option off by default)
+- AdvancedIA neutralises the race during its formation lap. 1.3.3 would have said *"Race resumes under full course yellow"*; the spotter now says the formation lap (*"…get back to your grid slot"* before a standing start, *"…hold your place in the queue, it's a rolling start"* before a rolling one, new clip), the rolling start call with the car to follow written on the radio, and *"Go, go, go!"* at the green. No full course yellow, restart or green flag call during that phase, and no "stopped car" or "you are stopped" call either. A formation lap abandoned on a major incident is said as a full course yellow, once.
+- Checked against the bridge of AdvancedIA Beta 1.60 (same format).
+
+### Strategy duel published for AdvancedIA
+- The engineer's undercut / overcut verdict is published for AdvancedIA's display (key `SpotterEnginer.strategy`, contract v1: mode, rival, gain, stop lap), with the same switches as the calls. See the README.
+
 ## 1.3.3 — 11 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.

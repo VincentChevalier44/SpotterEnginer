@@ -365,4 +365,41 @@ function T.lane_loss_needs_a_full_pass()
  check(pass(d3,3,true,0)==nil and d3.laneLoss==nil,'put at its box (returned to the pits): not measured')
  check(pass(d3,3,false,80) and d3.laneLoss,'next full pass: measured')
 end
+-- 1.3.4. Duel de stratégie publié pour AdvancedIA (clé SpotterEnginer.strategy, contrat v1 du 11/11/2026).
+function T.strategy_contract_v1()
+ local function ctxOf(lap,over)
+  local F={isRace=true,player=0,clock=123.9,cars={[0]={valid=true,laps=lap-1,spline=0.4,pitlane=false,finished=false}}}
+  local ctx={F=F,cfg=Config.defaults(),link={d={neutral=false,red=false}}}
+  for k,v in pairs(over or {}) do ctx[k]=v end
+  return ctx
+ end
+ local function state(du,boxLap) return {ready=true,plan={ok=true,optimal=12},duel=du,boxLap=boxLap or false} end
+ local form='^v=1;mode=%a+;rival=%-?%d+;gain=%-?%d+%.%d;lap=%d+;stamp=%d+$'
+ -- Undercut sur la voiture de devant : rival, gain au dixième, tour d'arrêt du plan ; « box » engagé : son tour.
+ local t=state({undercut=true,undercutGain=1.26,ahead={index=4},behind={index=7}})
+ local s=St.strategy(t,ctxOf(10),true)
+ check(s=='v=1;mode=undercut;rival=4;gain=1.3;lap=12;stamp=123' and s:match(form) and #s<=160,'undercut: '..s)
+ t.boxLap=11; check(St.strategy(t,ctxOf(10),true):find('lap=11',1,true),'engaged box lap published')
+ -- Menace derrière, puis overcut ; undercut d'abord quand plusieurs sont vrais.
+ s=St.strategy(state({threat=true,overcut=true,ahead={index=4},behind={index=7}}),ctxOf(10),true)
+ check(s=='v=1;mode=cover;rival=7;gain=-1.0;lap=12;stamp=123','cover: '..s)
+ s=St.strategy(state({overcut=true,ahead={index=4}}),ctxOf(10),true)
+ check(s=='v=1;mode=overcut;rival=4;gain=-1.0;lap=12;stamp=123','overcut: '..s)
+ -- Rien : pas de duel, arrêt trop loin, voie des stands, neutralisation, réglage coupé, plan pas prêt, hors course.
+ local none='v=1;mode=none;rival=-1;gain=-1.0;lap=0;stamp=123'
+ local du={undercut=true,undercutGain=2,ahead={index=4}}
+ check(St.strategy(state(nil),ctxOf(10),true)==none,'no duel')
+ check(St.strategy(state(du),ctxOf(5),true)==none,'stop too far')
+ local c=ctxOf(10); c.F.cars[0].pitlane=true; check(St.strategy(state(du),c,true)==none,'pit lane')
+ c=ctxOf(10); c.link.d.neutral=true; check(St.strategy(state(du),c,true)==none,'neutralised')
+ c=ctxOf(10); c.cfg.duels=false; check(St.strategy(state(du),c,true)==none,'duels setting off')
+ check(St.strategy(state(du),ctxOf(10),false)==none,'engineer or strategy off')
+ local t2=state(du); t2.ready=false; check(St.strategy(t2,ctxOf(10),true)==none,'plan not ready')
+ c=ctxOf(10); c.F.isRace=false; check(St.strategy(state(du),c,true)==none,'not a race')
+ -- Texte refait seulement quand une valeur change (même table, même chaîne) ; le stamp avance avec la simulation.
+ local t3=state(du); c=ctxOf(10)
+ local a=St.strategy(t3,c,true); du.undercutGain=2.04; local b=St.strategy(t3,c,true)
+ check(rawequal(a,b),'same text kept for a rounding difference')
+ c.F.clock=125.2; check(St.strategy(t3,c,true):find('stamp=125',1,true),'stamp follows the simulation clock')
+end
 return T

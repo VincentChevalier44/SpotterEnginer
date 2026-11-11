@@ -275,6 +275,9 @@ local list={
  {'weGain',227,'227_on_gagne_environ',"On gagne environ",'227_gains_us_about',"That gains us about"},
  -- Centaines (nombres de 100 à 999, src/say.lua) : « cent » + reste, « deux » + « cent » + reste ; « one » + « hundred ».
  {'hundred',228,'228_cent',"cent",'228_hundred',"hundred"},
+ -- Tour de formation avant un départ lancé (AdvancedIA 1.60, annonce « formation », extra 1) : la place se garde dans
+ -- la file (le clip 109 parle de la grille : départ arrêté).
+ {'formationRoll',229,'229_tour_formation_lance',"Tour de formation, garde ta place dans la file, le départ sera lancé.",'229_formation_rolling',"Formation lap, hold your place in the queue, it's a rolling start."},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={

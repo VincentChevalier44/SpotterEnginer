@@ -6,6 +6,7 @@ SpotterEnginer is not a standalone app: it works only on top of [AdvancedIA](htt
 
 | SpotterEnginer | AdvancedIA required | Bridge version |
 |---|---|---|
+| 1.3.4 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51; formation lap and rolling start need Beta 1.60) | v1 |
 | 1.3.3 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 | 1.3.2 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 | 1.3.1 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
@@ -14,7 +15,7 @@ SpotterEnginer is not a standalone app: it works only on top of [AdvancedIA](htt
 | 1.1.1 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 | 1.1.0 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 
-The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0 to 1.3.3).
+The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0 to 1.3.4).
 
 **Calls that depend on the AdvancedIA version** (bridge v1 throughout; older versions simply never send them):
 
@@ -24,6 +25,8 @@ The required AdvancedIA version is also written in SpotterEnginer's `manifest.in
 | Beta 1.49 | New name and folder `apps/lua/AdvancedIA/`; F1 compound rules with pit notices (*change compound*, *stop validated*, *stop not counted*, *same compound in your pit strategy*). |
 | Beta 1.50 | Restart notices (*restart position*, *take your place back*), Safety Car queue notices, and the notice that the pit strategy was fixed. |
 | Beta 1.51 | *"Car on a flying lap behind, let it through."* in practice and qualifying (`fastCar`). |
+| Beta 1.59 | Real values for spin, wrong way and off track on every car (they were always off before); AdvancedIA reads SpotterEnginer's pit plan. SpotterEnginer 1.3.3 or later recommended (no "wrong way" call while reversing). |
+| Beta 1.60 | Formation lap and rolling start (option *Race start*), contact penalties, wrong way judged on the car's heading; AdvancedIA shows SpotterEnginer's undercut / overcut verdict. **SpotterEnginer 1.3.4 or later is needed for the formation lap and the rolling start.** |
 
 **Folder.** SpotterEnginer looks for `apps/lua/AdvancedIA/manifest.ini` first, then the old `apps/lua/ACAdvancedIA/manifest.ini` for installations not yet migrated. Only the manifest counts: an empty old folder is ignored. AdvancedIA, for its part, only opens the bridge when `apps/lua/SpotterEnginer/manifest.ini` exists, so the SpotterEnginer folder name must be exactly `SpotterEnginer`.
 

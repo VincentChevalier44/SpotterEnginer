@@ -27,7 +27,9 @@ local FIELDS={'neutral','neutralMode','ending','safetyPhase','red','greenLeft','
 -- quelques secondes après le vrai vert (écho constaté en jeu le 04/11/2026). Le départ est annoncé par « go ».
 -- SC appelée, feux, départ et faux départ n'y sont plus : lus dans l'état d'AdvancedIA (safetyPhase, standing,
 -- jumpLeft) dans la même image, alors que son panneau n'est refait que toutes les 0,25 s.
-local PANEL={native={'yellow',2,'raceControl','zone'},standingLap={'formationLap',3,'raceControl'},standingPit={'standingPit',3,'raceControl'},
+-- formationOff (AdvancedIA 1.60) : tour de formation abandonné sur un incident majeur ; standing reste « form » tant que
+-- sa FCY dure (aucune annonce de neutralisation pendant un tour de formation) : c'est le panneau qui la fait dire.
+local PANEL={native={'yellow',2,'raceControl','zone'},formationOff={'fcy',1,'raceControl','neutral'},standingLap={'formationLap',3,'raceControl','formation'},standingPit={'standingPit',3,'raceControl'},
  white={'lastLap',3,'raceControl'},
 penaltyDrive={'driveThrough',1,'penaltiesVoice'},penaltyTeleport={'penaltyPits',1,'penaltiesVoice'}}
 -- Pénalité du joueur décidée par AdvancedIA : clip selon la raison (coupure des gaz pour une raison inconnue).
@@ -47,7 +49,14 @@ local PENALTY={delta='penaltyDelta',pass='penaltyPass',red='penaltyRed',stop='pe
 -- Cinquième valeur : délai minimal entre deux annonces du même genre (s).
 local PIT_NOTICE={pitCompound={'pitCompound',3,18},pitPlanSame={'pitPlanSame',3,18,45},
  pitNotCounted={'pitNotCounted',3,30},pitValidated={'pitValidated',4,30},
- restartPlace={'restartPlace',3,20},restartRetake={'restartRetake',2,8,nil,15}}
+ restartPlace={'restartPlace',3,20},restartRetake={'restartRetake',2,8,nil,15},
+ -- Départ d'AdvancedIA 1.60 (option raceStart) : tour de formation (extra 0 : départ arrêté ensuite, 1 : départ lancé),
+ -- appel du départ lancé (value : place du joueur, extra : indice d'AC de la voiture à suivre, -1 en tête), vert du
+ -- départ lancé. Clé « start » pour les deux derniers : le vert remplace l'appel encore en file.
+ formation={'formationLap',2,12},rollStart={'rs',2,10},rollGreen={'go',1,4}}
+-- Avant le départ (standing d'AdvancedIA 1.60) : tour de formation ou appel du départ lancé. La course y est
+-- neutralisée (neutral, neutralMode « fcy », relaunch) sans que ce soit une neutralisation ni une relance à annoncer.
+local function prestart(x) return x.standing=='form' or x.standing=='roll' end
 function M.new()
  return {prev=nil,spare=nil,deltaSign=0,prox=Proximity.new(),gapLap=-1,lastGaps={},backmarkers={},faster={},closing={},fastPending={},
   mistakes={},rivalState={},rivalNow={},exitSpline=nil,exitSamples=0,exitAlt=nil,exitAltN=0,inLane={},cuts=0,lapValid=true,
@@ -179,6 +188,18 @@ local function pitNotice(ctx,cur,e)
   parts[3]=follow<0 and 'behindSc' or {text=Say.note(ctx.say,'behind',name(ctx,follow))}
  elseif cur.messageKind=='restartRetake' then
   parts[2]={text='('..name(ctx,math.floor((tonumber(cur.messageValue) or 0)+0.5))..')'}
+ elseif cur.messageKind=='formation' then
+  -- Départ lancé ensuite : la place se garde dans la file, pas sur la grille.
+  if math.floor((tonumber(cur.messageExtra) or 0)+0.5)==1 then parts[1]='formationRoll' end
+  return say(ctx,'formation',e[2],parts,{ttl=ttl,cooldown=30})
+ elseif cur.messageKind=='rollStart' then
+  -- Voiture à suivre écrite (jamais dite) ; en tête : rien de plus.
+  local follow=math.floor((tonumber(cur.messageExtra) or -1)+0.5)
+  if follow>=0 then parts[2]={text=Say.note(ctx.say,'behind',name(ctx,follow))} end
+  return say(ctx,'start',e[2],parts,{ttl=ttl,once=true})
+ elseif cur.messageKind=='rollGreen' then
+  Voice.cancel(ctx.voice,AFTER_LIGHTS)
+  return say(ctx,'start',e[2],parts,{ttl=ttl,once=true})
  end
  return say(ctx,cur.messageKind,e[2],parts,{ttl=ttl,text=text,cooldown=e[5]})
 end
@@ -194,7 +215,7 @@ local function race(s,ctx)
  if p and cur.serial<p.serial then p=nil end
  if not p then
   -- Référence : neutralisation déjà en cours annoncée une fois.
-  if cur.neutral and ctx.cfg.raceControl then
+  if cur.neutral and ctx.cfg.raceControl and not prestart(cur) then
    local id=neutralClip(cur)
    if id then say(ctx,'neutral',1,{id},{ttl=8}) end
   end
@@ -208,6 +229,10 @@ local function race(s,ctx)
  -- jamais à la sortie d'une zone jaune locale (AdvancedIA montre alors le vert sur son panneau).
  if p.neutral and not cur.neutral or p.red and not cur.red then s.neutralEndAt=ctx.real; s.greenPending=true; s.zoneGreenAt=ctx.real end
  if cur.neutral or cur.red then s.greenPending=false end
+ -- Fin du tour de formation ou départ lancé donné (1.3.4) : ni « drapeau vert » ni relance (« Go » ou la mise en grille
+ -- le disent).
+ local pre=prestart(cur) or prestart(p)
+ if pre then s.greenPending=false end
  -- Fin de neutralisation ou de drapeau rouge : delta, fin de VSC, SC qui rentre… annulés aussitôt (même en cours), pour
  -- que le vert passe sans attendre.
  if p.neutral and not cur.neutral or p.red and not cur.red then Voice.cancel(ctx.voice,AFTER_NEUTRAL) end
@@ -217,7 +242,7 @@ local function race(s,ctx)
  if p.deltaOn and not cur.deltaOn then Voice.cancel(ctx.voice,AFTER_DELTA) end
  if cfg.raceControl then
   -- Neutralisation : SC appelée (elle rejoint la piste), VSC, FCY ; puis SC en piste (« reste en file »).
-  if cur.neutral and (not p.neutral or p.neutralMode~=cur.neutralMode) and not relaunchNow then
+  if cur.neutral and (not p.neutral or p.neutralMode~=cur.neutralMode) and not relaunchNow and not pre then
    local id=neutralClip(cur)
    if id then say(ctx,'neutral',1,{id},{ttl=8}) end
   end
@@ -267,11 +292,11 @@ local function race(s,ctx)
   if (cur.disqualified and not p.disqualified or cur.nativePenalty==4 and p.nativePenalty~=4) and ctx.real-s.blackAt>10 then
    s.blackAt=ctx.real; say(ctx,'black',1,{'black'},{ttl=15})
   end
-  if relaunchNow then
+  if relaunchNow and not pre then
    -- Relance après un drapeau rouge : derrière la voiture de sécurité, sous VSC, sous FCY, ou départ lancé.
    local id=cur.neutralMode=='sc' and 'redRestartSc' or cur.neutralMode=='vsc' and 'redRestartVsc' or cur.neutralMode=='fcy' and 'redRestartFcy' or 'rs'
    say(ctx,'restart',2,{id},{ttl=10,cooldown=10})
-  elseif cur.playerRestart and not p.playerRestart then say(ctx,'restart',2,{'rs'},{ttl=10,cooldown=10}) end
+  elseif cur.playerRestart and not p.playerRestart and not pre then say(ctx,'restart',2,{'rs'},{ttl=10,cooldown=10}) end
   if cur.standing=='grid' and p.standing~='grid' then say(ctx,'standing',2,{'ss'},{ttl=10}) end
   -- Feux et départ dans l'image même ; « Go » coupe les feux (jamais redits après).
   if cur.standing=='lights' and p.standing~='lights' then say(ctx,'start',2,{'lightsOn'},{ttl=6,once=true}) end

@@ -36,7 +36,7 @@ local MIN_TRACK=U.MIN_TRACK
 function M.new() return {said={},hits={},pending={},tangleAt=-1e9,kA={},tA={},kB={},tB={}} end
 -- Nature du danger d'une voiture (clé du clip, priorité) ou nil (me : gardé pour les appels existants, non lu).
 function M.kind(c,lc,me,d)
- local grid=d and (d.red or d.standing=='grid' or d.standing=='lights')
+ local grid=d and (d.red or d.standing=='grid' or d.standing=='lights' or d.standing=='form' or d.standing=='roll')
  if lc and lc.wrong then return 'wrongWay',1 end
  if lc and lc.incident and lc.spin then return 'spinAhead',1 end
  if lc and lc.incident and lc.onTrack and lc.still>1 or not grid and c.kmh<12 then return 'stoppedAhead',1 end

@@ -6,7 +6,7 @@ the content, not the extension). For another voice, record files with the same n
 nothing, the call is then only written on the overlay radio.
 This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 
-974 files in all (2 languages).
+976 files in all (2 languages).
 
 ## Calls
 
@@ -238,6 +238,7 @@ This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 | 226 | `226_plus_d_arret.wav` | Plus d'arrêt prévu, on va jusqu'au bout. | `226_no_more_stops.wav` | No more stops, we go to the end. |
 | 227 | `227_on_gagne_environ.wav` | On gagne environ | `227_gains_us_about.wav` | That gains us about |
 | 228 | `228_cent.wav` | cent | `228_hundred.wav` | hundred |
+| 229 | `229_tour_formation_lance.wav` | Tour de formation, garde ta place dans la file, le départ sera lancé. | `229_formation_rolling.wav` | Formation lap, hold your place in the queue, it's a rolling start. |
 
 ## Numbers
 

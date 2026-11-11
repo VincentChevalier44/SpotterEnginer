@@ -1020,4 +1020,45 @@ function T.last_lap_refused_keeps_engineer_position()
  r.e.panel.decided='white'; r.step(2)
  check(queued(r.voice,'position'),'engineer position kept')
 end
+-- Départ d'AdvancedIA 1.60 (option raceStart, contrat du 11/11/2026) : standing « form » puis « roll » avec la course
+-- neutralisée (neutral, fcy, relaunch) : ni « full course yellow », ni « reprise sous FCY », ni « drapeau vert » ; le
+-- tour de formation, l'appel du départ lancé et son vert sont dits une fois chacun.
+function T.formation_lap_and_rolling_start()
+ local r=rig(); r.step(1)
+ local inc=r.e.incidents
+ local n=0
+ local function emit(kind,value,extra) n=n+1; inc.messageId=n; inc.messageKind=kind; inc.messageValue=value; inc.messageExtra=extra; r.e.ownTitle='Départ'; r.e.ownText=kind end
+ local function keys() local out={}; for _,q in ipairs(r.voice.queue) do out[#out+1]=q.key end; return table.concat(out,',') end
+ -- Tour de formation avant un départ lancé : standing et neutralisation dans la même image.
+ inc.standing='form'; inc.neutral=true; inc.neutralMode='fcy'; inc.relaunch=true; emit('formation',3,1); r.step(2)
+ local q=queued(r.voice,'formation')
+ check(q and q.text:find('file',1,true) and #r.voice.queue==1,'formation lap (rolling) only: '..keys()..' / '..tostring(q and q.text))
+ r.voice.queue={}
+ -- Appel du départ lancé : place du joueur, voiture à suivre écrite.
+ inc.standing='roll'; emit('rollStart',2,0); r.step(3)
+ q=queued(r.voice,'start'); check(q and q.text:find('Départ lancé',1,true) and q.text:find('P0',1,true) and #r.voice.queue==1,'rolling start call: '..keys()..' / '..tostring(q and q.text))
+ -- Vert : il remplace l'appel encore en file ; neutral et relaunch retombent, standing repasse à none ; pas de « drapeau vert ».
+ inc.standing='none'; inc.neutral=false; inc.relaunch=false; inc.greenUntil=100; emit('rollGreen',0,-1); r.step(4); r.step(5)
+ q=queued(r.voice,'start'); check(q and q.prio==1 and q.text:find('Go',1,true) and #r.voice.queue==1,'go only at the green: '..keys()..' / '..tostring(q and q.text))
+ -- Tour de formation avant un départ arrêté : le clip de la grille, puis la mise en grille, sans vert ni relance.
+ local r2=rig(); r2.step(1)
+ inc=r2.e.incidents; r=r2; n=0
+ inc.standing='form'; inc.neutral=true; inc.neutralMode='fcy'; inc.relaunch=true; emit('formation',3,0); r.step(2)
+ q=queued(r.voice,'formation'); check(q and q.text:find('grille',1,true) and #r.voice.queue==1,'formation lap (standing): '..keys())
+ r.voice.queue={}
+ inc.standing='grid'; inc.neutral=false; inc.relaunch=false; inc.greenUntil=100; r.step(3); r.step(4)
+ check(queued(r.voice,'standing') and not queued(r.voice,'restart') and #r.voice.queue==1,'grid call only after the formation lap: '..keys())
+ -- Liaison prise pendant le tour de formation (référence) : jamais « full course yellow ».
+ local r3=rig(); inc=r3.e.incidents
+ inc.standing='form'; inc.neutral=true; inc.neutralMode='fcy'; inc.relaunch=true; r3.step(1); r3.step(2)
+ check(#r3.voice.queue==0,'nothing at reference during the formation lap')
+ -- Tour de formation abandonné sur un incident majeur (panneau « formationOff », standing toujours « form ») : la
+ -- neutralisation est dite une fois ; au vert, le départ lancé (« Go »), sans « drapeau vert ».
+ r3.e.panel.decided='formationOff'; r3.step(3); r3.step(4)
+ q=queued(r3.voice,'neutral'); check(q and q.text:find('Full course yellow',1,true) and #r3.voice.queue==1,'abandoned formation lap: FCY said once')
+ r3.voice.queue={}
+ inc.standing='none'; inc.neutral=false; inc.relaunch=false; inc.greenUntil=100; inc.messageId=9; inc.messageKind='rollGreen'; inc.messageValue=0; inc.messageExtra=-1
+ r3.e.ownTitle='Départ'; r3.e.ownText='vert'; r3.e.panel.decided='none'; r3.step(5); r3.step(6)
+ check(queued(r3.voice,'start') and not queued(r3.voice,'restart') and #r3.voice.queue==1,'green after an abandoned formation lap: go only')
+end
 return T

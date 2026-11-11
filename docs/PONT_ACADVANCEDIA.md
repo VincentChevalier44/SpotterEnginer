@@ -120,14 +120,15 @@ end
 
 ## Keys published by SpotterEnginer (read by AdvancedIA)
 
-SpotterEnginer never writes into the bridge. It publishes two short texts with `ac.store`, read by AdvancedIA, each with its own contract version:
+SpotterEnginer never writes into the bridge. It publishes three short texts with `ac.store`, read by AdvancedIA, each with its own contract version:
 
 | Key | Format | Read by |
 |---|---|---|
 | `SpotterEnginer.update` | `v=1;installed=…;latest=…;state=available\|uptodate\|checking\|error\|incompatible[;needs=…]` | AdvancedIA's home page (line « SpotterEnginer › ») |
+| `SpotterEnginer.strategy` (1.3.4) | `v=1;mode=undercut\|overcut\|cover\|none;rival=<AC index\|-1>;gain=<s\|-1.0>;lap=<N\|0>;stamp=<s>` | AdvancedIA's display and log (suffix of its mandatory stop reminder), from Beta 1.60 |
 | `SpotterEnginer.pitplan` (1.2.0) | `v=1;lap=<N>;compound=-;state=planned\|boxnow\|done\|none;window=<a>-<b>;boxcalls=0\|1;stamp=<s>` | AdvancedIA's pit overlay, from Beta 1.59 |
 
-Both are 200 (update) and 160 (pit plan) characters at most; unknown fields are ignored and another `v` is ignored. See the README for the meaning of each field.
+They are 200 (update) and 160 (pit plan, strategy) characters at most; unknown fields are ignored and another `v` is ignored. See the README for the meaning of each field.
 
 ## Announcements read by SpotterEnginer (`messageKind`, Beta 1.49 to 1.51)
 
@@ -150,6 +151,10 @@ changes).
 | `restartPlace` | race: red flag in the pits, then pit lane exit on the relaunch lap | player's place (1..N) / car to follow (AC index, -1: the SC) | said ("Restart position: 7"), name written |
 | `restartRetake` | car classified behind the player is ahead of him, at each new target | car to pass (AC index) / player's place | said at most every 15 s, name written |
 | `aiDq` | an AI is disqualified | | said |
+| `formation` (1.60, option `raceStart`) | start of the formation lap; `standing` is `form`, with `neutral`, `neutralMode='fcy'` and `relaunch` set in the same frame | number of cars / 0: standing start next, 1: rolling start next | said ("Formation lap…", grid or queue wording); no FCY, restart or green flag call while `standing` is `form` or `roll` (1.3.4) |
+| `rollStart` (1.60) | call of the rolling start; `standing` is `roll` | player's place / car to follow (AC index, -1: leading) | said ("Rolling start, hold your position until the line."), name written |
+| `rollGreen` (1.60) | green of the rolling start; `standing` back to `none` in the same frame or later | 0 / -1 | said ("Go, go, go!"), replaces the call still queued |
+| `playerContact` (1.60) | warning to the player for a contact | | written only (the spotter's own "Contact!" is the voice) |
 | `fastCar` (1.51) | practice and qualifying: player on an out-lap or cool-down lap, AI on a flying lap 3 s or less behind; at most once per AI every 30 s | AI (AC index) / gap (s, one decimal) | said by the spotter ("Car on a flying lap behind, let it through."), name and measured gap written, only if the car is seen really closing in (time gap shrinking by 0.1 s per second or more, 3 s or less behind) within 6 s; otherwise only a journal line. The spotter's faster traffic call stays quiet for that car meanwhile and after the call |
 
 The other kinds are written on the radio of the Spotter overlay (setting **AdvancedIA announcements on the radio**),

@@ -210,6 +210,7 @@ local updateAsked,booted,bootFrames,bootDraws=false,false,0,0
 local statusText=nil
 -- Plan d'arrêt publié pour AdvancedIA (Strategist.pitplan, contrat v1) : dernier texte écrit.
 local pitplanText=nil
+local duelText=nil
 -- Actions de la fenêtre (src/ui.lua) : vérifier, installer, annuler, revenir à la version précédente, notes.
 function app.updateAct(action)
  local now=Port.clock()
@@ -481,6 +482,9 @@ local function step(dt)
  -- Selon les réglages seulement : en pause, le plan reste celui d'avant (AdvancedIA ne repasse pas à ses rappels).
  local pitplan=Strategist.pitplan(engineer.strategist,ctx,cfg.enabled and cfg.engineerOn and cfg.strategyOn)
  if pitplan~=pitplanText then pitplanText=pitplan; Port.store(Strategist.pitplanKey,pitplan) end
+ -- Duel de stratégie (undercut, overcut, menace) pour l'affichage d'AdvancedIA (1.3.4, contrat v1), mêmes règles.
+ local duelNow=Strategist.strategy(engineer.strategist,ctx,cfg.enabled and cfg.engineerOn and cfg.strategyOn)
+ if duelNow~=duelText then duelText=duelNow; Port.store(Strategist.strategyKey,duelNow) end
 end
 -- Réglages enregistrés et raccourcis, à part : une erreur dans l'image ne les arrête pas.
 local function settingsStep()
