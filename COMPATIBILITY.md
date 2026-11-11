@@ -26,6 +26,7 @@ The required AdvancedIA version is also written in SpotterEnginer's `manifest.in
 | Beta 1.50 | Restart notices (*restart position*, *take your place back*), Safety Car queue notices, and the notice that the pit strategy was fixed. |
 | Beta 1.51 | *"Car on a flying lap behind, let it through."* in practice and qualifying (`fastCar`). |
 | Beta 1.59 | Real values for spin, wrong way and off track on every car (they were always off before); AdvancedIA reads SpotterEnginer's pit plan. SpotterEnginer 1.3.3 or later recommended (no "wrong way" call while reversing). |
+| Beta 1.61 | Blue flag in two stages and faster class (setting *Nuanced lapped cars and classes*, key `AdvancedIA.traffic`), tyre crossover announced ahead of time (setting *Live weather*, key `AdvancedIA.weather`). Used by SpotterEnginer 1.3.5 or later; both settings are off by default. |
 | Beta 1.60 | Formation lap and rolling start (option *Race start*), contact penalties, wrong way judged on the car's heading; AdvancedIA shows SpotterEnginer's undercut / overcut verdict. **SpotterEnginer 1.3.4 or later is needed for the formation lap and the rolling start.** |
 
 **Folder.** SpotterEnginer looks for `apps/lua/AdvancedIA/manifest.ini` first, then the old `apps/lua/ACAdvancedIA/manifest.ini` for installations not yet migrated. Only the manifest counts: an empty old folder is ignored. AdvancedIA, for its part, only opens the bridge when `apps/lua/SpotterEnginer/manifest.ini` exists, so the SpotterEnginer folder name must be exactly `SpotterEnginer`.

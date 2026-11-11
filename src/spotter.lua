@@ -11,6 +11,7 @@ local Voice=require('src/voice')
 local Proximity=require('src/proximity')
 local Timing=require('src/timing')
 local Link=require('src/link')
+local Side=require('src/side')
 local Position=require('src/position')
 local Debrief=require('src/debrief')
 local Hazards=require('src/hazards')
@@ -203,6 +204,45 @@ local function pitNotice(ctx,cur,e)
  end
  return say(ctx,cur.messageKind,e[2],parts,{ttl=ttl,text=text,cooldown=e[5]})
 end
+-- Drapeau bleu (1.3.5). Sans la nuance des classes d'AdvancedIA (clé AdvancedIA.traffic qui ne tourne pas, ou drapeau
+-- bleu natif d'AC) : comme avant, dit à l'apparition du panneau. Avec elle (Beta 1.61) : l'étape « annonce » (voiture
+-- rapide en approche, prépare-toi), puis l'ordre (le clip du drapeau bleu, l'annonce encore en file retirée) ; une
+-- classe plus rapide dans le même tour a son clip (et l'appel « trafic plus rapide » se tait pour elle). La clé est
+-- écrite jusqu'à deux fois par seconde de retard (AdvancedIA 1.61) : jusqu'à BLUE_WAIT s d'attente après le panneau,
+-- puis le drapeau bleu simple. Pendant un bleu, la clé change chaque seconde (écart, vitesse de rapprochement) : une
+-- valeur inchangée depuis BLUE_FRESH s est figée (réglage coupé), jamais lue ; l'annonce déjà dite est alors suivie
+-- de l'ordre (jamais un « prépare-toi » sans le drapeau bleu).
+local BLUE_WAIT=2.5
+local BLUE_FRESH=2.5
+local BLUE_ADVISE={blueAdvise=true}
+local function blueCall(s,ctx,stage,clip)
+ s.blueStage=stage
+ if stage~='advise' then Voice.cancel(ctx.voice,BLUE_ADVISE) end
+ if stage=='advise' then say(ctx,'blueAdvise',3,{clip},{ttl=4}) else say(ctx,'blue',2,{clip},{ttl=4,cooldown=12}) end
+end
+local function blueStep(s,ctx,cur,p)
+ local blue=cur.panelDecided=='blue' or cur.panelDecided=='nativeBlue'
+ if not ctx.cfg.blueFlags or not blue then
+  if s.blueStage=='advise' then Voice.cancel(ctx.voice,BLUE_ADVISE) end
+  s.blueStage=nil; s.blueSince=nil; return
+ end
+ if p.panelDecided~=cur.panelDecided or not s.blueSince then s.blueSince=ctx.real; s.blueStage=nil end
+ if s.blueStage=='order' or s.blueStage=='class' then return end
+ local tr=cur.panelDecided=='blue' and Side.get(ctx.side,'traffic') or nil
+ -- Nuance des classes jamais vue dans la séance (ou bleu natif d'AC) : comme avant, tout de suite.
+ if not tr then blueCall(s,ctx,'order','blue'); return end
+ if (Side.age(ctx.side,'traffic') or 0)>BLUE_FRESH then
+  if s.blueStage=='advise' or ctx.real-s.blueSince>=BLUE_WAIT then blueCall(s,ctx,'order','blue') end
+  return
+ end
+ if tr.blue=='class' and tr.stage~='none' then
+  local F=ctx.F; local c=tr.car>=0 and F.cars[tr.car]
+  if c and c.valid and tr.car~=F.player then s.faster[tr.car]=ctx.now end
+  blueCall(s,ctx,'class','blueClass')
+ elseif tr.blue=='lap' and tr.stage=='order' then blueCall(s,ctx,'order','blue')
+ elseif tr.blue=='lap' and tr.stage=='advise' then if not s.blueStage then blueCall(s,ctx,'advise','blueAdvise') end
+ elseif not s.blueStage and ctx.real-s.blueSince>=BLUE_WAIT then blueCall(s,ctx,'order','blue') end
+end
 -- Direction de course.
 local function race(s,ctx)
  local d=ctx.link.d
@@ -328,10 +368,8 @@ local function race(s,ctx)
     if say(ctx,e[4] or 'panel:'..kind,e[2],parts,{ttl=6,cooldown=30}) and extra then Voice.cancel(ctx.voice,{position=true}) end
    end
   end
-  -- Drapeau bleu : décidé par AdvancedIA (voiture qui prend un tour).
-  if cfg.blueFlags and (cur.panelDecided=='blue' or cur.panelDecided=='nativeBlue') and p.panelDecided~=cur.panelDecided then
-   say(ctx,'blue',2,{'blue'},{ttl=4,cooldown=12})
-  end
+  -- Drapeau bleu : décidé par AdvancedIA (voiture qui prend un tour), en deux temps avec sa nuance des classes.
+  blueStep(s,ctx,cur,p)
  end
  -- Arrêts aux stands : une seule référence, le plan de l'ingénieur. À l'ouverture de la fenêtre réglementaire, le tour
  -- optimal est donné avec ; le « box » vient de l'ingénieur au bon tour. Le rappel « rentre » d'AdvancedIA n'est dit

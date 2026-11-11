@@ -402,4 +402,42 @@ function T.strategy_contract_v1()
  check(rawequal(a,b),'same text kept for a rounding difference')
  c.F.clock=125.2; check(St.strategy(t3,c,true):find('stamp=125',1,true),'stamp follows the simulation clock')
 end
+-- 1.3.5. Météo en direct d'AdvancedIA (clé AdvancedIA.weather) : bascule de pneus annoncée à l'avance depuis eta et
+-- next (direction tenue 60 s), sans redite quand la tendance hésite, jamais quand le pont dit déjà la piste mouillée ;
+-- la pluie à venir reste l'estimation de l'app (forecastIn n'est qu'une borne haute) ; clé figée ignorée.
+function T.live_weather_from_advancedia()
+ local Side=require('src/side')
+ local v,sayer=radio()
+ local e=Engineer.new()
+ local F={rainComing=false,transition=0,rain=0,grip=1,wetness=0}
+ local side=Side.new()
+ local n=1
+ local store={}
+ local function key(next_,eta,trend) n=n+1; store['AdvancedIA.weather']=string.format('v=1;wet=0.05;rain=0.02;water=0.00;trend=%s;eta=%d;next=%s;forecast=rain;forecastIn=60;aiDry=10;aiRain=0;stamp=%d',trend or 'wetting',eta,next_,n) end
+ key('none',-1,'steady')
+ local d={wet=false}
+ local ctx={F=F,cfg={weather=true},say=sayer,now=0,real=0,side=side,link={d=d}}
+ local function at(now) ctx.now=now; ctx.real=now; Side.step(side,function(k) return store[k] end,now); Engineer.weather(e,ctx); for k=0,4 do Voice.step(v,now+k*0.1) end end
+ local function text(k) local out=nil; for _,q in ipairs(v.log) do if q.key==k then out=q.text end end; for _,q in ipairs(v.queue) do if q.key==k then out=q.text end end; return out end
+ at(0)
+ -- Bascule vers les pneus pluie (10 puis 9 minutes) : rien pendant 60 s (pente fausse au début d'une averse), puis dite.
+ key('inter',600); at(1); check(said(v,'rain')==0,'not before the direction is held 60 s')
+ key('inter',540); at(30); key('inter',540); at(62)
+ check(said(v,'rain')==1 and (text('rain') or ''):find('pneus pluie dans 9 minutes',1,true),'crossover from eta: '..tostring(text('rain')))
+ -- Tendance qui hésite (next passe à none puis revient) : le palier n'est pas redit.
+ for k=1,5 do key('none',-1,'steady'); at(62+k*20); key('inter',540); at(72+k*20) end
+ check(said(v,'rain')==1,'no repeat when the trend wavers, got '..said(v,'rain'))
+ -- La pluie à venir n'est jamais tirée de la clé.
+ check(said(v,'rainIn')==0,'rain expected never from forecastIn')
+ -- Palier suivant (5 minutes) : dit une fois.
+ key('inter',290); at(200); key('inter',280); at(201); check(said(v,'rain')==2,'next mark said once')
+ -- Piste déclarée mouillée par le pont : la bascule est faite, rien de plus vers les pneus pluie.
+ d.wet=true; key('wet',100); at(260); check(said(v,'rain')==2,'nothing once the track is wet')
+ -- Séchage : retour aux slicks, après 60 s de tendance.
+ key('dry',540,'drying'); at(300); key('dry',530,'drying'); at(361)
+ check(said(v,'rain')==3 and (text('rain') or ''):find('pneus secs dans 9 minutes',1,true),'back to slicks: '..tostring(text('rain')))
+ -- Clé figée plus de 30 s (réglage coupé) : ignorée, l'estimation de l'app reprend (pluie à venir).
+ F.rainComing=true; F.transition=0.30; at(400); F.transition=0.35; at(460)
+ check(said(v,'rainIn')==1,'own estimate back with a frozen key, got '..said(v,'rainIn'))
+end
 return T

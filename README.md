@@ -491,7 +491,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 227 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 976 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 231 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 984 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).

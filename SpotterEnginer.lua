@@ -62,6 +62,7 @@ local Spotter=require('src/spotter')
 local Engineer=require('src/engineer')
 local Emergency=require('src/emergency')
 local Strategist=require('src/strategist')
+local Side=require('src/side')
 local UI=require('src/ui')
 local Overlays=require('src/overlays')
 local Editor=require('src/editor')
@@ -350,7 +351,9 @@ end
 -- ctx.real : horloge de la radio (temps réel sans les pauses). ctx.keep : mémoire gardée au rechargement à chaud de
 -- l'app (keep.load(name) -> chaîne ou nil, keep.store(name,text)), propre à la séance suivie ; ctx.resumed : la remise
 -- à zéro en cours suit un rechargement à chaud dans la même séance (ce qui a été gardé peut être relu).
-local ctx={F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
+-- Clés annexes d'AdvancedIA (1.3.5, src/side.lua : nuance des classes, météo en direct), relues deux fois par seconde.
+local side=Side.new()
+local ctx={side=side,F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
  trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency,keep=Port.keep,resumed=false}
 -- Journal : état de l'app, tour du joueur, point d'état périodique.
 local lastActive,lapLogged,stateAt=nil,nil,-1e9
@@ -417,7 +420,7 @@ local function step(dt)
   -- Première remise à zéro après un rechargement à chaud dans la même séance : ce qui a été gardé est relu.
   ctx.resumed=Port.keep.resume(F.session,session==nil)
   session=F.session; lastPlayer=F.player; playerSince=nil; resetAt=real
-  Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer,ctx.keep); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
+  Side.reset(side); Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer,ctx.keep); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
   if ctx.resumed then Voice.heardLoad(voice,Port.keep.load('heard'),radio) end
   jlog(string.format('séance %s : %s, %d voitures, circuit de %.0f m, joueur voiture %d%s',tostring(F.session),F.isRace and 'course' or 'hors course',F.count or 0,
    tonumber(F.trackLength) or 0,F.player or -1,restarted and ' (redémarrage)' or switched and ' (autre voiture)' or ''))
@@ -457,6 +460,7 @@ local function step(dt)
    if c.valid then Timing.lap(timing,i,c.lastMs/1000,c.laps) end
   end
   ctx.now=F.clock; ctx.real=radio
+  Side.step(side,Port.recall,real)
   -- Spotter.step suit toujours la direction de course (appels de stands de l'ingénieur) ; ses annonces se taisent avec
   -- le rôle Spotter coupé (radio).
   protected(Spotter.step,spotter,ctx)

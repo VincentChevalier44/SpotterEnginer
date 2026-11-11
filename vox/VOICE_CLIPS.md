@@ -6,7 +6,7 @@ the content, not the extension). For another voice, record files with the same n
 nothing, the call is then only written on the overlay radio.
 This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 
-976 files in all (2 languages).
+984 files in all (2 languages).
 
 ## Calls
 
@@ -239,6 +239,10 @@ This list is rebuilt by `python tests/run.py` from `src/catalog.lua`.
 | 227 | `227_on_gagne_environ.wav` | On gagne environ | `227_gains_us_about.wav` | That gains us about |
 | 228 | `228_cent.wav` | cent | `228_hundred.wav` | hundred |
 | 229 | `229_tour_formation_lance.wav` | Tour de formation, garde ta place dans la file, le départ sera lancé. | `229_formation_rolling.wav` | Formation lap, hold your place in the queue, it's a rolling start. |
+| 230 | `230_bleu_approche.wav` | Voiture plus rapide en approche, prépare-toi à la laisser passer. | `230_blue_advise.wav` | Faster car closing in, get ready to let it through. |
+| 231 | `231_classe_plus_rapide.wav` | Classe plus rapide derrière, garde ta ligne et laisse-la passer. | `231_faster_class.wav` | Faster class behind, hold your line and let it through. |
+| 232 | `232_passage_pneus_pluie.wav` | Passage aux pneus pluie dans | `232_rain_tyres_in.wav` | Rain tyres in |
+| 233 | `233_retour_pneus_secs.wav` | Retour aux pneus secs dans | `233_slicks_in.wav` | Back to slicks in |
 
 ## Numbers
 

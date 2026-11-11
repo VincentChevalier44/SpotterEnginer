@@ -278,6 +278,12 @@ local list={
  -- Tour de formation avant un départ lancé (AdvancedIA 1.60, annonce « formation », extra 1) : la place se garde dans
  -- la file (le clip 109 parle de la grille : départ arrêté).
  {'formationRoll',229,'229_tour_formation_lance',"Tour de formation, garde ta place dans la file, le départ sera lancé.",'229_formation_rolling',"Formation lap, hold your place in the queue, it's a rolling start."},
+ -- Drapeau bleu en deux temps et classe plus rapide (AdvancedIA 1.61, nuance des classes) ; bascule de pneus annoncée
+ -- à l'avance (météo en direct d'AdvancedIA), suivie du nombre de minutes.
+ {'blueAdvise',230,'230_bleu_approche',"Voiture plus rapide en approche, prépare-toi à la laisser passer.",'230_blue_advise',"Faster car closing in, get ready to let it through."},
+ {'blueClass',231,'231_classe_plus_rapide',"Classe plus rapide derrière, garde ta ligne et laisse-la passer.",'231_faster_class',"Faster class behind, hold your line and let it through."},
+ {'crossWet',232,'232_passage_pneus_pluie',"Passage aux pneus pluie dans",'232_rain_tyres_in',"Rain tyres in"},
+ {'crossDry',233,'233_retour_pneus_secs',"Retour aux pneus secs dans",'233_slicks_in',"Back to slicks in"},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={

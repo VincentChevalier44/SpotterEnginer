@@ -350,4 +350,79 @@ function T.reversing_is_not_wrong_way()
   check((q~=nil and q.text:find('contresens',1,true)~=nil)==case[2],'vz '..case[1]..': wrong way said = '..tostring(case[2]))
  end
 end
+-- 1.3.5. Clés annexes d'AdvancedIA (src/side.lua) : lecture, référence jamais utilisée, clé figée.
+function T.side_keys_parse_and_reference()
+ local Side=require('src/side')
+ local tr=Side.parse('traffic','v=1;blue=lap;stage=advise;car=3;gap=120;closing=25;count=1;stamp=900')
+ check(tr and tr.blue=='lap' and tr.stage=='advise' and tr.car==3 and tr.count==1,'traffic parsed')
+ check(Side.parse('traffic','v=2;blue=lap;stage=advise;car=3;gap=120;closing=25;count=1;stamp=900')==nil,'other version ignored')
+ check(Side.parse('traffic','v=1;blue=fast;stage=advise;car=3;gap=120;closing=25;count=1')==nil,'unknown value refused')
+ check(Side.parse('traffic','v=1;blue=lap;stage=advise;car=3')==nil,'missing field refused')
+ check(Side.parse('weather',12)==nil and Side.parse('weather',nil)==nil,'number or nil: nothing')
+ local wx=Side.parse('weather','v=1;wet=0.10;rain=0.00;water=0.00;trend=wetting;eta=600;next=inter;forecast=rain;forecastIn=300;aiDry=10;aiRain=0;extra=1;stamp=50')
+ check(wx and wx.next=='inter' and wx.forecastIn==300 and wx.eta==600,'weather parsed, unknown field ignored')
+ local off=Side.parse('weather','v=1;wet=0.00;rain=0.00;water=0.00;trend=off;eta=-1;next=none;forecast=unknown;forecastIn=-1;aiDry=0;aiRain=0;stamp=70')
+ check(off and off.trend=='off' and off.next=='none','final record of a switched-off weather key accepted')
+ -- Texte trouvé au chargement : référence, jamais utilisée ; un changement dans la séance : la clé tourne.
+ local s=Side.new(); local store={['AdvancedIA.traffic']='v=1;blue=lap;stage=order;car=3;gap=40;closing=30;count=1;stamp=10'}
+ local function read(k) return store[k] end
+ Side.step(s,read,1); check(Side.get(s,'traffic')==nil,'reference never used')
+ Side.step(s,read,2); check(Side.get(s,'traffic')==nil,'unchanged key (setting off): still nothing')
+ store['AdvancedIA.traffic']='v=1;blue=lap;stage=advise;car=2;gap=150;closing=20;count=1;stamp=20'
+ Side.step(s,read,2.2); check(Side.get(s,'traffic')==nil,'read at most every 0.5 s')
+ Side.step(s,read,2.6); local g=Side.get(s,'traffic'); check(g and g.car==2,'changed in the session: live')
+ Side.reset(s); Side.step(s,read,3); check(Side.get(s,'traffic')==nil,'new session: reference again')
+end
+-- 1.3.5. Drapeau bleu : simple sans la nuance ; en deux temps avec elle (annonce puis ordre, chacun une fois) ; classe
+-- plus rapide (son clip, et le trafic plus rapide se tait pour elle) ; clé qui ne dit rien : le bleu simple après 1,5 s.
+function T.blue_flag_in_two_stages()
+ local Side=require('src/side')
+ local function rig(traffic)
+  local ctx,v=scene({{spline=0.5-60/4000,kmh=230}})
+  ctx.cfg.blueFlags=true; ctx.cfg.sideBySide=false; ctx.cfg.hazards=false; ctx.cfg.gaps=false; ctx.cfg.fasterBehind=true
+  local side=Side.new(); ctx.side=side
+  local store={['AdvancedIA.traffic']='v=1;blue=none;stage=none;car=-1;gap=0;closing=0;count=0;stamp=1'}
+  local function read(k) return store[k] end
+  Side.step(side,read,0)
+  if traffic then store['AdvancedIA.traffic']=traffic; Side.step(side,read,1) end
+  return ctx,v,Spotter.new(),store,function(t) Side.step(side,read,t) end
+ end
+ local function blueCount(v) local n=0; for _,q in ipairs(v.queue) do if q.key=='blue' or q.key=='blueAdvise' then n=n+1 end end return n end
+ -- Sans la nuance (clé qui ne tourne pas) : le drapeau bleu, tout de suite.
+ local ctx,v,s=rig(nil)
+ at(ctx,2); Spotter.step(s,ctx); ctx.link.d.panelDecided='blue'; at(ctx,2.1); Spotter.step(s,ctx)
+ local q=queued(v,'blue'); check(q and q.text:find('Drapeau bleu',1,true) and blueCount(v)==1,'plain blue flag at once')
+ -- Annonce puis ordre, 4 s plus tard (moins que le délai de 12 s du drapeau bleu) : chacun dit une fois.
+ local ctx2,v2,s2,store,feed=rig('v=1;blue=lap;stage=advise;car=1;gap=150;closing=20;count=1;stamp=2')
+ at(ctx2,2); Spotter.step(s2,ctx2); ctx2.link.d.panelDecided='blue'; at(ctx2,2.1); Spotter.step(s2,ctx2)
+ q=queued(v2,'blueAdvise'); check(q and q.text:find('en approche',1,true) and blueCount(v2)==1,'advise stage first')
+ at(ctx2,4); Spotter.step(s2,ctx2); check(blueCount(v2)==1,'advise not repeated')
+ store['AdvancedIA.traffic']='v=1;blue=lap;stage=order;car=1;gap=40;closing=25;count=1;stamp=6'; feed(6)
+ at(ctx2,6.1); Spotter.step(s2,ctx2); at(ctx2,7); Spotter.step(s2,ctx2)
+ check(queued(v2,'blue') and not queued(v2,'blueAdvise') and blueCount(v2)==1,'order said once, advise withdrawn')
+ -- Classe plus rapide : son clip ; le trafic plus rapide se tait pour cette voiture.
+ local ctx3,v3,s3=rig('v=1;blue=class;stage=advise;car=1;gap=150;closing=40;count=1;stamp=2')
+ at(ctx3,2); Spotter.step(s3,ctx3); ctx3.link.d.panelDecided='blue'; at(ctx3,2.1); Spotter.step(s3,ctx3)
+ q=queued(v3,'blue'); check(q and q.text:find('Classe plus rapide',1,true) and blueCount(v3)==1,'faster class call')
+ check(s3.faster[1]==ctx3.now,'faster traffic call muted for that car')
+ for k=1,30 do at(ctx3,2.1+k*0.1); Spotter.step(s3,ctx3) end
+ check(not queued(v3,'fasterBehind'),'never both')
+ -- Clé qui tourne mais ne dit rien de ce bleu : attente de 1,5 s, puis le drapeau bleu simple.
+ local ctx4,v4,s4=rig('v=1;blue=none;stage=none;car=-1;gap=0;closing=0;count=0;stamp=3')
+ at(ctx4,2); Spotter.step(s4,ctx4); ctx4.link.d.panelDecided='blue'; at(ctx4,2.1); Spotter.step(s4,ctx4)
+ check(blueCount(v4)==0,'waiting for the traffic key')
+ at(ctx4,3.7); Spotter.step(s4,ctx4); check(blueCount(v4)==0,'still waiting at 1.6 s (key up to 2 s late)')
+ at(ctx4,4.7); Spotter.step(s4,ctx4); check(queued(v4,'blue') and blueCount(v4)==1,'plain blue after the wait')
+ -- Clé figée sur « annonce » (réglage coupé en cours de séance) : inchangée depuis 5 s, jamais lue ; drapeau bleu simple
+ -- après l'attente, jamais un « prépare-toi » sans l'ordre.
+ local ctx5,v5,s5,_,feed5=rig('v=1;blue=lap;stage=advise;car=1;gap=150;closing=20;count=1;stamp=2')
+ feed5(6); at(ctx5,6); Spotter.step(s5,ctx5); ctx5.link.d.panelDecided='blue'; at(ctx5,6.1); Spotter.step(s5,ctx5)
+ check(blueCount(v5)==0,'frozen key: not read')
+ at(ctx5,8.7); Spotter.step(s5,ctx5); check(queued(v5,'blue') and not queued(v5,'blueAdvise') and blueCount(v5)==1,'frozen key: plain blue')
+ -- Annonce dite, puis la clé se fige : l'ordre suit.
+ local ctx6,v6,s6,_,feed6=rig('v=1;blue=lap;stage=advise;car=1;gap=150;closing=20;count=1;stamp=2')
+ at(ctx6,2); Spotter.step(s6,ctx6); ctx6.link.d.panelDecided='blue'; at(ctx6,2.1); Spotter.step(s6,ctx6)
+ check(queued(v6,'blueAdvise'),'advise said')
+ feed6(5); at(ctx6,5); Spotter.step(s6,ctx6); check(queued(v6,'blue') and not queued(v6,'blueAdvise'),'key frozen after the advise: order said')
+end
 return T

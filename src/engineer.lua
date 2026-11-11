@@ -10,13 +10,14 @@ local Debrief=require('src/debrief')
 local Voice=require('src/voice')
 local Emergency=require('src/emergency')
 local Link=require('src/link')
+local Side=require('src/side')
 local M={}
 local GAP,PACE=Position.GAP,Position.PACE
 -- Annonce de position : validité dans la file, délai minimal entre deux (s).
 local POSITION_TTL,POSITION_COOLDOWN=15,40
 function M.new()
  return {strategist=Strategist.new(),coach=Coach.new(),sectorOf={},lap=-1,coldFor=0,hotFor=0,warm=false,brakeHotFor=0,bias=0,
-  biasFor=0,trans=0,rain=0,rainSaid={},gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
+  biasFor=0,trans=0,rain=0,rainSaid={},crossSaid={},crossDir=nil,crossSince=nil,gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
   mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
   brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={},debrief=Debrief.new()}
 end
@@ -419,10 +420,49 @@ end
 -- Pluie à venir : dite en passant sous chaque palier (minutes) ; les paliers franchis d'un coup sont tenus pour dits
 -- (première estimation à 2 minutes : « une minute » était ensuite dit trois fois, un palier par minute).
 local RAIN_MARKS={15,10,5,2}
+-- Premier palier pas encore dit pour minutes (et ceux franchis d'un coup tenus pour dits), ou nil.
+local function mark(said,marks,minutes)
+ for k=1,#marks do
+  if minutes<=marks[k] and minutes>=1 and not said[marks[k]] then
+   for j=k,#marks do if minutes<=marks[j] then said[marks[j]]=true end end
+   return marks[k]
+  end
+ end
+ return nil
+end
+local function inMinutes(clip,minutes) return minutes==1 and {clip,'oneMinute'} or {clip,{n=minutes},'minutes'} end
+-- Bascule de pneus annoncée à l'avance (1.3.5, météo en direct d'AdvancedIA, clé AdvancedIA.weather : src/side.lua) :
+-- next (pneu de la bascule) et eta (temps avant que l'état sec / mouillé d'AdvancedIA bascule, ce qui décide des pneus
+-- du peloton), aux paliers CROSS_MARKS, une fois par bascule. La pluie à venir reste l'estimation de l'app : forecastIn
+-- d'AdvancedIA n'est qu'une borne haute de son arrivée. Prudence (AdvancedIA : pente fausse pendant environ une minute
+-- au début d'une averse soudaine) : direction tenue CROSS_HOLD s avant la première annonce ; une direction qui disparaît
+-- un moment (tendance hésitante) garde ses paliers, seule une inversion ou la bascule faite (wet du pont) les efface ;
+-- jamais quand le pont dit déjà la piste mouillée (pneus pluie) ou sèche (slicks). Clé figée (inchangée depuis
+-- WEATHER_FRESH s : réglage coupé) : ignorée.
+local CROSS_MARKS={10,5,2}
+local CROSS_HOLD=60
+local WEATHER_FRESH=30
+local function crossover(e,ctx,wx,now)
+ local d=ctx.link and ctx.link.d
+ local dir=wx and (wx.next=='dry' and 'dry' or (wx.next=='inter' or wx.next=='wet') and 'wet') or nil
+ local done=e.crossDir and d and (e.crossDir=='wet' and d.wet or e.crossDir=='dry' and not d.wet)
+ if done or dir and dir~=e.crossDir then
+  if next(e.crossSaid) then e.crossSaid={} end
+  e.crossDir=dir; e.crossSince=dir and now or nil
+ end
+ if not dir or dir~=e.crossDir or wx.eta<60 or now-(e.crossSince or now)<CROSS_HOLD or now<(e.crossSince or now) then return end
+ if d and (dir=='wet' and d.wet or dir=='dry' and not d.wet) then return end
+ local minutes=math.floor(wx.eta/60+0.5)
+ -- Même clé que « la pluie s'intensifie » : jamais les deux à la suite.
+ if mark(e.crossSaid,CROSS_MARKS,minutes) then say(ctx,'rain',3,inMinutes(dir=='wet' and 'crossWet' or 'crossDry',minutes),{ttl=30}) end
+end
 local function weather(e,ctx)
  local F=ctx.F; local cfg=ctx.cfg
  if not cfg.weather then return end
  local now=ctx.now
+ local wx=Side.get(ctx.side,'weather')
+ if wx and (Side.age(ctx.side,'weather') or 0)>WEATHER_FRESH then wx=nil end
+ crossover(e,ctx,wx,now)
  if F.rainComing then
   if not e.transAt then e.transAt=now; e.trans=F.transition end
   local span=now-e.transAt
@@ -431,13 +471,7 @@ local function weather(e,ctx)
    e.transAt=now; e.trans=F.transition
    if rate>0 then
     local minutes=math.floor((0.5-F.transition)/rate/60+0.5)
-    for k=1,#RAIN_MARKS do
-     if minutes<=RAIN_MARKS[k] and minutes>=1 and not e.rainSaid[RAIN_MARKS[k]] then
-      for j=k,#RAIN_MARKS do if minutes<=RAIN_MARKS[j] then e.rainSaid[RAIN_MARKS[j]]=true end end
-      say(ctx,'rainIn',3,minutes==1 and {'rainIn','oneMinute'} or {'rainIn',{n=minutes},'minutes'},{ttl=30})
-      break
-     end
-    end
+    if mark(e.rainSaid,RAIN_MARKS,minutes) then say(ctx,'rainIn',3,inMinutes('rainIn',minutes),{ttl=30}) end
    end
   end
  elseif e.transAt then e.transAt=nil; e.rainSaid={} end

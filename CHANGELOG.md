@@ -2,6 +2,20 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.5 — 11 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. The new calls need AdvancedIA Beta 1.61 with its settings switched on; without them nothing changes. Checked against the frozen bridge contract of AdvancedIA Beta 1.61.
+
+### Blue flag in two stages and faster class (AdvancedIA *Nuanced lapped cars and classes*)
+- With that AdvancedIA setting on, the spotter first says *"Faster car closing in, get ready to let it through."*, then the usual blue flag when AdvancedIA gives the order (the first call is withdrawn if it is still waiting). The first blue flag of a session is still the plain one: SpotterEnginer only trusts the setting once it has seen it working. A faster class on the same lap has its own call, *"Faster class behind, hold your line and let it through."*, and the spotter's own *"faster traffic"* call stays quiet for that car.
+- Without the setting (or with AdvancedIA's native blue flag) the blue flag is said as before.
+
+### Live weather (AdvancedIA *Live weather*)
+- With that AdvancedIA setting on, the engineer announces the tyre crossover ahead of time: *"Rain tyres in 9 minutes"*, *"Back to slicks in 5 minutes"*, at 10, 5 and 2 minutes, once per crossover. It waits until the trend has held for a minute (at the start of a sudden shower the estimate is wrong), says nothing again when the trend wavers, and never once the bridge already says the track is wet or dry. *"Rain expected in N minutes"* keeps SpotterEnginer's own estimate.
+
+### Never stale values
+- AdvancedIA keeps the last text of these keys when its setting is off. SpotterEnginer only uses a key once its text has changed during the current session, and ignores it again when it stops changing (2.5 s for the blue flag, 30 s for the weather).
+
 ## 1.3.4 — 11 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Needed for the formation lap and rolling start option of AdvancedIA Beta 1.60.

@@ -130,6 +130,15 @@ SpotterEnginer never writes into the bridge. It publishes three short texts with
 
 They are 200 (update) and 160 (pit plan, strategy) characters at most; unknown fields are ignored and another `v` is ignored. See the README for the meaning of each field.
 
+## Keys published by AdvancedIA (read by SpotterEnginer, 1.3.5)
+
+AdvancedIA Beta 1.61 writes two more short texts with `ac.store`, only while SpotterEnginer is installed and the matching setting is on. Neither is cleared when the setting goes off, and their `stamp` is AdvancedIA's own clock: SpotterEnginer reads them twice a second, takes the text found at launch or at a new session as a reference that is never used, and only uses a key once its text has changed during the session (`src/side.lua`); a key that has not changed for 2.5 s (traffic, during a blue flag) or 30 s (weather) is frozen and ignored. Another `v`, a missing field or an unknown value makes the key unreadable; unknown fields are ignored.
+
+| Key | Fields read | SpotterEnginer |
+|---|---|---|
+| `AdvancedIA.traffic` (setting *Nuanced lapped cars and classes*) | `blue` (`none`, `lap`, `class`), `stage` (`none`, `advise`, `order`), `car` (AC index), `gap`, `closing`, `count` | while the driver's panel is blue: `lap` + `advise`: *"Faster car closing in, get ready to let it through."*; `lap` + `order`: the blue flag; `class`: *"Faster class behind…"* (and no *"faster traffic"* call for that car). Nothing useful within 2.5 s of the blue panel (the key can be up to 2 s late): the plain blue flag; after the advise, a key that freezes gives the order |
+| `AdvancedIA.weather` (setting *Live weather*) | `eta` (time before AdvancedIA's dry / wet state switches, s), `next` (`dry`, `inter`, `wet`, `none`); `trend`, `forecast`, `forecastIn`, `rain`, `wet` are parsed but not used | crossover: *"Rain tyres in N minutes"* / *"Back to slicks in N minutes"*, at 10, 5 and 2 minutes, once per crossover, after the direction has held 60 s, never once the bridge's `wet` already matches. *"Rain expected"* keeps SpotterEnginer's own estimate: `forecastIn` is the time until the forecast weather is fully set, only an upper bound of the first rain |
+
 ## Announcements read by SpotterEnginer (`messageKind`, Beta 1.49 to 1.51)
 
 A single slot in `data`: `messageId` increases with every announcement; `messageKind`, `messageValue`, `messageExtra`,
