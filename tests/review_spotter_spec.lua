@@ -446,4 +446,31 @@ function T.rolling_start_columns_are_quiet()
  ctx.F.cars[1].z=-12; run(2); v.queue={}; ctx.F.cars[1].z=0; run(2)
  check(count('side:left')+count('side:right')==1,'side by side back to normal at the green: '..keys())
 end
+-- 1.3.8. Joueur au stand (course abandonnée) : ni « la fenêtre est ouverte » ni « c'est le moment de rentrer » ; une
+-- ouverture vue dans la voie est dite à la sortie si l'arrêt reste dû, et jamais s'il a été fait.
+function T.no_pit_calls_while_in_the_pits()
+ local function run(exitDue)
+  local ctx,v=scene({},{kmh=0})
+  local s=Spotter.new(); local d=ctx.link.d
+  ctx.F.cars[0].pitlane=true
+  d.pitState='pending'; d.pitOpen=0.3; d.pitClose=0.7; d.pitPosition=0.2
+  at(ctx,1); Spotter.step(s,ctx)
+  d.pitState='open'; d.pitDue=1; d.pitPosition=0.35; at(ctx,2); Spotter.step(s,ctx)
+  d.pitRemind=true; d.pitPosition=0.65; at(ctx,3); Spotter.step(s,ctx)
+  local inside=queued(v,'pitCall')
+  d.pitDue=exitDue; ctx.F.cars[0].pitlane=false; ctx.F.cars[0].kmh=80; at(ctx,4); Spotter.step(s,ctx)
+  return inside,queued(v,'pitCall')
+ end
+ local inside,out=run(1)
+ check(not inside,'in the pits: no pit window call')
+ check(out and out.sense=='pitOpen','window opened in the pits, stop still due: said at the exit, got '..tostring(out and out.sense))
+ inside,out=run(0)
+ check(not out,'stop made in the pits: nothing at the exit')
+ -- Témoin : sur la piste, l'ouverture est dite.
+ local ctx,v=scene({})
+ local s=Spotter.new(); local d=ctx.link.d
+ d.pitState='pending'; at(ctx,1); Spotter.step(s,ctx)
+ d.pitState='open'; d.pitDue=1; at(ctx,2); Spotter.step(s,ctx)
+ check(queued(v,'pitCall'),'on track: window call said')
+end
 return T

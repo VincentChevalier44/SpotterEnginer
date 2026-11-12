@@ -2,6 +2,13 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.8 — 12 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Tested with AdvancedIA Beta 1.62.
+
+### Fixed: pit window calls while the car sits in the pits
+- After retiring and leaving the car in the pit box, "The pit window is open" and later "The pit window closes soon, time to come in" were still said. No pit window call is made in the pit lane any more. A window that opens while you are in the pits is announced when you leave them if a stop is still due, never if the stop was made meanwhile.
+
 ## 1.3.7 — 12 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. From the driver's logs of 12 November.

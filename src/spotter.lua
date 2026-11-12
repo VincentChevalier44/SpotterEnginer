@@ -375,14 +375,23 @@ local function race(s,ctx)
  -- optimal est donné avec ; le « box » vient de l'ingénieur au bon tour. Le rappel « rentre » d'AdvancedIA n'est dit
  -- que si aucun plan n'annoncera le box (stratégie ou appels coupés, pas encore de plan), pour ne jamais oublier un arrêt
  -- obligatoire.
- if cur.pitState=='open' and p.pitState~='open' then
+ -- Joueur dans la voie des stands (1.3.8 : course abandonnée, voiture laissée au stand ; « la fenêtre est ouverte » puis
+ -- « c'est le moment de rentrer » y étaient dits) : rien. Une ouverture vue dans la voie est dite à la sortie si un arrêt
+ -- reste dû ; le rappel de fermeture, lui, n'a plus lieu d'être.
+ local me=ctx.F.cars[ctx.F.player]
+ local inPits=me and me.pitlane
+ if cur.pitState~='open' then s.pitOpenLater=false end
+ local opened=cur.pitState=='open' and p.pitState~='open'
+ if opened and inPits then s.pitOpenLater=true; opened=false end
+ if s.pitOpenLater and not inPits and cur.pitState=='open' then s.pitOpenLater=false; opened=cur.pitDue>0 end
+ if opened then
   local L,t=plannedLap(ctx)
   if L then
    sayEngineer(ctx,'pitCall',3,{'pitOpen','optimalLap',{n=L}},{ttl=15})
    if t.plan.window then t.announcedWindow={t.plan.window[1],t.plan.window[2],L} end
   elseif cfg.raceControl then say(ctx,'pitCall',3,{'pitOpen'},{ttl=15}) end
  end
- if cfg.raceControl and cur.pitState=='open' and cur.pitDue>0 and cur.pitRemind and not p.pitRemind and not plannedLap(ctx) then
+ if cfg.raceControl and not inPits and cur.pitState=='open' and cur.pitDue>0 and cur.pitRemind and not p.pitRemind and not plannedLap(ctx) then
   local late=cur.pitClose>cur.pitOpen and cur.pitPosition>=cur.pitClose-(cur.pitClose-cur.pitOpen)*0.25
   if late then say(ctx,'pitCall',2,{'pitClosing'},{ttl=15}) end
  end
