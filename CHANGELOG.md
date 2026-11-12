@@ -2,6 +2,13 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.6 — 12 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.
+
+### Quiet side-by-side calls during the rolling start call
+- With AdvancedIA's *Realistic starts* and a rolling start, the field forms two staggered columns during the rolling start call, and the car of the other column is often half alongside. The spotter now says the first *"Car left"* / *"Car right"* of each side while the queue forms, then neither *"Still there"* nor *"Clear"* until the green; side-by-side calls are back to normal at the green. Checked against AdvancedIA Beta 1.62.
+
 ## 1.3.5 — 11 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. The new calls need AdvancedIA Beta 1.61 with its settings switched on; without them nothing changes. Checked against the frozen bridge contract of AdvancedIA Beta 1.61.

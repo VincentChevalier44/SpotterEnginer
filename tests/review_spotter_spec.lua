@@ -425,4 +425,25 @@ function T.blue_flag_in_two_stages()
  check(queued(v6,'blueAdvise'),'advise said')
  feed6(5); at(ctx6,5); Spotter.step(s6,ctx6); check(queued(v6,'blue') and not queued(v6,'blueAdvise'),'key frozen after the advise: order said')
 end
+-- 1.3.6. Appel du départ lancé (standing « roll », deux colonnes décalées) : premier « voiture à gauche » dit, puis ni
+-- « toujours là » ni « dégagé » ni nouvel appel ; au vert, le côte à côte redevient normal.
+function T.rolling_start_columns_are_quiet()
+ local ctx,v=scene({{x=-3,z=0,spline=0.5,kmh=80}},{kmh=80,d={standing='roll',neutral=true,neutralMode='fcy',relaunch=true}})
+ ctx.cfg.sideBySide=true; ctx.cfg.stillThere=true; ctx.cfg.hazards=false; ctx.cfg.gaps=false; ctx.cfg.anticipation=false
+ local s=Spotter.new()
+ local function keys() local out={}; for _,q in ipairs(v.queue) do out[#out+1]=q.key end; return table.concat(out,',') end
+ local function count(prefix) local n=0; for _,q in ipairs(v.queue) do if q.key:sub(1,#prefix)==prefix then n=n+1 end end return n end
+ local t=0
+ local function run(seconds) for _=1,seconds*10 do t=t+0.1; at(ctx,t); Spotter.step(s,ctx) end end
+ run(2)
+ check(count('side:')==1,'first side call during the roll call: '..keys())
+ v.queue={}
+ -- Voisine qui recule puis revient à hauteur (colonnes qui ondulent), et reste là 10 s : silence.
+ ctx.F.cars[1].z=-12; run(2); ctx.F.cars[1].z=0; run(10)
+ check(count('side:')==0,'quiet during the roll call: '..keys())
+ -- Vert : standing repasse à none, la voisine s'en va puis revient : côte à côte normal.
+ ctx.link.d.standing='none'; ctx.link.d.neutral=false; ctx.link.d.relaunch=false
+ ctx.F.cars[1].z=-12; run(2); v.queue={}; ctx.F.cars[1].z=0; run(2)
+ check(count('side:left')+count('side:right')==1,'side by side back to normal at the green: '..keys())
+end
 return T

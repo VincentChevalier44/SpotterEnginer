@@ -589,6 +589,11 @@ end
 -- Côté tenu sous Proximity.minKmh (état gelé : épingle, départ) : oublié en silence après SLOW_HOLD s (revue 1.3.2 :
 -- côte à côte, puis tête-à-queue et 20 s à l'arrêt, « dégagé » dit à la reprise pour une voiture partie depuis longtemps).
 local SLOW_HOLD=3
+-- Appel du départ lancé (standing « roll » d'AdvancedIA, « Départs réalistes ») : le peloton roule en deux colonnes
+-- décalées, la voisine de l'autre colonne souvent à moitié à hauteur pendant tout l'appel (1.3.6). Seul le premier
+-- « voiture à gauche / à droite » de chaque côté est dit (la file se forme) ; ni « toujours là » ni « dégagé » ensuite,
+-- jusqu'au vert (standing repasse à none) : le côte à côte redevient normal.
+local ROLL_SILENT={clear=true,clearLeft=true,clearRight=true,stillLeft=true,stillRight=true}
 local function side(s,ctx)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid or me.pitlane then sideIdle(s); return end
@@ -608,6 +613,9 @@ local function side(s,ctx)
  local pm=s.proxMe; pm.x=me.x; pm.z=me.z; pm.lookX=me.lookX; pm.lookZ=me.lookZ; pm.kmh=me.kmh
  local events=Proximity.step(s.prox,pm,F.cars,F.count,F.player,ctx.now,pc)
  local p=s.prox
+ local d=ctx.link and ctx.link.d
+ local roll=d~=nil and d.standing=='roll'
+ if not roll then s.rollSides=nil elseif not s.rollSides then s.rollSides={} end
  if cfg.anticipation then M.incoming(s,ctx,me,p,pc) end
  -- Début de chaque épisode (voiture qui arrive de ce côté) : « dégagé » ne vaut que si son annonce a été entendue.
  if p.left and not s.wasL then s.sideAtL=ctx.real end
@@ -625,7 +633,7 @@ local function side(s,ctx)
     Voice.drop(ctx.voice,e=='clearLeft' and 'side:stillLeft' or 'side:stillRight')
     local other=e=='clearLeft' and 'R' or 'L'
     local key=other=='R' and 'side:right' or 'side:left'
-    if (other=='R' and p.right or other=='L' and p.left) and not heard(s,ctx,other) and not Voice.pending(ctx.voice,key) then
+    if not roll and (other=='R' and p.right or other=='L' and p.left) and not heard(s,ctx,other) and not Voice.pending(ctx.voice,key) then
      say(ctx,key,1,{other=='R' and 'carRight' or 'carLeft'},{ttl=1.5,once=true})
     end
    end
@@ -633,7 +641,7 @@ local function side(s,ctx)
    -- (1.3.0, réglage Anticipation) : la voiture qui était à côté est maintenant derrière, « tu es passé, rabats-toi ».
    local clip=SIDE[e]
    if cfg.anticipation and e=='clear' and M.passed(s,ctx,me,e) then clip='clearPassed' end
-   if ok then say(ctx,'side:'..e,2,{clip},{ttl=1.5,once=true}) end
+   if ok and not roll then say(ctx,'side:'..e,2,{clip},{ttl=1.5,once=true}) end
    if e=='clear' or e=='clearLeft' then s.sideCarL=-1 end
    if e=='clear' or e=='clearRight' then s.sideCarR=-1 end
   else
@@ -641,7 +649,16 @@ local function side(s,ctx)
    if (e=='right' or e=='three') and p.rightCar>=0 then s.sideCarR=p.rightCar end
    if (e=='left' or e=='three') and p.leftCar>=0 then checkSide(s,ctx,me,p.leftCar,true) end
    if (e=='right' or e=='three') and p.rightCar>=0 then checkSide(s,ctx,me,p.rightCar,false) end
-   say(ctx,'side:'..e,1,{SIDE[e]},{ttl=1.5,once=true})
+   -- Départ lancé : premier appel de chaque côté seulement (trois de front : les deux côtés).
+   local quiet=false
+   if roll then
+    local r=s.rollSides
+    local l=e=='left' or e=='three'; local rt=e=='right' or e=='three'
+    quiet=ROLL_SILENT[e] or not (l and not r.L or rt and not r.R)
+    if l then r.L=true end
+    if rt then r.R=true end
+   end
+   if not quiet then say(ctx,'side:'..e,1,{SIDE[e]},{ttl=1.5,once=true}) end
   end
  end
 end
