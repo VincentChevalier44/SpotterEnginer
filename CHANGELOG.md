@@ -2,6 +2,19 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## 1.3.7 — 12 November 2026
+
+Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. From the driver's logs of 12 November.
+
+### Fixed: "Abnormal tyre wear" after every pit stop
+- AC makes a brand-new tyre grain while it is still cold, and the graining goes as it warms up. The engineer took it for abnormal wear: all eight calls of the day were graining just above the threshold on tyres with almost no distance, 40 to 60 s after leaving the pits. Graining now only counts once the tyre has been at temperature for a minute; flat spots, blisters and punctures are unchanged.
+
+### Fixed: "The car ahead is pitting" on the grid
+- When a race starts, AC moves the cars into place and one passed through the pit lane: the call was made on the grid. It is never made before the start.
+
+### One reset per new session
+- At each new session the laps of the previous one fell back to zero a second or two later, which was taken for a restart and reset everything a second time.
+
 ## 1.3.6 — 12 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged.

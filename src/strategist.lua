@@ -256,7 +256,9 @@ function M.step(t,ctx)
    if r then t.lastPit[i]=c.laps end
    -- Voiture déjà dans la voie à la première image (rechargement, nouvelle séance) : elle n'y « rentre » pas.
    if t.rivalPit[i]==nil then t.rivalPit[i]=c.pitlane end
-   if c.pitlane and not t.rivalPit[i] and i~=F.player then
+   -- Avant le départ (1.3.7 : AC replace les voitures pour la course, « la voiture devant rentre aux stands » dit sur
+   -- la grille) : rien.
+   if c.pitlane and not t.rivalPit[i] and i~=F.player and F.started then
     -- Voiture directement devant qui rentre aux stands ; overcut favorable (1.3.0, réglage « Stratégie commentée ») :
     -- « on reste dehors, on fait l'overcut ». Voiture directement derrière qui rentre et peut passer devant par l'undercut :
     -- « il rentre, on couvre, box ce tour-ci » si l'arrêt ce tour-ci reste dans la fenêtre et coûte peu (M.cover).

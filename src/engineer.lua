@@ -18,7 +18,7 @@ local POSITION_TTL,POSITION_COOLDOWN=15,40
 function M.new()
  return {strategist=Strategist.new(),coach=Coach.new(),sectorOf={},lap=-1,coldFor=0,hotFor=0,warm=false,brakeHotFor=0,bias=0,
   biasFor=0,trans=0,rain=0,rainSaid={},crossSaid={},crossDir=nil,crossSince=nil,gripAt=0,windSeg={},fuelOkSaid=false,inPitLap=false,lastLapPit=false,stintTyresOk=false,
-  mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
+  mapSaved=false,coldSaid=false,hotSaid=false,wasCold=false,wearSaid=false,wearKm=0,wearPit=false,grainWarm={0,0,0,0},defectFor=0,coolFor=0,okFor=0,wearSides={},brakeSaid=false,
   brakeCoolFor=0,biasSaid=0,biasCalm=0,posTyresSaid=false,aheadAtLine={},pitted={},debrief=Debrief.new()}
 end
 -- Verrous d'annonce gardés au rechargement à chaud de l'app (CSP recharge le script au moindre fichier changé : tout
@@ -306,10 +306,11 @@ local function uneven(t,a,b,names)
  if hi>1 and lo>0 and hi>lo*1.3 then return x>y and names[1] or names[2] end
  return nil
 end
+M.GRAIN_WARM=60
 local function tyres(e,ctx,dt)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
- -- Passage par les stands retenu pour l'usure anormale (pneus peut-être changés).
- if me.pitlane then e.wearPit=true end
+ -- Passage par les stands retenu pour l'usure anormale (pneus peut-être changés) ; pneus neufs à chauffer.
+ if me.pitlane then e.wearPit=true; for k=1,4 do e.grainWarm[k]=0 end end
  if not cfg.tyres or me.pitlane or me.kmh<60 then return end
  local cold,hot,ok=0,0,0
  local maxKm=0
@@ -320,6 +321,8 @@ local function tyres(e,ctx,dt)
   if w.core>w.opt+cfg.tyreHot or surface>w.opt+cfg.tyreHot*1.6 then hot=hot+1 end
   if math.abs(w.core-w.opt)<cfg.tyreCold*0.6 then ok=ok+1 end
   maxKm=math.max(maxKm,w.vkm)
+  -- Temps passé à température (grainage : voir plus bas) ; un pneu redevenu froid repart de zéro.
+  e.grainWarm[k]=w.core>=w.opt-cfg.tyreCold and e.grainWarm[k]+dt or 0
  end
  -- Une fois par état : froid jusqu'à ce qu'ils chauffent, chaud jusqu'à 60 s sans surchauffe.
  e.coldFor=cold>=2 and e.coldFor+dt or 0
@@ -337,12 +340,16 @@ local function tyres(e,ctx,dt)
  -- différemment), méplat, cloques, grains, crevaison. Dite une fois par train de pneus ; un écart d'usure sur un essieu,
  -- une seule fois par séance pour le même essieu et le même côté (un circuit qui use un côté plus que l'autre le
  -- referait à chaque train de pneus). Un défaut du pneu (méplat, cloques, grains, crevaison), tenu 1 s, est toujours dit.
+-- Grains (1.3.7) : AC fait grainer un pneu neuf encore froid, et ce grainage part en chauffant (journaux du 12/11/2026 :
+-- huit « usure anormale » à 0,35-0,39 de grains et 0,1 km virtuel, 40 à 60 s après chaque sortie des stands). Un
+-- grainage ne compte qu'après GRAIN_WARM s de pneu à température.
  local t=F.me.tyres
  local side=uneven(t,1,2,FRONT) or uneven(t,3,4,REAR)
  local defect,why=nil,nil
  for k=1,4 do
   local w=t[k]
-  local d=w.blown and 'crevaison' or w.flat>0.2 and 'méplat' or w.blister>0.35 and 'cloques' or w.grain>0.35 and 'grains' or nil
+  local d=w.blown and 'crevaison' or w.flat>0.2 and 'méplat' or w.blister>0.35 and 'cloques'
+   or w.grain>0.35 and e.grainWarm[k]>=M.GRAIN_WARM and 'grains' or nil
   if d and not defect then defect,why=k,d end
  end
  e.defectFor=defect and e.defectFor+dt or 0

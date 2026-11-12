@@ -362,7 +362,7 @@ local linkLostAt=nil
 -- Redémarrage de la même séance avant la fin du premier tour (les tours ne reculent pas) : départ donné qui redevient
 -- non donné, ou temps de séance qui recule de plus de RESTART_BACK s ; lus hors pause et hors rediffusion (comparés
 -- aux dernières valeurs lues en piste), jamais dans les RESTART_HOLD s qui suivent une remise à zéro.
-local RESTART_BACK,RESTART_HOLD=2,2
+local RESTART_BACK,RESTART_HOLD,LAPS_HOLD=2,2,5
 local lastStarted,lastTime,resetAt=nil,nil,-1e9
 -- Tout sauf l'essai de la voix (liaison suspendue ou perdue).
 local function notTest(q) return tostring(q.key):sub(1,5)~='test:' end
@@ -404,7 +404,9 @@ local function step(dt)
  local meNow=F.cars[F.player]
  local restarted=false
  if not F.replay then
-  restarted=meNow and meNow.valid and lastLaps and meNow.laps<lastLaps or false
+  -- Tours qui reculent dans les LAPS_HOLD s d'une remise à zéro : ceux de la séance d'avant qui retombent (1.3.7 :
+  -- deux remises à zéro à 2 s d'écart à chaque nouvelle séance), pas un redémarrage.
+  restarted=meNow and meNow.valid and lastLaps and meNow.laps<lastLaps and real-resetAt>LAPS_HOLD or false
   if meNow and meNow.valid then lastLaps=meNow.laps end
   if not F.paused then
    -- Départ redevenu non donné : en course seulement, avant l'arrivée (jamais un état de fin de séance).

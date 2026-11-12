@@ -440,4 +440,36 @@ function T.live_weather_from_advancedia()
  F.rainComing=true; F.transition=0.30; at(400); F.transition=0.35; at(460)
  check(said(v,'rainIn')==1,'own estimate back with a frozen key, got '..said(v,'rainIn'))
 end
+-- 1.3.7. Grainage d'un pneu neuf encore froid (AC) : jamais « usure anormale » ; un grainage qui tient une fois le pneu
+-- à température : dit. « La voiture devant rentre aux stands » : jamais avant le départ.
+function T.cold_graining_is_not_abnormal_wear()
+ local v,sayer=radio()
+ local e=Engineer.new()
+ local tyres={tyre(0.1),tyre(0.1),tyre(0.1),tyre(0.1)}
+ for k=1,4 do tyres[k].core=60 end
+ tyres[1].grain=0.37
+ local F={player=0,cars={[0]={valid=true,pitlane=false,kmh=150,laps=1}},me={tyres=tyres}}
+ local cfg=Config.defaults(); cfg.tyres=true
+ local ctx={F=F,cfg=cfg,say=sayer,now=0,real=0}
+ local function run(seconds) for _=1,seconds*10 do ctx.now=ctx.now+0.1; ctx.real=ctx.now; Engineer.tyres(e,ctx,0.1); Voice.step(v,ctx.now) end end
+ run(30); check(said(v,'wear')==0,'cold tyre graining: silent')
+ -- Le pneu chauffe, le grainage disparaît : rien.
+ for k=1,4 do tyres[k].core=85 end; run(20); tyres[1].grain=0.1; run(60)
+ check(said(v,'wear')==0,'graining gone while warming: silent')
+ -- Grainage qui revient sur un pneu chaud depuis plus d'une minute : dit.
+ tyres[1].grain=0.4; run(5)
+ check(said(v,'wear')==1,'graining on a warm tyre: said, got '..said(v,'wear'))
+ -- Arrêt aux stands (train neuf froid) : le décompte repart.
+ F.cars[0].pitlane=true; run(1); F.cars[0].pitlane=false
+ check(e.grainWarm[1]==0,'pit stop: warm time reset')
+end
+-- Départ pas encore donné (AC replace les voitures pour la course) : la voiture devant passe par la voie, rien.
+function T.no_rival_pitted_before_the_start()
+ local w=world({laps=30,fuel=30,rivals={{spline=0.51}},cfg={rivalPitVoice=true,strategyOn=true}})
+ w.F.started=false; w.step(3)
+ w.F.cars[1].pitlane=true; w.step(2)
+ check(said(w.voice,'rivalPitted')==0,'before the start: silent')
+ w.F.cars[1].pitlane=false; w.F.started=true; w.step(2); w.F.cars[1].pitlane=true; w.step(2)
+ check(said(w.voice,'rivalPitted')==1,'after the start: said')
+end
 return T

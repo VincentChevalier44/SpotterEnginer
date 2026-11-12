@@ -330,4 +330,18 @@ function T.open_track_flag()
  check(app.F.open==true,'open track: true')
  H.sim.isTrackOpen=nil
 end
+-- 1.3.7. Nouvelle séance : une seule remise à zéro, même quand les tours de la séance d'avant retombent 2 s plus tard.
+function T.one_reset_per_new_session()
+ local app=boot()
+ H.cars[0].lapCount=5; frames(3)
+ app.voice.last.mark=1
+ H.sim.currentSessionIndex=(H.sim.currentSessionIndex or 0)+1; frames(0.5)
+ check(app.voice.last.mark==nil,'new session: reset')
+ app.voice.last.mark=1
+ frames(2); H.cars[0].lapCount=0; frames(2)
+ check(app.voice.last.mark==1,'laps of the previous session falling 2 s later: no second reset')
+ -- Plus tard, des tours qui reculent restent un redémarrage.
+ H.cars[0].lapCount=3; frames(3); H.cars[0].lapCount=0; frames(0.5)
+ check(app.voice.last.mark==nil,'laps going back later: reset')
+end
 return T
