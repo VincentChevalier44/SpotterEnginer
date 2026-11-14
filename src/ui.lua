@@ -12,11 +12,12 @@ local M={}
 function M.new() return {tab='home',section={},scroll={},heights={},fonts=false,confirmReset=-1e9} end
 local function modifiedIn(app,keys) local n=0; for _,k in ipairs(keys) do local s=Config.index[k]; if s and app.cfg[k]~=s[2] then n=n+1 end end; return n end
 local function resetKeys(app,keys) for _,k in ipairs(keys) do local s=Config.index[k]; if s then app.set(k,s[2]) end end end
--- Section affichée d'un onglet : la dernière choisie, sinon la première.
-local function current(v,tab)
+-- Section affichée d'un onglet : la dernière choisie, sinon la première ; jamais une section cachée (app facultative
+-- absente : Config.shown, has = app.has).
+local function current(v,tab,has)
  local id=v.section[tab]
  local sec=id and Config.sectionById[id]
- if not sec or sec.tab~=tab then sec=Config.sectionsOf[tab][1]; v.section[tab]=sec.id end
+ if not sec or sec.tab~=tab or not Config.shown(sec,has) then sec=Config.sectionsOf[tab][1]; v.section[tab]=sec.id end
  return sec
 end
 -- Titre et description d'une section (overlays : nom de l'overlay).
@@ -210,6 +211,15 @@ local function home(app,x,y,w)
  tile(app,'strategy','strategyOn',L.t.home.strategy,L.t.keys.strategyOn[2],x+2*(tw+10),y,tw)
  tile(app,'overlays','overlaysOn',L.t.home.overlaysTile,L.t.keys.overlaysOn[2],x+3*(tw+10),y,tw)
  y=y+84
+ -- Tous les overlays verrouillés ou déverrouillés d'un clic (comme « Déverrouiller tous les blocs » de SuperHUD), sur
+ -- ce bureau ; l'état à côté.
+ do
+  local all=app.allLocked()
+  local bw=math.min(300,(w-10)/2)
+  if W.button('home_lockall',all and L.t.home.unlockAll or L.t.home.lockAll,x,y,bw,34,not all) then app.lockAll(not all) end
+  W.dotChip(all and L.t.home.lockedState or L.t.home.editState,x+bw+12,y+8,all and 'n' or 'a')
+  y=y+46
+ end
  W.heading(L.t.home.voices,x,y,w,string.format(L.t.home.voicesOf,app.voicePresent or 0,app.voiceTotal or 0)); y=y+30
  -- Volumes de la radio, réglables ici avec l'essai de la voix juste dessous.
  for _,key in ipairs(HOME_ROWS) do y=y+row(app,key,x,y,w) end
@@ -412,7 +422,7 @@ local function column(app,v,tab,x,top,w,bottom)
  local c=W.colors()
  W.panel(x,top,w,bottom-top)
  local on,total=0,0
- for _,sec in ipairs(Config.sectionsOf[tab]) do if sec.master then total=total+1; if app.cfg[sec.master] then on=on+1 end end end
+ for _,sec in ipairs(Config.shownOf(tab,app.has)) do if sec.master then total=total+1; if app.cfg[sec.master] then on=on+1 end end end
  local role=Config.roles[tab]
  local roleOn=not role or app.cfg[role]==true
  W.label(tab=='overlays' and string.format(L.t.ovui.desktopN,app.desktop or 1) or L.t.nav[tab],x+10,top+10,c.soft)
@@ -428,13 +438,17 @@ local function column(app,v,tab,x,top,w,bottom)
  local offset=W.scroll(v.scroll,key,x,listTop,w,height,v.heights[key] or 0)
  W.clip(x,listTop,w,height)
  local y=listTop+2-offset
- local cur=current(v,tab)
+ local cur=current(v,tab,app.has)
  for _,g in ipairs(Config.sections[tab]) do
-  if #g[2]>0 then
+  -- Groupe dont toutes les sections sont cachées (app facultative absente) : rien, pas même son titre.
+  local any=false
+  for _,sec in ipairs(g[2]) do if Config.shown(sec,app.has) then any=true end end
+  if any then
    if W.visible(y,22) then W.text(W.upper(L.t.groups[g[1]] or g[1]),x+10,y+8,11,c.group,'label') end
    y=y+26
    for _,sec in ipairs(g[2]) do
-    if W.visible(y,28) then
+    local shown=Config.shown(sec,app.has)
+    if shown and W.visible(y,28) then
      local secOn=Config.sectionOn(app.cfg,sec)
      local n=modifiedIn(app,Config.sectionKeys(sec))
      -- Nom court dans la colonne quand le titre complet n'y tient pas.
@@ -443,7 +457,7 @@ local function column(app,v,tab,x,top,w,bottom)
      if W.nav('sec_'..sec.id,name,x,y,w,cur==sec,not secOn or not roleOn,n>0 and tostring(n) or '',nil,28) then v.section[tab]=sec.id end
      if sec.master and W.switch('sec_sw_'..sec.id,x+w-38,y+6,secOn) then app.set(sec.master,not secOn) end
     end
-    y=y+28
+    if shown then y=y+28 end
    end
    y=y+4
   end
@@ -564,9 +578,21 @@ function M.draw(v,app)
  x=x+bw+W.width('ENGINER',23,'display')+9
  -- Bord gauche de la partie droite (interrupteur, langue, liaison, radio coupée), dessinée ensuite.
  local chip,kind=M.linkChip(app.link)
- local edge=w-12-44-90-W.dotChipWidth(chip)-(app.radioMuted and W.dotChipWidth(L.t.ui.mutedChip)+8 or 0)
+ -- Fenêtre de réglages en jeu (comme SuperHUD) : petite croix à droite de l'interrupteur général.
+ local cross=app.gameWindow and 34 or 0
+ local edge=w-12-cross-44-90-W.dotChipWidth(chip)-(app.radioMuted and W.dotChipWidth(L.t.ui.mutedChip)+8 or 0)
  x=updateHeader(app,v,x,edge-12)
  local right=w-12
+ if app.gameWindow then
+  -- Ferme seulement cette fenêtre (la barre des applications de CSP la rouvre) ; les overlays restent.
+  local clicked,hover=W.hit('close_window',right-28,12,28,28)
+  if hover then W.rect(right-28,12,28,28,c.dangerBack,4) end
+  local col=hover and c.dangerText or c.label
+  W.line(right-19,21,right-9,31,col,1.6); W.line(right-9,21,right-19,31,col,1.6)
+  W.help(L.t.ui.closeWindow,right-28,12,28,28,5)
+  if clicked and app.closeGameWindow then app.closeGameWindow() end
+  right=right-cross
+ end
  if W.switch('master',right-30,16,app.cfg.enabled,L.t.keys.enabled[2]) then app.set('enabled',not app.cfg.enabled) end
  right=right-44
  local picked=W.segment('lang',LANGUAGES,right-76,12,76,24,app.cfg.language=='EN' and 2 or 1)
@@ -603,7 +629,7 @@ function M.draw(v,app)
  else
   local navW=228
   column(app,v,v.tab,12,top,navW,h-12)
-  pane(app,v,v.tab,current(v,v.tab),12+navW+10,top,w-12-navW-10-12,h-12)
+  pane(app,v,v.tab,current(v,v.tab,app.has),12+navW+10,top,w-12-navW-10-12,h-12)
  end
  W.finish()
 end

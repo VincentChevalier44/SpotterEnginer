@@ -3,6 +3,9 @@
 -- affichée, verrouillée (clics traversants) ou déverrouillée (glisser pour déplacer, coin bas droit pour la taille,
 -- clic droit pour verrouiller), fond opaque / atténué (38 %) / transparent, opacité du fond et du contenu, bande
 -- décorative (couleur de l'état de course), en-tête. Thème Racing 26 aux couleurs de l'app (pervenche).
+-- 1.3.9 (demande du pilote : « le même que SuperHUD ») : panneau au coin haut droit coupé, barre d'accent à gauche,
+-- petit titre et état à droite sur un filet ; poignée de taille à deux traits, taille de 0,35 à 4 fois, poignées en
+-- pixels d'écran ; Ingénieur et Stratégie de la voiture suivie par la caméra (src/focus.lua, réglage followCamera).
 local W=require('src/kit')
 local L=require('src/lang')
 local U=require('src/util')
@@ -10,6 +13,10 @@ local Timing=require('src/timing')
 local Engineer=require('src/engineer')
 local Position=require('src/position')
 local Config=require('src/config')
+local SuperHUD=require('src/superhud')
+local Focus=require('src/focus')
+local Layout=require('src/bridge_layout')
+local Link=require('src/link')
 local M={}
 M.design={spotter=340,engineer=340,strategy=380}
 M.handle=18
@@ -33,17 +40,27 @@ local function accent(app)
  return c.cyan
 end
 -- Haut du contenu selon l'en-tête.
-local function top(app,o) return app.cfg[o..'Header'] and 36 or 10 end
--- Cadre : fond selon le mode, bande décorative, en-tête (titre et état).
-local function frameBox(app,o,f,h,title,right)
+local function top(app,o) return app.cfg[o..'Header'] and 38 or 10 end
+-- Cadre (Racing 26, comme les blocs de SuperHUD) : panneau au coin haut droit coupé, barre d'accent de 3 px à gauche
+-- (couleur de l'état de course), en-tête : petit titre, étiquette (CAMÉRA : voiture suivie) puis état à droite, filet.
+local function frameBox(app,o,f,h,title,right,tag)
  local cfg=app.cfg; local c=W.colors()
  local mode=cfg[o..'Background']
  local a=mode=='transparent' and 0 or cfg[o..'Opacity']*(mode=='ghost' and 0.38 or 1)
- if a>0.005 then W.panel(0,0,f.w,h,background(a),12) end
- if cfg[o..'Accent'] then W.rect(0,0,f.w-12,3,accent(app)) end
+ if a>0.005 then W.panel(0,0,f.w,h,background(a),10) end
+ if cfg[o..'Accent'] then W.rect(0,0,3,h,accent(app)) end
  if cfg[o..'Header'] then
-  W.text(W.upper(title),12,8,17,c.text,'display')
-  if right and right~='' then W.right(W.upper(right),f.w-14,11,11,c.label,'cond') end
+  local x=14
+  local tw=W.width(W.upper(title),13,'cond')
+  local room=f.w-14-x-(right and right~='' and 96 or 0)-(tag and 70 or 0)
+  W.cell(W.upper(title),x,9,room,13,tag and c.text or c.label,'cond')
+  x=x+math.min(tw,room)+8
+  if tag then
+   local gw=W.width(tag,9,'label')+10
+   W.rect(x,10,gw,15,c.cyan,2); W.text(tag,x+5,12,9,c.ink,'label')
+  end
+  if right and right~='' then W.right(W.upper(right),f.w-14,10,11,c.cyanText,'cond') end
+  W.rect(14,30,f.w-28,1,c.rule)
  end
 end
 -- Textes chiffrés des overlays, refaits seulement quand la valeur affichée change (aucune chaîne neuve par image) :
@@ -179,74 +196,203 @@ local function tyreColor(t,cfg)
  if t.core<t.opt-cold then return c.flagBlue elseif over>hot then return c.danger elseif over>0 then return c.warn end
  return c.ok
 end
+-- Vie d'un pneu (comme SuperHUD : 1 - usure d'AC), en %, ou nil.
+local function life(t) local wv=t.wear; if type(wv)=='number' and wv>=0 and wv<=1 then return (1-wv)*100 end return nil end
+-- Défaut d'un pneu, le plus grave d'abord (texte court, couleur), ou nil.
+local function defect(t,ov,c)
+ if t.blown then return ov.blown,c.danger end
+ if (t.flat or 0)>0.3 then return ov.flat,c.warn end
+ if (t.blister or 0)>0.3 then return ov.blister,c.warn end
+ if (t.grain or 0)>0.3 then return ov.grain,c.warn end
+ return nil
+end
+local LIFE={'tyreL1','tyreL2','tyreL3','tyreL4'}
+-- Hauteur du dernier dessin des overlays à contenu variable (cadre dessiné avant le contenu).
+local heights={}
+local IMO={'tyreS1','tyreS2','tyreS3','tyreS4'}
+-- Ingénieur (1.3.9) : voiture affichée (la vôtre, ou celle que suit la caméra) : carburant, pneus (cœur, surface,
+-- vie, km, défauts), âge du train ou relais, freins, dégâts, rythme (dernier, cible, moyenne des 3, meilleur),
+-- radio de l'ingénieur (toujours la vôtre).
 function M.draw.engineer(app,f,o)
  local ov=L.t.ov; local c=W.colors()
  if idle(app) then return waiting(app,o,f,L.t.roles.engineer) end
- local F=app.F; local me=F.cars[F.player]; local t=app.engineer.strategist; local plan=t.plan
+ local F=app.F; local t=app.engineer.strategist; local plan=t.plan
+ local sub=Focus.subject(app.focus,F)
+ local car=sub.car; local data=sub.data; local own=sub.own
  local lines=app.cfg.radioLines
  local t0=top(app,o)
- local h=t0+2+40+92+44+lines*15+12
- frameBox(app,o,f,h,L.t.roles.engineer,me and text('eLap','%s %d',ov.lap,me.laps+1) or '')
  local y=t0+2; local mark=L.mark()
- -- Carburant : le calcul de la radio (src/engineer.lua, Engineer.fuelStatus : marge déduite, jusqu'au « box » engagé ou à
- -- l'arrêt du plan prêt, sinon à l'arrivée).
- -- Table réutilisée par l'ingénieur : lue aussitôt, jamais gardée.
- local fs=Engineer.fuelStatus(app.engineer,F,app.cfg)
- W.text(ov.fuel,12,y+2,10,c.label,'label')
- W.text(text('eFuel','%s L',num('eFuel',F.me.fuel,1,mark)),86,y,14,c.text,'mono')
- if fs then
-  W.right(text('eLaps',ov.fuelLaps,num('eLaps',fs.laps,1,mark)),f.w-14,y,13,c.text,'mono')
-  -- Deuxième ligne : consommation, marge (en tours, marge de sécurité déduite) à l'arrêt ou à l'arrivée.
-  W.text(text('eFpl','%s L%s',num('eFpl',fs.fpl,2,mark),ov.perLap),86,y+20,11,c.muted,'mono')
-  if fs.delta then
-   local col=fs.delta<-0.2 and c.danger or fs.delta<0.5 and c.warn or c.ok
-   W.right(text('eSpare','%s %s %s',fs.delta>=0 and ov.spare or ov.short,num('eSpare',fs.delta,1,mark,true),fs.toStop and ov.toStop or ov.toEnd),f.w-14,y+20,11,col,'mono')
+ -- Hauteur : celle du dessin précédent (le contenu varie : dégâts, données partielles), refaite à la fin.
+ local h=heights.engineer or (t0+2+42+92+26+44+lines*15+12)
+ frameBox(app,o,f,h,own and L.t.roles.engineer or (car and car.name or ''),car and text('eLap','%s %d',ov.lap,car.laps+1) or '',not own and ov.camera or nil)
+ if sub.partial then
+  W.text(ov.partial,12,y+2,12,c.muted); y=y+26
+ else
+  -- Carburant : le calcul de la radio pour la vôtre (Engineer.fuelStatus : marge déduite, jusqu'au « box » engagé ou à
+  -- l'arrêt du plan prêt, sinon à l'arrivée) ; pour une autre voiture, sa consommation mesurée tour après tour.
+  W.text(ov.fuel,12,y+2,10,c.label,'label')
+  W.text(text('eFuel','%s L',num('eFuel',data.fuel,1,mark)),86,y,14,c.text,'mono')
+  if own then
+   local fs=Engineer.fuelStatus(app.engineer,F,app.cfg)
+   if fs then
+    W.right(text('eLaps',ov.fuelLaps,num('eLaps',fs.laps,1,mark)),f.w-14,y,13,c.text,'mono')
+    W.text(text('eFpl','%s L%s',num('eFpl',fs.fpl,2,mark),ov.perLap),86,y+20,11,c.muted,'mono')
+    if fs.delta then
+     local col=fs.delta<-0.2 and c.danger or fs.delta<0.5 and c.warn or c.ok
+     W.right(text('eSpare','%s %s %s',fs.delta>=0 and ov.spare or ov.short,num('eSpare',fs.delta,1,mark,true),fs.toStop and ov.toStop or ov.toEnd),f.w-14,y+20,11,col,'mono')
+    end
+   end
+  else
+   local fpl=sub.fpl
+   if fpl then
+    W.right(text('eLaps',ov.fuelLaps,num('eLaps',data.fuel/fpl,1,mark)),f.w-14,y,13,c.text,'mono')
+    W.text(text('eFpl','%s L%s',num('eFpl',fpl,2,mark),ov.perLap),86,y+20,11,c.muted,'mono')
+   else W.text(ov.measuring,86,y+20,11,c.muted,'mono') end
+  end
+  y=y+42
+  -- Pneus : AVG AVD / ARG ARD ; cœur, vie, surface intérieur · milieu · extérieur (ou le défaut), km virtuels.
+  W.text(ov.tyres,12,y+2,10,c.label,'label')
+  if own then W.text(text('eAge',ov.ageShort,t.data.tyreAge or 0),12,y+18,9,c.muted,'mono')
+  else W.text(text('eAge',ov.ageShort,sub.stint),12,y+18,9,c.muted,'mono') end
+  local bw=(f.w-100)/2
+  for k=1,4 do
+   local tt=data.tyres[k]
+   local col=(k-1)%2; local rw=math.floor((k-1)/2)
+   local bx=86+col*(bw+6); local by=y+rw*44
+   W.rect(bx,by,bw,40,c.block)
+   W.rect(bx,by,3,40,tyreColor(tt,app.cfg))
+   W.text(text(TYRE_T[k],'%d°',math.floor((tt.core or 0)+0.5)),bx+8,by+4,14,c.text,'mono')
+   local lv=life(tt)
+   if lv then W.right(text(LIFE[k],'%d %%',math.floor(lv+0.5)),bx+bw-6,by+5,11,lv<35 and c.danger or lv<60 and c.warn or c.ok,'mono') end
+   local dtext,dcol=defect(tt,ov,c)
+   if dtext then W.text(dtext,bx+8,by+24,9,dcol,'label')
+   else W.text(text(IMO[k],'%d · %d · %d',math.floor((tt.inner or 0)+0.5),math.floor((tt.mid or 0)+0.5),math.floor((tt.outer or 0)+0.5)),bx+8,by+24,9,c.muted,'mono') end
+   W.right(text(TYRE_KM[k],'%s km',num(TYRE_KM[k],tt.vkm or 0,1,mark)),bx+bw-6,by+25,9,c.muted,'mono')
+  end
+  y=y+92
+  local b=data.brakes
+  W.text(ov.brakes,12,y+2,10,c.label,'label')
+  if b[1]>0 or b[3]>0 then
+   W.text(text('eBrakes','%d° %d°  ·  %d° %d°',math.floor(b[1]),math.floor(b[2]),math.floor(b[3]),math.floor(b[4])),86,y,12,math.max(b[1],b[2],b[3],b[4])>app.cfg.brakeHot and c.warn or c.text,'mono')
+  else W.text(ov.none,86,y,12,c.group,'mono') end
+  y=y+24
+  -- Dégâts : seulement s'il y en a (avant, arrière, gauche, droite).
+  local dm=data.damage
+  if dm and math.max(dm[1] or 0,dm[2] or 0,dm[3] or 0,dm[4] or 0)>0.5 then
+   W.text(ov.damage,12,y+2,10,c.label,'label')
+   W.text(text('eDamage',ov.damageFmt,math.floor(dm[1]+0.5),math.floor(dm[2]+0.5),math.floor(dm[3]+0.5),math.floor(dm[4]+0.5)),86,y,12,c.warn,'mono')
+   y=y+22
   end
  end
- y=y+42
- -- Pneus : AVG AVD / ARG ARD, cœur et km virtuels ; freins dessous.
- W.text(ov.tyres,12,y+2,10,c.label,'label')
- local bw=(f.w-100)/2
- for k=1,4 do
-  local tt=F.me.tyres[k]
-  local col=(k-1)%2; local rw=math.floor((k-1)/2)
-  local bx=86+col*(bw+6); local by=y+rw*30
-  W.rect(bx,by,bw,26,c.block)
-  W.rect(bx,by,3,26,tyreColor(tt,app.cfg))
-  W.text(text(TYRE_T[k],'%d°',math.floor(tt.core+0.5)),bx+8,by+5,13,c.text,'mono')
-  W.right(text(TYRE_KM[k],'%s km',num(TYRE_KM[k],tt.vkm,1,mark)),bx+bw-6,by+7,10,c.muted,'mono')
- end
- y=y+62
- local b=F.me.brakes
- W.text(ov.brakes,12,y+2,10,c.label,'label')
- if b[1]>0 or b[3]>0 then
-  W.text(text('eBrakes','%d° %d°  ·  %d° %d°',math.floor(b[1]),math.floor(b[2]),math.floor(b[3]),math.floor(b[4])),86,y,12,math.max(b[1],b[2],b[3],b[4])>app.cfg.brakeHot and c.warn or c.text,'mono')
- else W.text(ov.none,86,y,12,c.group,'mono') end
- y=y+26
- -- Rythme : dernier tour, cible du modèle.
- -- Rythme : dernier tour (rouge s'il n'était pas normal : invalide, stands, neutralisé), son écart à la cible du modèle
- -- pour ce tour (vert en avance, orange en retard) ; cible du tour en cours, grise tant que le plan n'est pas prêt.
- local last=me and me.lastMs/1000 or 0
- local normal=me and Engineer.normalLap(t,me)
+ -- Rythme : dernier tour (rouge s'il n'était pas normal, pour la vôtre), écart à la cible du modèle (la vôtre) ;
+ -- moyenne des trois derniers tours de course et meilleur tour.
+ local last=car and car.lastMs/1000 or 0
+ local normal=own and car and Engineer.normalLap(t,car)
  W.text(ov.last,12,y+2,10,c.label,'label')
- W.text(lapText('eLast',last,mark),86,y,13,(last>0 and not normal) and c.danger or c.text,'mono')
- if t.targetPrev and last>0 and normal then
+ W.text(lapText('eLast',last,mark),86,y,13,(own and last>0 and not normal) and c.danger or c.text,'mono')
+ if own and t.targetPrev and last>0 and normal then
   local dl=last-t.targetPrev
   W.text(num('eDelta',dl,1,mark,true),158,y+1,12,dl<=0.05 and c.ok or dl<0.5 and c.warn or c.danger,'mono')
  end
- if plan and plan.ok and plan.target then
+ if own and plan and plan.ok and plan.target then
   W.text(ov.target,214,y+2,10,c.label,'label')
   W.right(lapText('eTarget',plan.target,mark),f.w-14,y,13,t.ready and c.cyanText or c.muted,'mono')
  end
- y=y+24
+ y=y+20
+ W.text(ov.avg3,12,y+2,10,c.label,'label')
+ W.text(sub.avg3 and lapText('eAvg',sub.avg3,mark) or ov.none,86,y,12,sub.avg3 and c.text or c.group,'mono')
+ W.text(ov.best,214,y+2,10,c.label,'label')
+ local best=car and car.bestMs/1000 or 0
+ W.right(best>0 and lapText('eBest',best,mark) or ov.none,f.w-14,y,12,best>0 and c.record or c.group,'mono')
+ y=y+22
  W.rect(12,y,f.w-24,1,c.rule); y=y+6
- radio(app,12,y,f.w-24,ENGINEER_ROLES,lines,12)
+ y=radio(app,12,y,f.w-24,ENGINEER_ROLES,lines,12)
+ h=math.max(y,t0+2+42+92+24+42+6+lines*15)+10
+ heights.engineer=h
  return h
 end
 -- Stratégie : fenêtre, tour optimal, dégradation, ressortie, duels, coût selon le tour d'arrêt.
+-- Stratégie d'une autre voiture (caméra) : le plan qu'AdvancedIA publie pour elle au pont (arrêts prévus et faits,
+-- prochain arrêt, raison, limite, panne, appel aux stands, relais), jamais celui de votre ingénieur.
+local function otherStrategy(app,f,o,sub)
+ local ov=L.t.ov; local c=W.colors()
+ local t0=top(app,o); local car=sub.car
+ local lc=Link.car(app.link,sub.index)
+ local h=heights.other or t0+150
+ frameBox(app,o,f,h,car and car.name or '',ov.aiPlan,ov.camera)
+ local y=t0+2
+ if not lc then W.text(ov.noPlan,12,y+2,12,c.muted); h=t0+30; heights.other=h; return h end
+ -- Pont v2 (AdvancedIA 1.64) : IA abandonnée (dépannée, garée jusqu'à la fin) : seulement l'abandon.
+ if lc.retired then
+  W.rect(10,y-2,f.w-20,26,c.block)
+  local tw=W.width(ov.retired,18,'display'); W.text(ov.retired,(f.w-tw)/2,y,18,c.danger,'display')
+  h=y+34; heights.other=h; return h
+ end
+ if lc.called or lc.boxed then
+  W.rect(10,y-2,f.w-20,26,c.block)
+  local label=lc.boxed and ov.inPit or ov.called
+  local tw=W.width(label,18,'display'); W.text(label,(f.w-tw)/2,y,18,c.warn,'display')
+  y=y+30
+ end
+ W.text(ov.stops,12,y+2,10,c.label,'label')
+ -- -1 publié pour une valeur inconnue : jamais affiché.
+ if (lc.plannedStops or -1)>=0 then W.text(text('oStops',ov.stopsFmt,math.max(0,lc.stops or 0),lc.plannedStops),110,y,13,c.text,'mono')
+ else W.text(text('oStops1',ov.stopsMade,math.max(0,lc.stops or 0)),110,y,13,c.text,'mono') end
+ y=y+20
+ W.text(ov.nextStop,12,y+2,10,c.label,'label')
+ if lc.planned and lc.nextStopLap>0 then
+  W.text(text('oNext','T%d',lc.nextStopLap),110,y-2,20,c.cyan,'display')
+  local laps=car and lc.nextStopLap-(car.laps+1) or nil
+  if laps and laps>=0 then W.right(text('oIn',ov.inLaps,laps),f.w-14,y,11,c.muted,'mono') end
+ else W.text(ov.none,110,y,13,c.group,'mono') end
+ y=y+24
+ local cause=Layout.causes[lc.stopCause or 0] or ''
+ W.text(ov.cause,12,y+2,10,c.label,'label')
+ W.text(cause~='' and (ov.causes[cause] or cause) or ov.none,110,y,12,cause~='' and c.text or c.group,'cond')
+ local limit=Layout.limits[lc.stopLimit or 0] or ''
+ if limit~='' then W.text(ov.limit,200,y+2,10,c.label,'label'); W.right(ov.limits[limit] or limit,f.w-14,y,12,c.warn,'cond') end
+ y=y+20
+ W.text(ov.stint,12,y+2,10,c.label,'label')
+ local sf=lc.stintFor or -1
+ if sf>=0 then W.text(text('oStint',ov.stintFmt,sub.stint,math.floor(sf/60),math.floor(sf%60)),110,y,12,c.text,'mono')
+ else W.text(text('oStint1',ov.ageShort,sub.stint),110,y,12,c.text,'mono') end
+ y=y+20
+ -- Dernière sanction (pont v2 : code de L.reasons, 99 ou inconnu : « autre »).
+ local rc=lc.lastReason or 0
+ if rc>0 then
+  local key=Layout.reasons and Layout.reasons[rc] or nil
+  W.text(ov.sanction,12,y+2,10,c.label,'label')
+  W.text(key and ov.reasons2[key] or ov.reasonOther,110,y,12,c.warn,'cond')
+  y=y+20
+ end
+ local failure=Layout.failures[lc.failure or 0] or ''
+ if failure~='' then
+  W.text(ov.failure,12,y+2,10,c.label,'label')
+  W.text(ov.failures[failure] or failure,110,y,12,lc.critical and c.danger or c.warn,'cond')
+  y=y+20
+ end
+ h=y+8; heights.other=h
+ return h
+end
+-- Frise de la course (votre plan) : tours faits, fenêtre, tour d'arrêt prévu, tour en cours, arrivée.
+local function timeline(c,ov,f,y,plan,stopLap,lap)
+ local total=math.max(1,plan.total or 1)
+ local x0,w=12,f.w-24
+ local function at(n) return x0+w*U.clamp((n-1)/total,0,1) end
+ W.rect(x0,y,w,8,c.block)
+ W.rect(x0,y,at(plan.done+1)-x0,8,c.rule)
+ if plan.window then W.rect(at(plan.window[1]),y,math.max(2,at(plan.window[2]+1)-at(plan.window[1])),8,c.select) end
+ if stopLap then local sx=at(stopLap); W.rect(sx-1.5,y-4,3,16,c.cyan) end
+ W.rect(at(lap)-1,y-2,2,12,c.text)
+ W.text('T1',x0,y+11,9,c.group,'mono')
+ W.right(text('tlEnd','T%d',total),x0+w,y+11,9,c.group,'mono')
+ if stopLap then local lab=text('tlStop','T%d',stopLap); local lw=W.width(lab,9,'mono'); W.text(lab,U.clamp(at(stopLap)-lw/2,x0+22,x0+w-lw-26),y+11,9,c.cyanText,'mono') end
+end
 function M.draw.strategy(app,f,o)
  local ov=L.t.ov; local c=W.colors()
  if idle(app) then return waiting(app,o,f,L.t.home.strategy) end
+ local sub=Focus.subject(app.focus,app.F)
+ if not sub.own then return otherStrategy(app,f,o,sub) end
  local F=app.F; local t=app.engineer.strategist; local plan=t.plan
  local status=t.status=='measured' and ov.measured or ov.estimated
  local t0=top(app,o)
@@ -261,7 +407,7 @@ function M.draw.strategy(app,f,o)
   W.text(plan and (ov.reasons[plan.reason] or plan.reason) or text('sLearn',ov.learning,#t.data.clean),12,t0+2,13,c.muted)
   return h
  end
- local h=t0+284
+ local h=t0+310
  frameBox(app,o,f,h,L.t.home.strategy,status)
  local y=t0+2
  -- Arrêt engagé (1.3.1) : « BOX CE TOUR » / « BOX AU PROCHAIN TOUR » en grand, le tour du « box » dit à la radio et
@@ -286,6 +432,8 @@ function M.draw.strategy(app,f,o)
   W.right(text('sOptimal','T%d',L0),f.w-14,y-2,26,t.ready and c.cyan or c.muted,'display')
  else W.text(ov.noStop,12,y+2,16,c.ok,'cond') end
  y=y+34
+ timeline(c,ov,f,y,plan,L0,lap)
+ y=y+26
  local lapsLeft=plan.total-plan.done
  local mark=L.mark()
  W.text(text('sStops','%s %d  ·  %s %d/%d  ·  %s',ov.stops,plan.stops,ov.lap,plan.done+1,plan.total,text('sAge',ov.stintAge,t.data.tyreAge)),12,y,11,c.muted,'mono')
@@ -357,7 +505,9 @@ end
 -- réglé dans le panneau (cadre plus épais, nom en bas).
 local function edit(v,app,o,f)
  local st=v[o]; local cfg=app.cfg; local c=W.colors()
- local w,h=f.w,st.h; local hs=M.handle
+ -- Poignée et zone de glisser en pixels d'écran (comme SuperHUD : 22 px à l'échelle 1, jamais moins de 18) : elles
+ -- s'attrapent aussi à 0,35 fois.
+ local w,h=f.w,st.h; local hs=math.max(M.handle,22*f.s)/f.s
  local editing=app.editing==true
  if editing or not cfg[o..'Locked'] then
   local _,_,a1,r1=W.hit('mv1_'..o,0,0,w,math.max(1,h-hs))
@@ -387,9 +537,17 @@ local function edit(v,app,o,f)
    if a1 or a2 or a3 or r1 or r2 or r3 then app.editSel=o end
   elseif r1 or r2 or r3 then app.set(o..'Locked',true) end
   local sel=editing and app.editSel==o
-  W.frameRect(0,0,w,h,c.cyan,sel and 3 or 1.5)
-  W.tri(w,h-hs,w,h,w-hs,h,c.cyan)
-  W.right(W.upper(editing and L.t.ovui.names[o] or L.t.ov.unlocked),w-hs-4,h-hs+3,10,c.cyan,'cond')
+  -- Marques Racing 26 (SuperHUD) : filet d'accent en haut, poignée à deux traits dans le coin ; taille en pixels
+  -- pendant le redimensionnement.
+  W.frameRect(0,0,w,h,c.cyan,sel and 3 or 1)
+  W.rect(0,0,w-10,2,c.cyan)
+  W.line(w-4,h-18,w-18,h-4,c.cyan,2.2); W.line(w-4,h-11,w-11,h-4,c.cyan,2.2)
+  if a3 then
+   local label=text('size_'..o,'%d × %d px',math.floor(st.wp+0.5),math.floor(st.hp+0.5))
+   W.rect(6,h-22,W.width(label,10,'mono')+12,16,c.panel,2); W.text(label,12,h-20,10,c.cyanText,'mono')
+  else
+   W.right(W.upper(editing and L.t.ovui.names[o] or L.t.ov.unlocked),w-hs-4,h-16,10,c.cyan,'cond')
+  end
  elseif not cfg.clickThrough then
   local _,_,_,r=W.hit('lk_'..o,0,0,w,h)
   if r then app.set(o..'Locked',false) end
@@ -426,6 +584,13 @@ function M.hud(v,app)
  local connected=app.link.state=='connected'
  local screen=app.screen and app.screen() or nil
  local sw=screen and screen.x or Config.screenDefault.x; local sh=screen and screen.y or Config.screenDefault.y
+ -- 1.3.9 : blocs de SuperHUD sur ce bureau (installé, réglage, clé vivante), puis nos overlays déjà placés : une
+ -- position automatique (Y à -1) se décale verticalement pour ne rien recouvrir.
+ local avoid=nil
+ if app.has and app.has.superhud and cfg.shAvoid and app.superhud then
+  avoid={}
+  for _,r in ipairs(SuperHUD.blocks(app.superhud,app.real or 0,app.desktop or 1,sw,sh)) do avoid[#avoid+1]=r end
+ end
  for _,o in ipairs(Config.overlays) do
   local st=v[o]; local k=K[o]
   local unlocked=app.editing or not cfg[k.locked]
@@ -435,6 +600,10 @@ function M.hud(v,app)
    local x=cfg[k.x]>=0 and cfg[k.x] or dx
    local y=cfg[k.y]>=0 and cfg[k.y] or dy
    x=U.clamp(x,0,math.max(0,sw-w)); y=U.clamp(y,0,math.max(0,sh-h))
+   if avoid then
+    if cfg[k.y]<0 then x,y=SuperHUD.avoid(x,y,w,h,avoid,sh) end
+    avoid[#avoid+1]={x=x,y=y,w=w,h=h}
+   end
    st.x,st.y,st.wp,st.hp=x,y,w,h
    if st.pos then st.pos.x=x; st.pos.y=y; st.size.x=w; st.size.y=h else st.pos=vec2(x,y); st.size=vec2(w,h) end
    if not st.draw then st.draw=function() content(v,app,o) end end

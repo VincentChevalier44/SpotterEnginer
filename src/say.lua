@@ -131,6 +131,15 @@ local function relative(s,p)
  local c=Catalog.clips[p]
  return c and s.lang..'/'..c[s.lang] or nil
 end
+-- Voix féminine du spotter (src/catalog.lua) : pour une annonce qui n'est pas de l'ingénieur, la version de F/ quand
+-- elle existe (clips communs, nombres, durées, positions) ; sinon le clip lui-même.
+local function voiced(s,rel)
+ if s.female then
+  local f=rel:sub(1,3)..Catalog.femaleDir..rel:sub(4)
+  if s.files[f] then return f end
+ end
+ return rel
+end
 -- Clips d'un entier de 100 à Catalog.maxSpoken, ajoutés à list : « cent » + reste en français de 100 à 199, sinon
 -- chiffre + « cent » (« hundred ») + reste ; reste nul : rien de plus. false s'il manque un clip. Le texte écrit reste
 -- le nombre en chiffres.
@@ -141,9 +150,9 @@ local function hundreds(s,n,list)
  local count=(h>1 or s.lang~='FR') and s.lang..'/'..Catalog.numberFile(h) or nil
  local tail=rest>0 and s.lang..'/'..Catalog.numberFile(rest) or nil
  if not s.files[word] or count and not s.files[count] or tail and not s.files[tail] then return false end
- if count then list[#list+1]=s.root..'/'..count end
- list[#list+1]=s.root..'/'..word
- if tail then list[#list+1]=s.root..'/'..tail end
+ if count then list[#list+1]=s.root..'/'..voiced(s,count) end
+ list[#list+1]=s.root..'/'..voiced(s,word)
+ if tail then list[#list+1]=s.root..'/'..voiced(s,tail) end
  return true
 end
 -- Chemins des clips des atomes (textes écrits seulement ignorés), ou nil si l'un manque.
@@ -156,7 +165,7 @@ function M.paths(s,atoms)
   elseif not (type(a)=='table' and a.text) then
    local rel=relative(s,a)
    if not rel or not s.files[rel] then return nil end
-   list[#list+1]=s.root..'/'..rel
+   list[#list+1]=s.root..'/'..voiced(s,rel)
   end
  end
  return list
@@ -208,6 +217,20 @@ function M.say(s,role,key,prio,parts,now,opts)
  opts=opts or {}
  if M.strict then for k=1,#parts do local p=parts[k]; if type(p)=='string' and not Catalog.clips[p] then error('clip inconnu : '..p,2) end end end
  if M.strict and opts.tone and not Catalog.tones[opts.tone] then error('ton inconnu : '..tostring(opts.tone),2) end
+ -- Tests : la voix de chaque clip suit son rôle (un clip du spotter seul jamais dit par l'ingénieur, un clip de
+ -- l'ingénieur seul jamais dit par le spotter) ; sinon il faut le déclarer commun dans src/catalog.lua.
+ if M.strict and (role=='engineer' or role=='spotter') then
+  for k=1,#parts do
+   local p=parts[k]
+   if type(p)=='string' and Catalog.clips[p] then
+    local base=Catalog.clips[p].of or p
+    local own=Catalog.isSpotterOnly[p] or Catalog.isSpotterOnly[base]
+    local shared=Catalog.isShared[p] or Catalog.isShared[base]
+    if role=='engineer' and own and not shared then error('clip du spotter dit par l\'ingénieur : '..p,2) end
+    if role=='spotter' and not own and not shared then error('clip de l\'ingénieur dit par le spotter : '..p,2) end
+   end
+  end
+ end
  -- Refusée d'avance (radio ou rôle coupés, délai de la clé) : rien n'est préparé, la rotation des variantes n'avance pas.
  if s.voice and Voice.refused(s.voice,role,key,opts.cooldown,now) then return false end
  local sense=meaning(parts)
@@ -223,13 +246,17 @@ function M.say(s,role,key,prio,parts,now,opts)
  if chosen then for k=1,#chosen do if type(chosen[k])=='string' then chosen[k]=M.pick(s,chosen[k],opts.tone) end end; parts=chosen end
  -- Clips groupés (« 9,3 secondes ») d'abord ; s'il en manque, la durée est lue chiffre par chiffre.
  local atoms=M.expand(s,parts)
+ s.female=role~='engineer'
  local clips=M.paths(s,atoms)
  if not clips then
   local digits=M.expand(s,parts,false)
   clips=M.paths(s,digits)
   if clips then atoms=digits end
  end
- return Voice.say(s.voice,{key=key,role=role,prio=prio,clips=clips,text=opts.text or textOf(s,atoms),ttl=opts.ttl or Voice.TTL,
+ -- s.prefix (1.3.9, radio de la voiture regardée, src/spectator.lua) : nom de la voiture et CAMÉRA devant le texte.
+ local text=opts.text or textOf(s,atoms)
+ if s.prefix then text=s.prefix..text end
+ return Voice.say(s.voice,{key=key,role=role,prio=prio,clips=clips,text=text,ttl=opts.ttl or Voice.TTL,
   cooldown=opts.cooldown or 0,kind=opts.kind,chirp=s.chirp,once=opts.once,fresh=opts.fresh,sense=sense,tone=opts.tone},now)
 end
 return M

@@ -21,7 +21,8 @@ local FIELDS={'neutral','neutralMode','ending','safetyPhase','red','greenLeft','
  'giveBack','penaltyId','penaltyKind','drsBeep','drsReason','drsBlocked','pitState','pitRemind','pitDue',
  'pitsClosed','maxStintMin','playerStintFor','wetSerial','wet','relaunch','standing','playerRestart','messageId',
  'messageTitle','messageText','aiSerial','aiTitle','aiShort','flashId','flashHeard','pitPosition','pitOpen','pitClose',
- 'pitWaived','drsLapsLeft','penaltyReason','gridPlaced','gridPassed','messageKind','messageValue','messageExtra','jumpLeft','serial'}
+ 'pitWaived','drsLapsLeft','penaltyReason','gridPlaced','gridPassed','messageKind','messageValue','messageExtra','jumpLeft','serial',
+ 'endingLeft','mandatoryStops'}
 -- Panneau du pilote décidé par AdvancedIA : états annoncés à leur apparition (clip, priorité, réglage qui les permet).
 -- Quatrième valeur facultative : clé de l'annonce, partagée avec l'annonce voisine (jamais les deux à la fois).
 -- « start » n'y est pas : c'est le drapeau vert natif d'AC, qu'AdvancedIA pose lui-même après son vert ; il arrive
@@ -32,6 +33,9 @@ local FIELDS={'neutral','neutralMode','ending','safetyPhase','red','greenLeft','
 -- sa FCY dure (aucune annonce de neutralisation pendant un tour de formation) : c'est le panneau qui la fait dire.
 local PANEL={native={'yellow',2,'raceControl','zone'},formationOff={'fcy',1,'raceControl','neutral'},standingLap={'formationLap',3,'raceControl','formation'},standingPit={'standingPit',3,'raceControl'},
  white={'lastLap',3,'raceControl'},
+ -- AdvancedIA Beta 1.63 : jaune d'avertissement, voiture lente tenue au bord devant (yellow seul au pont, ni zone ni
+ -- dépassement interdit) : prudence, dépassement permis, jamais « interdiction de dépasser ».
+ slowWarn={'slowWarn',2,'raceControl'},
 penaltyDrive={'driveThrough',1,'penaltiesVoice'},penaltyTeleport={'penaltyPits',1,'penaltiesVoice'}}
 -- Pénalité du joueur décidée par AdvancedIA : clip selon la raison (coupure des gaz pour une raison inconnue).
 local PENALTY={delta='penaltyDelta',pass='penaltyPass',red='penaltyRed',stop='penaltyStop',jump='penaltyJump'}
@@ -54,7 +58,12 @@ local PIT_NOTICE={pitCompound={'pitCompound',3,18},pitPlanSame={'pitPlanSame',3,
  -- Départ d'AdvancedIA 1.60 (option raceStart) : tour de formation (extra 0 : départ arrêté ensuite, 1 : départ lancé),
  -- appel du départ lancé (value : place du joueur, extra : indice d'AC de la voiture à suivre, -1 en tête), vert du
  -- départ lancé. Clé « start » pour les deux derniers : le vert remplace l'appel encore en file.
- formation={'formationLap',2,12},rollStart={'rs',2,10},rollGreen={'go',1,4}}
+ formation={'formationLap',2,12},rollStart={'rs',2,10},rollGreen={'go',1,4},
+ -- Arrêt obligatoire levé (AdvancedIA Beta 1.63 et 1.64) : course mouillée, trop courte ou sprint (100 km au plus).
+ pitWaived={'pitWaived',3,15,nil,15},pitShort={'pitShort',3,15,nil,15},pitSprint={'pitSprint',3,20,nil,15},
+ -- Départ interrompu (AdvancedIA 1.64) : incident sur la grille ou aux feux, un tour de plus (value : tentative 1 à 3 ;
+ -- extra 0 : nouveau départ arrêté, 1 : départ lancé). Seul message de l'avortement (pas de « formation » redit).
+ startDelayed={'startDelayed',2,12}}
 -- Avant le départ (standing d'AdvancedIA 1.60) : tour de formation ou appel du départ lancé. La course y est
 -- neutralisée (neutral, neutralMode « fcy », relaunch) sans que ce soit une neutralisation ni une relance à annoncer.
 local function prestart(x) return x.standing=='form' or x.standing=='roll' end
@@ -76,9 +85,9 @@ local function copy(d,into)
 end
 local say=Say.as('spotter')
 -- Annonces qui n'ont plus de sens à la fin d'une neutralisation ou d'un drapeau rouge.
-local AFTER_NEUTRAL={delta=true,vscEnding=true,scIn=true,neutral=true,boxNeutral=true,red=true,scOut=true}
+local AFTER_NEUTRAL={delta=true,vscEnding=true,scIn=true,neutral=true,boxNeutral=true,red=true,scOut=true,vscCount=true}
 local AFTER_ZONE={zone=true}
-local AFTER_ENDING={vscEnding=true}
+local AFTER_ENDING={vscEnding=true,vscCount=true}
 local AFTER_SCIN={scIn=true}
 local AFTER_DELTA={delta=true}
 local AFTER_LIGHTS={start=true}
@@ -160,7 +169,7 @@ local function planNotice(s,ctx,cur)
  if not half then return end
  s.planPending=false
  local c=s.compound
- local due=not cur.pitWaived and (cur.pitState=='pending' or cur.pitState=='open' and cur.pitDue>0)
+ local due=not cur.pitWaived and (cur.pitState=='pending' and Link.owedBeforeWindow(ctx.link,cur) or cur.pitState=='open' and cur.pitDue>0)
  if not c or c.kind~='pitPlanSame' or not due or not ctx.cfg.raceControl then return end
  s.planSaid=true
  say(ctx,'pitPlanSame',3,{'pitPlanSame'},{ttl=20,text=aaiText(ctx,c.title,c.text)})
@@ -198,6 +207,11 @@ local function pitNotice(ctx,cur,e)
   local follow=math.floor((tonumber(cur.messageExtra) or -1)+0.5)
   if follow>=0 then parts[2]={text=Say.note(ctx.say,'behind',name(ctx,follow))} end
   return say(ctx,'start',e[2],parts,{ttl=ttl,once=true})
+ elseif cur.messageKind=='startDelayed' then
+  -- Les feux encore en file ne sont plus vrais.
+  Voice.cancel(ctx.voice,AFTER_LIGHTS)
+  if math.floor((tonumber(cur.messageExtra) or 0)+0.5)==1 then parts[1]='startDelayedRoll' end
+  return say(ctx,'startDelayed',e[2],parts,{ttl=ttl,text=text,cooldown=5})
  elseif cur.messageKind=='rollGreen' then
   Voice.cancel(ctx.voice,AFTER_LIGHTS)
   return say(ctx,'start',e[2],parts,{ttl=ttl,once=true})
@@ -292,12 +306,23 @@ local function race(s,ctx)
   -- Même mode seulement : une fin de VSC annulée par une SC est déjà dite plus haut (« SC appelée » ; revue 1.3.2 :
   -- remplacée ici par « reste en file », la SC encore aux stands).
   if p.ending and not cur.ending and cur.neutral then
-   Voice.cancel(ctx.voice,AFTER_ENDING)
+   Voice.cancel(ctx.voice,AFTER_ENDING); s.vscGo=false
    local id=p.neutralMode==cur.neutralMode and neutralClip(cur)
    if id then say(ctx,'neutral',1,{id},{ttl=8}) end
   end
   if p.safetyPhase=='in' and cur.safetyPhase=='out' and cur.neutral then Voice.cancel(ctx.voice,AFTER_SCIN); say(ctx,'scOut',1,{'sc'},{ttl=8}) end
   if cur.ending and not p.ending and cur.neutralMode=='vsc' then say(ctx,'vscEnding',2,{'vscEnding'},{ttl=5}) end
+  -- 1.3.9 (demande du pilote) : décompte « 3, 2, 1 » des dernières secondes de la VSC (fin annoncée par AdvancedIA,
+  -- endingLeft : secondes restantes ; la VSC finit à zéro), puis « Go, go, go ! » à la relance à la place du vert
+  -- complet. Chaque chiffre est dit au passage de sa seconde, abandonné s'il ne part pas aussitôt (jamais en retard).
+  if cfg.vscCountdown and cur.ending and p.ending and cur.neutralMode=='vsc' then
+   for k=3,1,-1 do
+    if p.endingLeft>k and cur.endingLeft<=k and cur.endingLeft>k-1 then
+     say(ctx,'vscCount',1,{{n=k}},{ttl=0.6})
+     if k==1 then s.vscGo=true end
+    end
+   end
+  end
   if cur.safetyPhase=='in' and p.safetyPhase~='in' then say(ctx,'scIn',2,{'scIn'},{ttl=15}) end
   if cur.red and not p.red then say(ctx,'red',1,{'red'},{ttl=10}) end
   -- Fin du drapeau rouge hors course : reprise de la séance (même clé que le vert : jamais les deux).
@@ -307,8 +332,13 @@ local function race(s,ctx)
   -- un vert court, dit à l'instant même (« Vert, fin du jaune »), une fois par zone.
   -- Jamais pendant une neutralisation, un drapeau rouge ou un départ arrêté (« Go » le dit).
   local calm=not cur.neutral and not cur.red and cur.standing~='go'
-  if s.greenPending and cur.greenLeft>0 and calm then s.greenPending=false; say(ctx,'restart',2,{'green'},{ttl=6,cooldown=10})
-  elseif s.greenPending and ctx.real-s.neutralEndAt>2 then s.greenPending=false end
+  if s.greenPending and cur.greenLeft>0 and calm then
+   s.greenPending=false
+   -- Fin de VSC décomptée : « Go » tout de suite (priorité 1 : ni signal radio ni attente), sinon le vert complet.
+   if s.vscGo then say(ctx,'restart',1,{'go'},{ttl=3,cooldown=10}) else say(ctx,'restart',2,{'green'},{ttl=6,cooldown=10}) end
+   s.vscGo=false
+  elseif s.greenPending and ctx.real-s.neutralEndAt>2 then s.greenPending=false; s.vscGo=false end
+  if not cur.neutral and not s.greenPending then s.vscGo=false end
   -- Sortie de zone jaune : le vert court, sur la sortie elle-même (deux zones rapprochées : deux verts), une fois par
   -- jaune entendu (un jaune jamais dit : pas de vert).
   if p.zone and not cur.zone and calm then
@@ -347,7 +377,10 @@ local function race(s,ctx)
   if cur.playerStintFor<0 or cur.maxStintMin>0 and cur.playerStintFor<cur.maxStintMin*60 then s.stint=false end
   -- Piste mouillée ou sèche (décidé par AdvancedIA), arrêt obligatoire levé en course mouillée.
   if cur.wetSerial~=p.wetSerial then say(ctx,'trackState',3,{cur.wet and 'trackWet' or 'trackDry'},{ttl=15}) end
-  if cur.pitWaived and not p.pitWaived then say(ctx,'pitWaived',3,{'pitWaived'},{ttl=15}) end
+  -- Avant AdvancedIA Beta 1.63, l'arrêt n'est levé qu'en course mouillée : dit sur le changement de pitWaived. Depuis
+  -- la 1.63, il l'est aussi en course trop courte ou sprint (1.64) : dit sur l'annonce qui en donne la raison
+  -- (pitWaived, pitShort, pitSprint : PIT_NOTICE), jamais deviné.
+  if cur.pitWaived and not p.pitWaived and not Link.pendingDue(ctx.link) then say(ctx,'pitWaived',3,{'pitWaived'},{ttl=15,cooldown=15}) end
   if cur.gridPlaced and not p.gridPlaced then say(ctx,'grid',3,{'gridPlaced'},{ttl=5}) end
   if cur.gridPassed and not p.gridPassed then say(ctx,'grid',2,{'gridPassed'},{ttl=5}) end
   if cur.messageId~=p.messageId and cur.messageKind=='aiDq' then say(ctx,'aiDq',4,{'aiDq'},{ttl=10}) end
@@ -449,6 +482,9 @@ local function race(s,ctx)
  -- restent écrits comme les autres annonces.
  local noticeSaid=false
  local notice=cur.messageId~=p.messageId and PIT_NOTICE[cur.messageKind] or nil
+ -- Arrêt obligatoire programmé dans AdvancedIA (mandatoryStops : son réglage, publié même levé) : jamais « course
+ -- sprint », ni dit ni écrit (décision du pilote, 14/11/2026 : un arrêt programmé n'est jamais levé pour un sprint).
+ if notice and cur.messageKind=='pitSprint' and (tonumber(cur.mandatoryStops) or 0)>0 then notice=nil; noticeSaid=true end
  if cur.messageId~=p.messageId and ctx.journal then
   ctx.journal(string.format('AdvancedIA %s (%s / %s) : %s',tostring(cur.messageKind),tostring(cur.messageValue),tostring(cur.messageExtra),aaiLine(cur.messageTitle,cur.messageText)))
  end
@@ -1044,7 +1080,8 @@ function M.step(s,ctx)
  race(s,ctx)
  M.finish(s,ctx)
  if not ctx.cfg.spotterOn then return end
- if ctx.cfg.sideBySide then side(s,ctx) else sideIdle(s) end
+ -- 1.3.9 : alertes sonores du radar de SuperHUD actives (clé SuperHUD.state vivante) : le côte à côte lui est laissé.
+ if ctx.cfg.sideBySide and not (ctx.cfg.shRadar and ctx.superhudRadar) then side(s,ctx) else sideIdle(s) end
  if ctx.cfg.gaps then gaps(s,ctx) end
  live(s,ctx)
  if ctx.cfg.hazards then Hazards.step(s.haz,ctx) end

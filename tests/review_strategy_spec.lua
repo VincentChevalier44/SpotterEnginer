@@ -472,4 +472,24 @@ function T.no_rival_pitted_before_the_start()
  w.F.cars[1].pitlane=false; w.F.started=true; w.step(2); w.F.cars[1].pitlane=true; w.step(2)
  check(said(w.voice,'rivalPitted')==1,'after the start: said')
 end
+-- AdvancedIA Beta 1.63 (règle F1) : un arrêt sous neutralisation compte avant l'ouverture de la fenêtre ; pitDue le dit
+-- en « pending » à partir de la 1.63 seulement (avant : toujours 0, l'arrêt reste dû).
+function T.stop_counted_under_neutralisation_before_window()
+ local L=require('src/link')
+ local d={pitState='pending',pitWaived=false,mandatoryStops=1,pitDue=0,pitCsp=false,pitPosition=0.1,pitOpen=0.42,pitClose=0.58}
+ local F={laps=20,timed=false,timeLeft=0}
+ local function link(rel) return {remoteRelease=rel} end
+ check(L.owedBeforeWindow(link('Beta 1.62'),d)==true,'before 1.63: pitDue 0 in pending means nothing, the stop is due')
+ check(L.owedBeforeWindow(link(''),d)==true,'unknown release: the stop is due')
+ check(L.owedBeforeWindow(link('Beta 1.63'),d)==false,'1.63, pitDue 0: already counted')
+ d.pitDue=1
+ check(L.owedBeforeWindow(link('Beta 1.63'),d)==true and L.owedBeforeWindow(link('Beta 2.0'),d)==true,'1.63 and later, pitDue 1: due')
+ d.pitDue=0
+ local owed=St.rules(d,3,20,100,F,0,0,0,L.owedBeforeWindow(link('Beta 1.63'),d))
+ check(owed==0,'counted under neutralisation: nothing owed, got '..owed)
+ owed=St.rules(d,3,20,100,F,0,0,0,L.owedBeforeWindow(link('Beta 1.62'),d))
+ check(owed==1,'older AdvancedIA: still owed, got '..owed)
+ owed=St.rules(d,3,20,100,F,0)
+ check(owed==1,'no flag given: owed as before, got '..owed)
+end
 return T

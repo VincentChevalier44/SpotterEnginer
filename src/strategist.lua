@@ -61,7 +61,8 @@ function M.windowStops(t,d)
  return t.winStops
 end
 -- Arrêts obligatoires encore dus et fenêtre (tours), d'après les règles d'AdvancedIA.
--- Arrêts encore dus : avant la fenêtre, tous (un arrêt fait avant ne compte pas) ; pendant, le signal d'AdvancedIA
+-- Arrêts encore dus : avant la fenêtre, tous (un arrêt fait avant ne compte pas), sauf un arrêt déjà compté sous
+-- neutralisation (AdvancedIA Beta 1.63, voir Link.owedBeforeWindow) ; pendant, le signal d'AdvancedIA
 -- (pitDue : 0 ou 1) et, à plusieurs arrêts obligatoires, ceux qui restent (made : arrêts du joueur vus dans la fenêtre,
 -- M.windowStops ; inconnu : le signal seul) ; après, aucun. Fenêtre en tours du joueur : AdvancedIA compte l'arrêt à
 -- l'arrivée à l'emplacement, sur les tours ENTIERS du leader (ou le temps, course chronométrée ou fenêtre de CSP).
@@ -69,10 +70,10 @@ end
 -- fermeture avec 0,3 tour de marge. frac : part du tour en cours déjà faite (temps et CSP : l'avancement est lu
 -- maintenant, pas au début du tour).
 local BOX=0.1
-local function rules(d,done,total,pace,F,behind,frac,made)
+local function rules(d,done,total,pace,F,behind,frac,made,before)
  if not d or d.pitState=='off' or d.pitWaived or d.mandatoryStops<=0 then return 0,0,total end
  local owed=0
- if d.pitState=='pending' then owed=d.mandatoryStops
+ if d.pitState=='pending' then owed=before~=false and d.mandatoryStops or 0
  elseif d.pitState=='open' and d.pitDue>0 then owed=made and math.max(d.pitDue,d.mandatoryStops-made) or d.pitDue end
  local p=math.max(1,pace or 100)
  local from=done+(frac or 0)
@@ -136,6 +137,11 @@ M.ready=ready
 -- carburant), le même pour l'ajustement du temps de base et pour le modèle (sinon le temps cible est faussé).
 local function fuelEffect(F,cfg) if F.fuelRate==0 or F.me.fuel<=0 then return 0 end return cfg.fuelK end
 M.fuelEffect=fuelEffect
+-- Consommation par tour avant toute mesure (une seule règle pour le modèle, la radio et les overlays) : celle de SetupLab
+-- (1.3.9, t.setupFpl, posée par l'ingénieur : setup de course, clé acceptée), sinon celle d'AC, sinon nil.
+function M.baseFuel(t,F)
+ return t.setupFpl or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
+end
 local function solve(t,ctx)
  local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]; local d=ctx.link.d
  local p=pace(t,ctx)
@@ -143,7 +149,7 @@ local function solve(t,ctx)
  local car=t.car or NONE
  local carIn={tank=F.me.maxFuel>0 and F.me.maxFuel or car.tank,fuel=F.me.fuel,tyreChange=car.tyreChange,fuelRate=car.fuelRate,
   curves=car.curves,km0F=(F.me.tyres[1].vkm+F.me.tyres[2].vkm)*0.5,km0R=(F.me.tyres[3].vkm+F.me.tyres[4].vkm)*0.5,
-  fuelPerLap=F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC or nil,minPit=d and d.minPitTime or 0}
+  fuelPerLap=M.baseFuel(t,F),minPit=d and d.minPitTime or 0}
  -- Perte de voie estimée sans mesure : longueur de voie inconnue -> réglage.
  local m=SD.model(t.data,carIn,cfg,p,fuelEffect(F,cfg))
  -- Sans consommation (réglage d'AC, voiture sans carburant) : le carburant ne limite rien (jamais de plan sur la
@@ -156,7 +162,7 @@ local function solve(t,ctx)
  m.fuel=m.fuel+frac*m.fuelPerLap; m.km0F=math.max(0,m.km0F-frac*(m.kmF or 0)); m.km0R=math.max(0,m.km0R-frac*(m.kmR or 0))
  local done=me.laps
  local total=totalLaps(F,me,p,t.overLap)
- local owed,open,close=rules(d,done,total,p,F,behindLeader(F,me),(me.spline or 0)%1,t.winStops)
+ local owed,open,close=rules(d,done,total,p,F,behindLeader(F,me),(me.spline or 0)%1,t.winStops,Link.owedBeforeWindow(ctx.link,d))
  local race={done=done,total=total,mandatory=owed,windowOpen=open,windowClose=close}
  -- Rivaux pour la ressortie : progression, rythme, arrêt prévu par AdvancedIA.
  local rivals={}

@@ -7,7 +7,15 @@
 local C={}
 C.languages={'FR','EN'}
 -- Sous-dossiers des clips dans vox/<LANGUE> (lus par src/port.lua, générés par tools/generer_voix.py).
-C.subfolders={'','num/','sec/','pos/'}
+C.subfolders={'','num/','sec/','pos/','F/','F/num/','F/sec/','F/pos/'}
+-- Voix du spotter (1.3.9, choix du pilote : voix féminine, Denise en français, Jenny en anglais ; l'ingénieur garde
+-- la voix masculine). C.spotterOnly : clips dits seulement par le spotter, en voix féminine à leur place. C.shared :
+-- clips dits par les deux rôles (et mots des nombres), en voix masculine à leur place et féminine dans F/ ; nombres,
+-- durées et positions aussi (F/num, F/sec, F/pos). Le spotter prend la version de F/ quand elle existe (src/say.lua).
+C.femaleDir='F/'
+-- Denise et non Vivienne (multilingue) : Vivienne lisait en anglais les nombres et les mots courts (« 7 » : « seven »,
+-- constaté en jeu par le pilote le 14/11/2026, même avec la langue française déclarée).
+C.femaleVoices={FR='fr-FR-DeniseNeural',EN='en-US-JennyNeural'}
 -- Nombres dits de 0 à C.maxNumber (num/ ; jusqu'à C.maxSpoken avec le clip « cent »), durées de 0 à C.maxTenths
 -- dixièmes de seconde (sec/).
 C.maxNumber=99
@@ -284,6 +292,31 @@ local list={
  {'blueClass',231,'231_classe_plus_rapide',"Classe plus rapide derrière, garde ta ligne et laisse-la passer.",'231_faster_class',"Faster class behind, hold your line and let it through."},
  {'crossWet',232,'232_passage_pneus_pluie',"Passage aux pneus pluie dans",'232_rain_tyres_in',"Rain tyres in"},
  {'crossDry',233,'233_retour_pneus_secs',"Retour aux pneus secs dans",'233_slicks_in',"Back to slicks in"},
+ -- SetupLab (1.3.9, app facultative, src/setuplab.lua) : verdict des tours d'essai, groupe de réglages changé, version prête.
+ {'setupBetter',234,'234_reglage_plus_rapide',"Le nouveau réglage est plus rapide, de",'234_setup_faster',"The new setup is faster, by"},
+ {'setupWorse',235,'235_reglage_plus_lent',"Le nouveau réglage est plus lent, de",'235_setup_slower',"The new setup is slower, by"},
+ {'setupSame',236,'236_reglage_pareil',"Pas de différence nette avec le nouveau réglage.",'236_setup_same',"No clear difference with the new setup."},
+ {'setupReady',237,'237_version_prete',"Nouvelle version du setup prête, à essayer au stand.",'237_setup_ready',"New setup version ready, try it in the pits."},
+ {'setupAero',238,'238_principal_aero',"Changement principal : l'aéro.",'238_main_aero',"Main change: aero."},
+ {'setupSprings',239,'239_principal_ressorts',"Changement principal : les ressorts.",'239_main_springs',"Main change: springs."},
+ {'setupDampers',240,'240_principal_amortisseurs',"Changement principal : les amortisseurs.",'240_main_dampers',"Main change: dampers."},
+ {'setupArb',241,'241_principal_barres',"Changement principal : les barres antiroulis.",'241_main_arb',"Main change: anti-roll bars."},
+ {'setupHeight',242,'242_principal_hauteur',"Changement principal : la hauteur de caisse.",'242_main_height',"Main change: ride height."},
+ {'setupAlignment',243,'243_principal_geometrie',"Changement principal : la géométrie.",'243_main_alignment',"Main change: alignment."},
+ {'setupPressure',244,'244_principal_pressions',"Changement principal : les pressions des pneus.",'244_main_pressures',"Main change: tyre pressures."},
+ {'setupDiff',245,'245_principal_differentiel',"Changement principal : le différentiel.",'245_main_diff',"Main change: differential."},
+ {'setupBrakes',246,'246_principal_freins',"Changement principal : les freins.",'246_main_brakes',"Main change: brakes."},
+ {'setupGears',247,'247_principal_rapports',"Changement principal : les rapports de boîte.",'247_main_gears',"Main change: gear ratios."},
+ {'setupFuel',248,'248_principal_carburant',"Changement principal : le carburant.",'248_main_fuel',"Main change: fuel load."},
+ -- Arrêt obligatoire levé en course trop courte (AdvancedIA Beta 1.63).
+ {'pitShort',249,'249_course_trop_courte',"Course trop courte, pas d'arrêt obligatoire.",'249_race_too_short',"Race too short, no mandatory stop."},
+ -- Jaune d'avertissement (AdvancedIA Beta 1.63) : voiture lente au bord, dépassement permis.
+ {'slowWarn',250,'250_jaune_avertissement',"Jaune d'avertissement, voiture lente au bord de la piste. Prudence, dépassement permis.",'250_warning_yellow',"Warning yellow, slow car on the edge of the track. Take care, overtaking allowed."},
+ -- Course sprint (AdvancedIA 1.64, 100 km au plus) : arrêt obligatoire levé.
+ {'pitSprint',251,'251_course_sprint',"Course sprint, pas d'arrêt obligatoire.",'251_sprint_race',"Sprint race, no mandatory stop."},
+ -- Départ interrompu (AdvancedIA 1.64) : un tour de plus, puis départ arrêté ou lancé.
+ {'startDelayed',252,'252_depart_interrompu',"Départ interrompu, on refait un tour. Nouveau départ arrêté ensuite.",'252_start_aborted',"Start aborted, one more lap. Then a new standing start."},
+ {'startDelayedRoll',253,'253_depart_interrompu_lance',"Départ interrompu, on refait un tour. Départ lancé ensuite.",'253_start_aborted_rolling',"Start aborted, one more lap. Then a rolling start."},
 }
 -- Précisions écrites seulement sur la radio (jamais dites), par langue : format string.format (src/say.lua, Say.note).
 C.notes={
@@ -298,6 +331,26 @@ C.notes={
  debriefBest={FR='(meilleur tour %s)',EN='(best lap %s)'},
  debriefPassed={FR='(dépassé %d fois)',EN='(passed %d times)'},
 }
+C.spotterOnly={
+ 'green','yellow','yellow2','slippery','sc','vsc','rs','ss','blue','blackWhite','blackOrange','black','chequered',
+ 'deltaNeg','deltaPos','giveBack','penaltyThrottle','flash','fasterBehind','stoppedAhead','aiMistake','vscEnding',
+ 'scIn','pitClosing','pitLaneClosed','stintLimit','drsOn','drsOff','fcy','carLeft','carRight','threeWide','clearLeft',
+ 'clearRight','clear','stillThere','pitExitClear','pitExitTraffic','backmarker','gapAhead','gapBehind','rivalPenalty',
+ 'wordAhead','wordBehind','trackCut','sessionResume','redRestartSc','redRestartVsc','redRestartFcy','penaltyDelta',
+ 'penaltyPass','penaltyRed','penaltyStop','penaltyJump','drsIn','drsEnabled','trackWet','trackDry','pitWaived',
+ 'standingPit','formationLap','lightsOn','go','jumpStart','scCall','driveThrough','penaltyPits','lastLap',
+ 'giveBackDone','gridPlaced','gridPassed','aiDq','andBehind','zoneGreen','lastWarning','pitCompound','pitPlanSame',
+ 'pitNotCounted','pitValidated','restartPlace','behindSc','restartRetake','fastCar','raceDone','clear_b',
+ 'fasterBehind_b','backmarker_b','gapStable','pullingAway','escaping','clearBehind','spinAhead','wrongWay',
+ 'stoppedAhead_b','onLeft','onRight','onMiddle','offTrack','passLeft','passRight','tangleAhead','incomingLeft',
+ 'incomingRight','clearPassed','formationRoll','blueAdvise','blueClass','pitShort','slowWarn','pitSprint',
+ 'startDelayed','startDelayedRoll',}
+C.shared={
+ 'red','white','pitOpen','closing','hesClosing','boxThisLap','tyresCold','tyresHot','brakesHot','laps','lastDefend',
+ 'lastSafe','closing_b','closing_c','hesClosing_b','hesClosing_c','inSecond','inSecond_b','heInSecond','heInSecond_b',
+ 'contact','wallHit','damageNone','damageLight','damageMedium','damageHeavy','damageSuspension','puncture','spunYou',
+ 'spunClear','waitTraffic','goNow','rejoinCareful','youWrongWay','stoppedYou','trackLimits','seconds','point',
+ 'secondOne','lapOne','hundred',}
 C.clips={}
 C.order={}
 -- Groupes de variantes (1.3.0) : clip de base, puis ses variantes, dans l'ordre du catalogue. Tons connus.
@@ -315,6 +368,9 @@ for k=1,#list do
   g[#g+1]=r[1]
  end
 end
+C.isSpotterOnly={}; C.isShared={}
+for _,id in ipairs(C.spotterOnly) do assert(C.clips[id],'clip du spotter inconnu : '..id); C.isSpotterOnly[id]=true end
+for _,id in ipairs(C.shared) do assert(C.clips[id] and not C.isSpotterOnly[id],'clip commun inconnu ou en double : '..id); C.isShared[id]=true end
 -- Nombres 0 à C.maxNumber (dits « un », « deux »… dans la langue) : vox/<LANGUE>/num/NN.wav.
 local unitsFR={'zéro','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize'}
 local tensFR={[2]='vingt',[3]='trente',[4]='quarante',[5]='cinquante',[6]='soixante'}
@@ -358,7 +414,7 @@ C.hot={'carLeft','carRight','threeWide','clearLeft','clearRight','clear','clear_
  'goNow','spunYou','rejoinCareful','deltaNeg','blue','point'}
 for _,id in ipairs(C.hot) do assert(C.clips[id],'clip préchargé inconnu : '..id) end
 -- Nombre de fichiers attendus dans vox (toutes langues) : annonces, nombres, durées, positions.
-function C.fileCount() return (#C.order+C.maxNumber+1+C.maxTenths+1+C.maxPosition)*#C.languages end
+function C.fileCount() return (#C.order+#C.shared+2*(C.maxNumber+1+C.maxTenths+1+C.maxPosition))*#C.languages end
 -- Chaque fichier attendu (« FR/01_vert.wav », « EN/num/07.wav »…), donné à fn : clips présents (src/port.lua).
 function C.eachFile(fn)
  for _,lang in ipairs(C.languages) do
@@ -366,6 +422,11 @@ function C.eachFile(fn)
   for n=0,C.maxNumber do fn(lang..'/'..C.numberFile(n)) end
   for n=0,C.maxTenths do fn(lang..'/'..C.secondsFile(n)) end
   for n=1,C.maxPosition do fn(lang..'/'..C.positionFile(n)) end
+  -- Voix féminine du spotter : clips communs, nombres, durées, positions.
+  for k=1,#C.shared do fn(lang..'/'..C.femaleDir..C.clips[C.shared[k]][lang]) end
+  for n=0,C.maxNumber do fn(lang..'/'..C.femaleDir..C.numberFile(n)) end
+  for n=0,C.maxTenths do fn(lang..'/'..C.femaleDir..C.secondsFile(n)) end
+  for n=1,C.maxPosition do fn(lang..'/'..C.femaleDir..C.positionFile(n)) end
  end
 end
 return C

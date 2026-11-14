@@ -18,3 +18,5 @@ Thumbs.db
 desktop.ini
 .DS_Store
 .env
+# Notice interactive : sources et site publiés à part (branche gh-pages), jamais dans la branche principale
+Notice-SpotterEnginer/

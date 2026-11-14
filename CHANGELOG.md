@@ -2,6 +2,69 @@
 
 All notable changes to SpotterEnginer. Newest first. SpotterEnginer requires AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
+## Beta 2.0.0 — 14 November 2026
+
+SpotterEnginer moves to Beta 2.0.0 together with AdvancedIA Beta 2.0.0: same bridge (v2), released the same day.
+
+**Requires AdvancedIA Beta 2.0.0 or later (bridge v2).** Earlier AdvancedIA versions are refused by the update, which asks to update AdvancedIA first. Publish AdvancedIA Beta 2.0.0 first. SetupLab is optional.
+
+### Changed: bridge v2 (AdvancedIA Beta 2.0.0)
+- The bridge moves to version 2, under the new shared-memory key `ACAdvancedIA.Bridge.Data.v2`, with the layout copied byte for byte from AdvancedIA. New fields:
+  - per car: `retired` (AI retired after being recovered to its pit box) and `lastReason` (reason of its last penalty);
+  - global: `trackWarnings` and `serveLaps`.
+- When the camera watches a retired AI car, the Strategy overlay shows RETIRED. It also shows that car's last penalty with its reason.
+
+### New: the engineer relays SetupLab (optional)
+- When SetupLab is installed, the engineer gives SetupLab's verdict on its trial laps in practice and qualifying: faster or slower with the gap and the main setting changed, or no clear difference. It says nothing while SetupLab still waits for laps, never in a race, and in qualifying only at the pit entry. It also says when a new setup version is ready to try in the pits.
+- Before its first fuel measurement, the engineer starts from SetupLab's planned consumption (race setup) instead of AC's.
+- Needs SetupLab 1.5.12 or later (key `SetupLab.state`). Without SetupLab nothing changes: the SetupLab section only shows in the Engineer tab when SetupLab is installed.
+
+### New: with SuperHUD (optional)
+- When SuperHUD 1.9.6 or later is installed, the spotter leaves the side by side calls to SuperHUD's sound radar while its alerts are on, and takes them back within 3 s when they stop. The overlays in automatic position no longer cover SuperHUD's blocks on the same desktop; overlays you placed yourself never move. Two settings, shown only with SuperHUD installed. Without SuperHUD nothing changes.
+
+### New: VSC end countdown
+- When AdvancedIA ends a VSC, the spotter still says "VSC ending in 10 seconds". It then counts down the last seconds, "3, 2, 1", and says "Go, go, go!" at the restart instead of the full green flag call. Setting **VSC end countdown** (on), group **Flags and neutralisations**.
+
+### Fixed
+- With AdvancedIA Beta 2.0.0 (F1 rules), a mandatory stop made under a VSC, an FCY or a Safety Car before the window opens counts. The engineer now drops that stop from its plan and its reminders at once. Before, it kept planning the stop until the window opened. Older AdvancedIA versions keep the old behaviour.
+- With AdvancedIA Beta 2.0.0, a lifted mandatory stop is called with its reason, taken from AdvancedIA's announcement: wet race, race too short ("Race too short, no mandatory stop") or sprint race of 100 km or less ("Sprint race, no mandatory stop", AdvancedIA Beta 2.0.0, only when no mandatory stop is set in AdvancedIA: a stop you set is never called lifted for a sprint). Before, every lifted stop was called a wet race. The engineer plans with the pit window AdvancedIA publishes, which it shortens in short races so that it closes before the last lap.
+
+### New: a female voice for the spotter
+- The spotter now speaks with a female voice (Denise in French, Jenny in English) and the engineer keeps his male voice, so you know at once who is talking. The spotter's own calls are recorded again in place; the calls both roles use, and the numbers, durations and positions, get a female copy in `vox/<language>/F/`. If a female file is missing, the male one is played, never silence.
+
+### New: radio of the watched car
+- Setting **Radio of the watched car** (on), group **Traffic**. When you are not driving (retired, AI at the wheel, car stopped in the pit lane or in the box for more than 10 s, for example after a back-to-the-pits penalty) and the camera has followed another car for 2 s, you hear that car's radio:
+  - its spotter: side by side, gaps, position, and the flags that concern everyone (SC, VSC, FCY, red flag, restart);
+  - its engineer: AdvancedIA's call to the pits for that car, tyres too hot or too cold, hot brakes.
+- Never while you drive: you hear only your own radio. A normal pit stop does not count as parked.
+- Nothing about your car is said on that radio: no delta, penalties, blue flags or your engineer's plan. Each written line starts with the car's name and CAMERA.
+- The radio queue is emptied at each camera change. Back at the wheel, nothing that changed in the meantime is repeated.
+- Nothing is said after the chequered flag, because AdvancedIA suspends its bridge there.
+
+### New: overlays redone like SuperHUD
+- **Engineer and Strategy follow the camera** (setting **Follow the camera**, on, kept per desktop), as SuperHUD does. When the camera watches another car, its name and a CAMERA tag head both overlays.
+  - Engineer shows that car's fuel, consumption measured lap after lap, tyres, brakes, damage and pace.
+  - Strategy shows the plan AdvancedIA publishes for that car: stops made and planned, next stop, reason, limit, stint, failure, call to the pits.
+  - Online, a car without physics data shows "Partial data" instead of zeros.
+  - The radio always stays about your car.
+- **Engineer**: tyre cards with core temperature, inner, middle and outer surface, life, kilometres and defects (graining, blisters, flat spot, puncture); tyre age; damage when there is some; average of the last three laps and best lap.
+- **Strategy**: a race timeline with the laps done, the window, the planned stop lap and the current lap.
+- **Look**: Racing 26 panel with the top-right corner cut, accent bar on the left (the **Accent** setting now draws this bar instead of the top band), small title with the race state on the right over a rule, in the app's violet.
+- **Move and resize**: size from 0.35x to 4x (was 0.5x to 2.5x); the handles keep a fixed size on screen, so they can still be grabbed at small sizes; two-stroke corner handle and top accent rule while unlocked; size in pixels shown while resizing.
+- **Home page**: one button locks or unlocks all overlays, as in SuperHUD, with the state shown next to it.
+- **Accent bar**: hidden by default, as in SuperHUD. Saved settings are converted once, on every desktop. Turn the **Accent** setting on again to show it.
+- **Settings window in game**: a small cross next to the main switch closes it, as in SuperHUD. The overlays stay on screen and the apps taskbar opens the window again.
+
+### New: settings window in game
+- The settings are now also in the CSP apps taskbar while driving, in a window named **SpotterEnginer - Config**, as SuperHUD does. The **SpotterEnginer** window stays in the pits and pause menu.
+- On each app desktop, the in-game window keeps its own state: open or closed, position and size. On a desktop never used, it starts closed.
+- Each window reads the current desktop before it draws. Before, an overlay setting changed right after switching desktops could be saved to the desktop you had just left.
+- When CSP cannot tell the current desktop, overlays are suspended and their settings refused, as in SuperHUD, so another desktop is never changed. Before, desktop 1 was used. Voice settings still change.
+
+### New: AdvancedIA Beta 2.0.0 calls
+- Warning yellow (AdvancedIA Beta 2.0.0), a slow car held on the edge of the track: "Warning yellow, slow car on the edge of the track. Take care, overtaking allowed." It is never called a no-overtaking yellow.
+- Aborted start (AdvancedIA Beta 2.0.0), after an incident on the grid or during the lights: "Start aborted, one more lap", then a new standing start or a rolling start. A start lights call still waiting is dropped.
+
 ## 1.3.8 — 12 November 2026
 
 Requires AdvancedIA Beta 1.46 or later (bridge v1), unchanged. Tested with AdvancedIA Beta 1.62.

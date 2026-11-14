@@ -113,6 +113,11 @@ def main():
         lua.execute("HOST.ops={}; HOST.windowIds={}")
         lua.execute("HOST.space=vec2(1920,1080); script.SPE__HUD()")
         render(host.ops, 1920, 1080, OUT / f'overlays_{lang}.png', bg=(70, 80, 70, 255))
+        # Caméra sur la voiture 3 (overlays Ingénieur et Stratégie de la voiture suivie).
+        lua.execute("HOST.sim.focusedCar=2; HOST.clock=HOST.clock+1/30; script.update(1/30)")
+        lua.execute("HOST.ops={}; HOST.windowIds={}; HOST.space=vec2(1920,1080); script.SPE__HUD()")
+        render(host.ops, 1920, 1080, OUT / f'overlays_camera_{lang}.png', bg=(70, 80, 70, 255))
+        lua.execute("HOST.sim.focusedCar=nil; HOST.clock=HOST.clock+1/30; script.update(1/30)")
     print('aperçus dans', OUT)
 
 

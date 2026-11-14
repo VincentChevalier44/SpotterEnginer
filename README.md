@@ -4,6 +4,10 @@
 
 **Your crew, every lap: a voice spotter and race engineer for Assetto Corsa, built on AdvancedIA.**
 
+📖 **Interactive user guide:** https://vincentchevalier44.github.io/SpotterEnginer/
+
+❤️ **Support my work:** SpotterEnginer is free and stays free. If you enjoy it and want to give me a little boost, you can support me on Patreon: [WHK Racing](https://www.patreon.com/cw/WHKRacing). Thank you!
+
 SpotterEnginer is a Lua app for Assetto Corsa running on Custom Shaders Patch (CSP). It talks to you on the radio, in French or in English, with two separate roles:
 
 - a **spotter**: race control, traffic and the cars around you;
@@ -11,10 +15,10 @@ SpotterEnginer is a Lua app for Assetto Corsa running on Custom Shaders Patch (C
 
 It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**.
 
-> **Requires AdvancedIA (Beta 1.46 or later) — not a standalone app.**
+> **Requires AdvancedIA (Beta 2.0.0 or later) — not a standalone app.**
 > SpotterEnginer reads the race state decided by [AdvancedIA](https://github.com/VincentChevalier44/AdvancedIA) (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops). Without AdvancedIA installed **and** running, it says nothing.
 
-- **Current version:** 1.3.8. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
+- **Current version:** Beta 2.0.0. See [CHANGELOG.md](CHANGELOG.md) and [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Voices:** French and English.
 - **Interface:** French and English (setting **Language**, which sets the voice and the interface together). French on a first installation.
 - **Author:** Vincent Chevalier / LHK Informatique.
@@ -51,6 +55,8 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
   - [Reactivity](#reactivity)
   - [Message pacing](#message-pacing)
   - [Voices and radio](#voices-and-radio)
+  - [With SetupLab (optional)](#with-setuplab-optional)
+  - [With SuperHUD (optional)](#with-superhud-optional)
 - [Settings overview](#settings-overview)
   - [Settings reference](#settings-reference)
 - [Honest limitations](#honest-limitations)
@@ -58,13 +64,14 @@ It also draws three in-game overlays: **Spotter**, **Engineer** and **Strategy**
 - [Session log](#session-log)
 - [Troubleshooting](#troubleshooting)
 - [Development and tests](#development-and-tests)
+- [Support](#support)
 - [Changelog, license and credits](#changelog-license-and-credits)
 
 ## Requirements
 
 - **Assetto Corsa** for PC.
 - **Custom Shaders Patch 0.3.2 or later**, with Lua apps working (the app lives in `assettocorsa/apps/lua/`).
-- **AdvancedIA Beta 1.46 or later**, installed in `assettocorsa/apps/lua/AdvancedIA/` (or in the old `apps/lua/ACAdvancedIA/` folder for installations not yet migrated) and running. Some calls need a more recent AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
+- **AdvancedIA Beta 2.0.0 or later** (bridge v2), installed in `assettocorsa/apps/lua/AdvancedIA/` (or in the old `apps/lua/ACAdvancedIA/` folder for installations not yet migrated) and running. Some calls need a more recent AdvancedIA: see [COMPATIBILITY.md](COMPATIBILITY.md).
 - **Offline sessions only.** AdvancedIA does nothing online, so SpotterEnginer stays silent there too.
 
 ## Installation
@@ -159,7 +166,7 @@ SpotterEnginer only works with AdvancedIA, so it never installs a version that w
 | AdvancedIA newer than the package knows | Refused: *The installed AdvancedIA publishes a newer bridge than x knows: wait for a SpotterEnginer version that supports it.* |
 | AdvancedIA not installed | Refused: *AdvancedIA not found: SpotterEnginer only works with it. Install AdvancedIA, then try again.* |
 
-The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.8). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
+The AdvancedIA version a package needs comes from its manifest (`REQUIRES_ADVANCEDIA`, `Beta 1.46` for 1.1.0 to 1.3.8, `Beta 2.0.0` from SpotterEnginer Beta 2.0.0). A bridge change always ships in both apps together: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ### Updating by hand
 
@@ -491,7 +498,7 @@ So that you are never flooded with messages (tab **Radio & voice**, section **Me
 
 ### Voices and radio
 
-The clips are in `vox/FR` and `vox/EN`: 231 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language, 984 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
+The clips are in `vox/FR` and `vox/EN`: 251 calls (23 of them alternative wordings), 100 numbers (0 to 99; 100 to 999 are said with the *"hundred"* clip), 100 durations (0.0 to 9.9 s) and 61 positions (*"You're P1."* to *"You're P61."*) per language. **Two voices** (Beta 2.0.0): the engineer keeps the male voice (Henri in French, Guy in English); the spotter speaks with a female voice (Denise in French, Jenny in English). The spotter's own 112 calls are recorded in the female voice in place; the 41 calls both roles use, and the numbers, durations and positions, also have a female copy in `vox/FR/F` and `vox/EN/F`. 1628 files in all. Numbers 114 and 193 are unused. These numbers and bounds are defined once, in `src/catalog.lua`. The **Home** tab shows how many are present.
 
 - **Agreement**: the unit follows the value said, singular below 2 in French (« 0,5 tour », « 1,2 seconde ») and for 1 only in English ("1 lap", "0.5 laps"); "one minute" has its own clip (feminine in French). The text written on the radio is built from the same clips as the voice: it says exactly what is heard ("1 lap", never "1.0 laps").
 - **Punctuation**: when a sentence starts with a capital letter after a number or another sentence, a full stop separates them in writing (*"Gap ahead: 1.2 seconds. You're closing."*).
@@ -512,6 +519,22 @@ The clips are in `vox/FR` and `vox/EN`: 231 calls (23 of them alternative wordin
 - **Varied wording and tone** (new in 1.3.0, setting **Varied wording**, tab **Radio & voice**): the most frequent calls have two to four wordings (*"Nice job."*, *"Great move, well done!"*, *"Nice one, keep it going!"*…), never the same one twice in a row. Each clip has a tone (calm, urgent, motivating, disappointed) chosen by the situation: urgent for hazards and emergencies, motivating for a place gained or an attack, disappointed but supportive for a place lost or damage, calm for managing a gap. The tone is in the wording and in the delivery (edge-tts speed and pitch: urgent +14 % and +4 Hz, motivating +7 % and +3 Hz, calm −4 % and −2 Hz, disappointed −6 % and −4 Hz), with the same voice; edge-tts offers no emotional styles for these voices. The same instruction said with another wording still counts as a repeat (180 s).
 - **A missing clip blocks nothing**: the call is then written on the overlay radio, preceded by the radio tone if it is set.
 - **Positions in French**: edge-tts mispronounces « P7 » in French. The spoken text is therefore written « Pé 7 »; the text written on the radio stays « Tu es P7. ».
+
+### With SetupLab (optional)
+
+SpotterEnginer needs AdvancedIA only. When [SetupLab](https://github.com/VincentChevalier44/SetupLab) is also installed (`apps/lua/SetupLab`), the engineer relays it; without SetupLab nothing of this appears, not even its settings section.
+
+- **Trial laps** (practice and qualifying only, never in a race): SetupLab's own verdict on the version being tried, against the version it started from: *"The new setup is faster, by 0.3 seconds. Main change: aero."*, *"slower"*, or *"No clear difference with the new setup."* Nothing while SetupLab still waits for laps. The exact gap is written on the radio. The main change is the group of settings SetupLab expects the most from, not a measured cause. In qualifying the verdict waits for the pit entry, never on a flying lap.
+- **New version ready**: *"New setup version ready, try it in the pits."*, once per version.
+- **Fuel**: before the engineer has measured a lap, it starts from SetupLab's planned consumption for a race setup instead of AC's; its own measurement then takes over.
+- Settings: Engineer tab, group **SetupLab**, shown only when SetupLab is installed. SetupLab publishes its state in the `SetupLab.state` key, read once its text belongs to the current session.
+
+### With SuperHUD (optional)
+
+When SuperHUD 1.9.6 or later is installed (`apps/lua/SuperHUD`), SpotterEnginer reads its `SuperHUD.state` key. Without SuperHUD, nothing of this appears, not even its settings.
+
+- **Sound radar**: while SuperHUD's radar sound alerts are on, the spotter no longer says car left, right, three wide or clear, so the alerts are not doubled. It takes over again as soon as SuperHUD turns them off or stops (3 s). Setting **Leave side by side to SuperHUD radar** (on), Spotter tab, group **Traffic and position**.
+- **No overlap**: overlays left in automatic position move up or down to the nearest free spot so they do not cover the blocks SuperHUD shows on the same desktop. A block hidden for a moment keeps its place for 2 minutes, so the overlays do not jump. An overlay you placed yourself never moves. Setting **Avoid SuperHUD blocks** (on), Overlays tab.
 
 ## Settings overview
 
@@ -538,7 +561,7 @@ Role switch **Spotter on** (traffic, position, race control). Group **Race contr
 
 | Section | Settings (default) |
 |---|---|
-| Flags and neutralisations (on) | Blue flags (on), AdvancedIA announcements on the radio (on) |
+| Flags and neutralisations (on) | Blue flags (on), VSC end countdown (on), AdvancedIA announcements on the radio (on) |
 | Delta to keep (on) | — |
 | DRS (**off**) | DRS by voice, on top of AdvancedIA's beep |
 | Penalties (on) | Player penalties (on), Track limits (on), Rival penalties (on) |
@@ -548,6 +571,7 @@ Group **Traffic and position**:
 | Section | Settings (default) |
 |---|---|
 | Side by side (on) | "Still there" (on), Swap left and right (off; only if sides are called the wrong way) |
+| SuperHUD, only with SuperHUD installed | Leave side by side to SuperHUD radar (on) |
 | Traffic (on) | Backmarkers ahead (on), Faster traffic behind (on), Hazards ahead (on), Anticipation (on), Flash understood (on) |
 | Emergencies (on) | — |
 | Pit exit (on) | — |
@@ -555,7 +579,7 @@ Group **Traffic and position**:
 
 #### Engineer tab
 
-Role switch **Engineer on** (pace, fuel, tyres, strategy). Groups **Race**, **Car** and **Conditions**:
+Role switch **Engineer on** (pace, fuel, tyres, strategy). Groups **Race**, **Car**, **Conditions**, and **SetupLab** when SetupLab is installed:
 
 | Section | Settings (default) |
 |---|---|
@@ -568,6 +592,7 @@ Role switch **Engineer on** (pace, fuel, tyres, strategy). Groups **Race**, **Ca
 | Damage (on) | — |
 | Weather and grip (on) | — |
 | Wind into braking (on) | Minimum wind (km/h) (15) [5–50] |
+| SetupLab (on), only with SetupLab installed | Trial lap verdict (on), New version ready (on) |
 
 #### Strategy tab
 
@@ -607,6 +632,7 @@ Group **All overlays**:
 | In-game editing (switch **In-game edit button**, on) | Button position X and Y (px) (AUTO: top centre); **Open in-game editing**, **Put the button back at the top centre** |
 | Common settings (switch **Overlays shown**, on) | Click-through (on), Hide in replays (on), Hide in the pit lane (off), Radio lines (4) [1–8], Message duration (s) (10) [3–30]; **Lock all** / **Unlock all**, **Make backgrounds transparent** / **Restore backgrounds** |
 | Keyboard shortcuts (on) | Ctrl+Alt+J, Ctrl+Alt+K, Ctrl+Alt+M |
+| SuperHUD, only with SuperHUD installed | Avoid SuperHUD blocks (on) |
 
 Group **Each overlay**: **Spotter overlay**, **Engineer overlay**, **Strategy overlay**, each for the current desktop:
 
@@ -654,7 +680,7 @@ Everything was tested outside the game, on a simulated CSP host. The in-app upda
 4. **Link**: the chip switches to **Connected to AdvancedIA** when it runs, and to **AdvancedIA suspended · paused** in pause.
 5. **Car sound**: it drops during the radio and comes back afterwards.
 6. **Overlays**: moving the mouse while driving shows the **OVERLAYS** button; its panel opens, overlays can be dragged and resized, **Done** locks them; the shortcuts work. On an AZERTY keyboard, AltGr counts as Ctrl+Alt.
-7. **Overlaps**: the automatic positions may cover SuperHUD blocks; move the overlays if needed.
+7. **Overlaps**: with SuperHUD 1.9.6 or later, the overlays in automatic position avoid its blocks; with an older SuperHUD they may cover them, so move the overlays if needed.
 8. **Desktops**: with the **Next desktop** command, the overlays of desktop 1 disappear, desktop 2 is empty until it is set up, and the header of the settings window shows the right desktop.
 9. **Level**: master volume at 170 % and car sound during the radio at 85 % by default (the driver's settings). If the voices stay covered, raise the volume up to 200 % and lower the car sound during the radio towards 40 to 60 %.
 10. **First laps**: no strategy call (window, optimal lap, box, undercut, fuel to the stop) before two clean laps; the opening of the regulatory window is said without an optimal lap.
@@ -709,6 +735,10 @@ The runner also checks that `src/bridge_layout.lua` is identical in both apps an
 `python tools/generer_voix.py` generates the voice clips (see [Voices and radio](#voices-and-radio)).
 
 Never change the app's files while the game is running: CSP reloads the app at once.
+
+## Support
+
+SpotterEnginer is a passion project, made in my spare time. It is free and will stay free, with every feature for everyone. If it makes your races more fun and you would like to help a little, you can support me on Patreon: **[WHK Racing](https://www.patreon.com/cw/WHKRacing)**. Reporting problems, sharing ideas or simply telling me you use it helps a lot too.
 
 ## Changelog, license and credits
 

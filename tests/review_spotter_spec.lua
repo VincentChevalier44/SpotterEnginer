@@ -473,4 +473,92 @@ function T.no_pit_calls_while_in_the_pits()
  d.pitState='open'; d.pitDue=1; at(ctx,2); Spotter.step(s,ctx)
  check(queued(v,'pitCall'),'on track: window call said')
 end
+-- 1.3.9 (demande du pilote) : fin de VSC décomptée « 3, 2, 1 », puis « Go » à la relance au lieu du vert complet.
+function T.vsc_end_countdown()
+ local function run(on)
+  local ctx,v=scene({})
+  ctx.cfg.vscCountdown=on
+  local s=Spotter.new(); local d=ctx.link.d
+  at(ctx,1); Spotter.step(s,ctx)
+  d.neutral=true; d.neutralMode='vsc'; at(ctx,2); Spotter.step(s,ctx)
+  d.ending=true; d.endingLeft=10; at(ctx,3); Spotter.step(s,ctx)
+  local said={}
+  local t=3
+  for left=9.75,0.25,-0.25 do
+   t=t+0.25; d.endingLeft=left; at(ctx,t); Spotter.step(s,ctx)
+   local q=take(v,'vscCount')
+   if q then said[#said+1]=q.text..'@'..left end
+  end
+  v.queue={}
+  d.neutral=false; d.ending=false; d.endingLeft=0; d.greenLeft=5; at(ctx,t+0.25); Spotter.step(s,ctx)
+  return said,queued(v,'restart')
+ end
+ local said,restart=run(true)
+ check(#said==3,'three numbers: '..table.concat(said,' '))
+ check(#said==3 and said[1]:match('^3@3') and said[2]:match('^2@2') and said[3]:match('^1@1'),'said as each second passes: '..table.concat(said,' '))
+ check(restart and restart.prio==1 and restart.text:match('Go'),'Go at the restart: '..tostring(restart and restart.text))
+ said,restart=run(false)
+ check(#said==0,'setting off: no countdown')
+ check(restart and restart.text:match('vert'),'setting off: full green flag as before: '..tostring(restart and restart.text))
+end
+-- Arrêt obligatoire levé : dit sur l'annonce d'AdvancedIA qui en donne la raison (1.63 et plus), sur le changement de
+-- pitWaived avant (course mouillée seulement).
+function T.mandatory_stop_lifted_reason()
+ local function run(release,kind,stops)
+  local ctx,v=scene({})
+  ctx.link.remoteRelease=release
+  local s=Spotter.new(); local d=ctx.link.d
+  at(ctx,1); Spotter.step(s,ctx)
+  d.pitWaived=true; d.pitState='off'
+  if kind then d.messageId=(d.messageId or 0)+1; d.messageKind=kind; d.messageValue=80; d.messageExtra=100 end
+  if stops then d.mandatoryStops=stops end
+  at(ctx,3); Spotter.step(s,ctx)
+  return queued(v,kind or 'pitWaived'),v
+ end
+ local q=run('Beta 1.64',nil)
+ check(q==nil,'1.64, waived without its message: nothing guessed')
+ q=run('Beta 1.64','pitSprint',0)
+ check(q and q.text:match('sprint'),'sprint race, no stop programmed: '..tostring(q and q.text))
+ local v
+ q,v=run('Beta 1.64','pitSprint',1)
+ local written=false
+ for _,e in ipairs(v.log or {}) do if e.text and e.text:lower():match('sprint') then written=true end end
+ for _,e in ipairs(v.queue) do if e.text and e.text:lower():match('sprint') then written=true end end
+ check(q==nil and not written,'stop programmed in AdvancedIA: never a sprint race, neither said nor written')
+ q=run('Beta 1.63','pitShort')
+ check(q and q.text:match('trop courte'),'race too short: '..tostring(q and q.text))
+ q=run('Beta 1.63','pitWaived')
+ check(q and q.text:match('mouillée'),'wet race: '..tostring(q and q.text))
+ q=run('Beta 1.62',nil)
+ check(q and q.text:match('mouillée'),'before 1.63: wet race on the flag: '..tostring(q and q.text))
+end
+-- AdvancedIA Beta 1.63 : jaune d'avertissement (voiture lente au bord) : dépassement permis, jamais interdit.
+function T.warning_yellow_overtaking_allowed()
+ local ctx,v=scene({})
+ local s=Spotter.new(); local d=ctx.link.d
+ at(ctx,1); Spotter.step(s,ctx)
+ d.yellow=true; d.panelDecided='slowWarn'; d.panelKind='slowWarn'; at(ctx,2); Spotter.step(s,ctx)
+ local q=queued(v,'panel:slowWarn')
+ check(q and q.text:match('dépassement permis'),'warning yellow said, overtaking allowed: '..tostring(q and q.text))
+ check(not queued(v,'zone'),'no yellow zone call (no overtaking)')
+end
+-- AdvancedIA 1.64 : départ interrompu, un tour de plus ; les feux encore en file sont abandonnés.
+function T.start_aborted()
+ local function run(extra)
+  local ctx,v=scene({})
+  local s=Spotter.new(); local d=ctx.link.d
+  at(ctx,1); Spotter.step(s,ctx)
+  d.standing='lights'; at(ctx,2); Spotter.step(s,ctx)
+  local lights=queued(v,'start')
+  d.standing='form'; d.messageId=(d.messageId or 0)+1; d.messageKind='startDelayed'; d.messageValue=1; d.messageExtra=extra
+  at(ctx,3); Spotter.step(s,ctx)
+  return lights,queued(v,'start'),queued(v,'startDelayed')
+ end
+ local lights,after,q=run(0)
+ check(lights~=nil,'lights queued first')
+ check(after==nil,'lights dropped at the abort')
+ check(q and q.text:match('arrêté'),'standing start next: '..tostring(q and q.text))
+ lights,after,q=run(1)
+ check(q and q.text:match('lancé'),'rolling start next: '..tostring(q and q.text))
+end
 return T

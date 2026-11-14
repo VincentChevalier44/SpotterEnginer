@@ -23,6 +23,7 @@ local function setup(withBridge)
  for _,rel in ipairs(VOX) do H.files[H.appsDir..'/SpotterEnginer/vox/'..rel]='mp3' end
  H.files[H.appsDir..'/SpotterEnginer/sounds/radio.wav']='wav'
  H.files[H.appsDir..'/SpotterEnginer/manifest.ini']=APP_MANIFEST
+ for k,v in pairs(H.extraFiles or {}) do H.files[k]=v end
  H.files[H.appsDir..'/SpotterEnginer/icon.png']='png'; H.images=0; H.windows=0; H.windowIds={}; H.audio={}; H.minEngine=1
  H.shared={}; H.played={}; H.logs={}; H.clock=0; H.texts={}; if not H.keepStorage then H.storage={} end; H.desktop=H.startDesktop or 0
  for k in pairs(script) do script[k]=nil end
@@ -116,7 +117,7 @@ local function race(withBridge,seconds,draw,flipTrack)
   local me=H.cars[0]; me.fuel=fuel
   local vkm=dist[0]/L*0.4
   for k=0,3 do me.wheels[k]={tyreCoreTemperature=82,tyreInsideTemperature=85,tyreMiddleTemperature=83,tyreOutsideTemperature=80,
-   tyreOptimumTemperature=80,tyrePressure=27,tyreWear=1,tyreVirtualKM=vkm,tyreGrain=0,tyreBlister=0,tyreFlatSpot=0,isBlown=false,tyreDirty=0,discTemperature=450,brakeTemperature=0} end
+   tyreOptimumTemperature=80,tyrePressure=27,tyreWear=0.08,tyreVirtualKM=vkm,tyreGrain=0,tyreBlister=0,tyreFlatSpot=0,isBlown=false,tyreDirty=0,discTemperature=450,brakeTemperature=0} end
   frame.player=1
   -- Point d'accroche des tests : état d'AdvancedIA modifié à cet instant (annonces, etc.).
   if H.onStep then H.onStep(now,e) end
@@ -143,7 +144,8 @@ function T.full_race_with_bridge()
  check(played('FR/07_SC.wav'),'SC called by voice')
  check(played('FR/26_sc_rentre_ce_tour.wav'),'SC in this lap')
  check(played('FR/01_vert.wav'),'green')
- check(played('FR/27_pit_window_open.wav'),'pit window open')
+ -- Fenêtre ouverte : clip commun, dit par le spotter (voix féminine, F/).
+ check(played('FR/F/27_pit_window_open.wav'),'pit window open (spotter, female voice)')
  check(texted('Connecté à AdvancedIA') or texted('CONNECTÉ À ADVANCEDIA'),'link chip drawn')
  check(texted('FENÊTRE') and texted('^T%d+') or texted('Aucun arrêt'),'strategy window drawn')
  check(texted('GAUCHE'),'spotter overlay sides')
@@ -359,6 +361,206 @@ function T.desktops_survive_a_restart()
  check(app.desktop==2 and app.desktopAvailable==false and app.cfg.strategyX==222,'unreadable desktop keeps the active one')
  H.desktop=0
 end
+-- Fenêtre de réglages en jeu (1.3.9, comme SuperHUD) : fenêtre CSP factice (ac.getAppWindows / ac.accessAppWindow).
+local function fakeWindows()
+ local w={open=true,pos=vec2(100,80),sz=vec2(860,640)}
+ local o={}
+ function o:valid() return true end
+ function o:visible() return w.open end
+ function o:setVisible(v) w.open=v; return self end
+ function o:position() return w.pos end
+ function o:size() return w.sz end
+ function o:move(p) w.pos=p; return self end
+ function o:resize(s) w.sz=s; return self end
+ ac.getAppWindows=function() return {{name='IMGUI_LUA_SpotterEnginer_game',title='SpotterEnginer - Config'}} end
+ ac.accessAppWindow=function(name) if name=='IMGUI_LUA_SpotterEnginer_game' then return o end return nil end
+ return w
+end
+local function noWindows() ac.getAppWindows=nil; ac.accessAppWindow=nil; require('src/port').forgetGameWindow() end
+-- Fenêtre dessinée sur un nouveau bureau avant update() : le réglage fait aussitôt va dans ce bureau.
+function T.game_window_edits_the_desktop_it_is_on()
+ race(true,10,false)
+ local app=SPE_TEST.app
+ app.set('spotterX',100)
+ H.desktop=1; H.space=vec2(860,640); script.SPE__GAME()
+ check(app.desktop==2,'game window reads the desktop before drawing: '..tostring(app.desktop))
+ app.set('spotterX',300)
+ H.desktop=0; script.SPE__GAME()
+ check(app.desktop==1 and app.cfg.spotterX==100,'desktop 1 untouched: '..app.cfg.spotterX)
+ H.desktop=1; script.SPE__MAIN()
+ check(app.desktop==2 and app.cfg.spotterX==300,'desktop 2 kept its change (pits window reads the desktop too)')
+ H.desktop=0
+end
+-- Ouverte ou fermée, place et taille : propres à chaque bureau, enregistrées.
+function T.game_window_state_per_desktop()
+ local w=fakeWindows()
+ race(true,10,false)
+ H.space=vec2(860,640); script.SPE__GAME()
+ H.desktop=1; H.clock=H.clock+1/30; script.update(1/30)
+ check(w.open==false,'desktop 2 never seen: settings window closed')
+ w.open=true; w.pos=vec2(500,300); script.SPE__GAME()
+ H.desktop=0; H.clock=H.clock+1/30; script.update(1/30)
+ check(w.open==true and w.pos.x==100 and w.pos.y==80,'desktop 1: open, its place back: '..w.pos.x..','..w.pos.y)
+ w.open=false; H.clock=H.clock+1/30; script.update(1/30)
+ H.desktop=1; H.clock=H.clock+1/30; script.update(1/30)
+ check(w.open==true and w.pos.x==500 and w.pos.y==300,'desktop 2: open, its place: '..w.pos.x)
+ H.desktop=0; H.clock=H.clock+1/30; script.update(1/30)
+ check(w.open==false,'desktop 1: closed as it was left')
+ for _=1,60 do H.clock=H.clock+1/30; script.update(1/30) end
+ local saved=JSON.parse(H.storage['spe:'].settings)
+ local g=saved.gameWindows
+ check(g and g['2'] and g['2'].x==500 and g['2'].open==true and g['1'].open==false and g['1'].x==100,'saved per desktop')
+ noWindows(); H.desktop=0
+end
+-- Croix de la fenêtre de réglages en jeu (comme SuperHUD) : ferme cette fenêtre seulement, jamais la fenêtre des stands.
+function T.game_window_close_cross()
+ local w=fakeWindows()
+ race(true,10,false)
+ local app=SPE_TEST.app
+ H.space=vec2(860,640)
+ H.clickId='##spe_close_window'; script.SPE__MAIN(); H.clickId=nil
+ check(w.open==true,'pits window: no cross')
+ H.clickId='##spe_close_window'; script.SPE__GAME(); H.clickId=nil
+ check(w.open==false,'game window: the cross closes it')
+ check(app.cfg.enabled==true,'the app stays on (overlays stay)')
+ H.clock=H.clock+1/30; script.update(1/30)
+ for _=1,60 do H.clock=H.clock+1/30; script.update(1/30) end
+ local g=JSON.parse(H.storage['spe:'].settings).gameWindows
+ check(g and g['1'] and g['1'].open==false,'closed on this desktop, saved')
+ noWindows()
+end
+-- Caméra sur une autre voiture (1.3.9) : la radio reste celle du joueur, annonce pour annonce.
+function T.radio_unchanged_when_watching_another_car()
+ local function spoken()
+  math.randomseed(7); race(true,260,false)
+  local out={}
+  for _,e in ipairs(SPE_TEST.app.voice.log) do if e.spoken then out[#out+1]=e.key..'|'..tostring(e.text) end end
+  return out,SPE_TEST.app
+ end
+ local own=spoken()
+ H.sim.focusedCar=2
+ local other,app=spoken()
+ H.sim.focusedCar=nil
+ check(app.F.focus==2 and not require('src/focus').subject(app.focus,app.F).own,'camera followed car 2')
+ check(#own>5 and #own==#other,'same number of spoken calls: '..#own..' / '..#other)
+ local same=true
+ for k=1,math.max(#own,#other) do if own[k]~=other[k] then same=false; check(false,'call '..k..' differs: '..tostring(own[k])..' / '..tostring(other[k])); break end end
+ check(same,'same radio, call for call')
+end
+-- Overlays Ingénieur et Stratégie de la voiture suivie par la caméra (1.3.9, comme SuperHUD) : nom et étiquette
+-- CAMÉRA, données partielles sans physique, plan publié par AdvancedIA pour elle ; réglage propre au bureau.
+function T.overlays_follow_the_camera_car()
+ race(true,30,false)
+ local app=SPE_TEST.app
+ app.set('strategyShow',true)
+ local function hud() H.texts={}; H.windowIds={}; script.SPE__HUD() end
+ hud()
+ check(texted('MOY%. 3 T') and texted('MEILLEUR'),'own car: pace with the 3-lap average and the best lap')
+ check(not texted('CAMÉRA'),'own car: no camera tag')
+ H.sim.focusedCar=2
+ H.clock=H.clock+1/30; script.update(1/30); hud()
+ check(texted('PILOTE 3') and texted('CAMÉRA'),'watched car: its name and the camera tag')
+ check(texted('Données partielles'),'watched car without physics: partial data, never 0 L')
+ check(texted('PLAN ADVANCEDIA'),'watched car: the plan AdvancedIA publishes for it')
+ check(not texted('COÛT SELON LE TOUR'),'watched car: never the player\'s cost chart')
+ -- Pont v2 : dernière sanction, puis abandon (champs lus tels que publiés par AdvancedIA).
+ local lc=app.link.cars[2]; lc.lastReason=5; hud()
+ check(texted('SANCTION') and texted('contact'),'watched car: its last penalty and reason')
+ lc.lastReason=42; hud(); check(texted('autre'),'unknown reason code: other')
+ lc.retired=true; hud()
+ check(texted('ABANDON') and not texted('PROCHAIN'),'retired AI: RETIRED only')
+ lc.retired=false; lc.lastReason=0
+ -- Réglage propre au bureau : coupé sur le bureau 2, gardé sur le bureau 1.
+ H.desktop=1; H.clock=H.clock+1/30; script.update(1/30); app.set('strategyShow',true); app.set('followCamera',false)
+ H.clock=H.clock+1/30; script.update(1/30); hud()
+ check(not texted('CAMÉRA'),'follow off on desktop 2: own car')
+ H.desktop=0; H.clock=H.clock+1/30; script.update(1/30); hud()
+ check(app.cfg.followCamera==true and texted('CAMÉRA'),'desktop 1 still follows the camera')
+ H.sim.focusedCar=nil; H.desktop=0
+end
+-- Accueil : tous les overlays déverrouillés puis verrouillés d'un clic (comme SuperHUD).
+function T.home_locks_all_overlays()
+ race(true,10,false)
+ local app=SPE_TEST.app
+ H.space=vec2(860,640); script.SPE__MAIN(); app.view.tab='home'
+ check(app.allLocked(),'locked at start')
+ H.texts={}; script.SPE__MAIN()
+ check(texted('DÉVERROUILLER TOUS LES OVERLAYS'),'home offers to unlock all')
+ H.clickId='##spe_home_lockall'; script.SPE__MAIN(); H.clickId=nil
+ check(not app.cfg.spotterLocked and not app.cfg.engineerLocked and not app.cfg.strategyLocked,'all unlocked')
+ H.texts={}; script.SPE__MAIN()
+ check(texted('VERROUILLER TOUS LES OVERLAYS') and not texted('DÉVERROUILLER'),'then offers to lock all')
+ H.clickId='##spe_home_lockall'; script.SPE__MAIN(); H.clickId=nil
+ check(app.allLocked(),'all locked again')
+end
+-- Radio de la voiture regardée (1.3.9, src/spectator.lua) : jamais quand le joueur pilote, même réglage allumé.
+local function withSpectator(fn)
+ local entry=require('src/config').index.spectatorRadio
+ local old=entry[2]; entry[2]=true
+ local ok,err=pcall(fn)
+ entry[2]=old
+ if not ok then error(err,0) end
+end
+function T.spectator_radio_never_while_driving()
+ withSpectator(function()
+  local function spoken()
+   math.randomseed(7); race(true,260,false)
+   local out={}
+   for _,e in ipairs(SPE_TEST.app.voice.log) do if e.spoken then out[#out+1]=e.key..'|'..tostring(e.text) end end
+   return out
+  end
+  local own=spoken()
+  H.sim.focusedCar=2
+  local other=spoken()
+  H.sim.focusedCar=nil
+  check(SPE_TEST.app.cfg.spectatorRadio==true,'setting on')
+  check(#own>5 and #own==#other,'driving, camera elsewhere, setting on: same number of calls: '..#own..' / '..#other)
+  for k=1,math.max(#own,#other) do if own[k]~=other[k] then check(false,'call '..k..' differs: '..tostring(own[k])..' / '..tostring(other[k])); break end end
+ end)
+end
+-- Joueur qui abandonne, caméra sur la voiture 2 : sa radio à elle (nom et CAMÉRA), drapeaux communs compris ; rien de
+-- propre au joueur (delta de la voiture de sécurité, plan d'arrêt de son ingénieur).
+function T.spectator_radio_when_not_driving()
+ withSpectator(function()
+  H.sim.focusedCar=1
+  H.onStep=function(now) if now>=5 then H.cars[0].isRetired=true end end
+  race(true,200,false)
+  H.onStep=nil; H.sim.focusedCar=nil
+  local log=SPE_TEST.app.voice.log
+  local tagged,untagged,sc,own=0,{},false,{}
+  for _,e in ipairs(log) do
+   if e.at and e.at>=8 and e.spoken then
+    local text=tostring(e.text)
+    if text:find('^Pilote 2 · CAMÉRA · ') then
+     tagged=tagged+1
+     if e.key=='neutral' then sc=true end
+     if e.key=='delta' or e.key=='box' or e.key=='penalty' or e.key=='blue' then own[#own+1]=e.key end
+    elseif tostring(e.key):sub(1,5)~='test:' then untagged[#untagged+1]=e.key..'|'..text end
+   end
+  end
+  check(tagged>0,'the watched car speaks: '..tagged)
+  local brief=false
+  for _,e in ipairs(log) do if e.spoken and tostring(e.text):find('^Pilote 2 · CAMÉRA · Tu es P%d') then brief=true end end
+  check(brief,'on arrival: its position and gaps at once')
+  check(sc,'safety car said on its radio (a flag for everyone)')
+  check(#own==0,'nothing about the player: '..table.concat(own,','))
+  check(#untagged==0,'no player radio while watching: '..table.concat(untagged,' / '))
+ end)
+end
+-- Bureau illisible (comme SuperHUD) : overlays suspendus, leurs réglages refusés (ils iraient dans un autre bureau).
+function T.unreadable_desktop_suspends_overlays()
+ race(true,10,false)
+ local app=SPE_TEST.app
+ H.windowIds={}; script.SPE__HUD()
+ check(H.windowIds['SpotterEnginer_d1_spotter'],'desktop 1 drawn')
+ H.desktop=-5; H.windowIds={}; script.SPE__HUD()
+ check(app.desktopAvailable==false and next(H.windowIds)==nil,'unreadable: nothing drawn')
+ local x=app.cfg.spotterX; app.set('spotterX',x+50)
+ check(app.cfg.spotterX==x,'unreadable: overlay setting refused')
+ app.set('language','EN'); check(app.cfg.language=='EN','unreadable: other settings still change')
+ H.desktop=0; H.windowIds={}; script.SPE__HUD()
+ check(H.windowIds['SpotterEnginer_d1_spotter'],'readable again: drawn')
+end
 -- Une section coupée fait taire ses annonces sans changer les choix qu'elle contient ; elle les retrouve rallumée,
 -- et après un relancement.
 function T.section_off_silences_its_calls()
@@ -533,12 +735,8 @@ function T.every_clip_file_exists()
  check(#missing==0,'missing clips: '..table.concat(missing,', '))
  -- Aucun fichier en trop (clip retiré du catalogue) : le disque compte exactement Catalog.fileCount() clips.
  local expected={}
- for _,id in ipairs(Catalog.order) do local c=Catalog.clips[id]; expected['FR/'..c.FR]=true; expected['EN/'..c.EN]=true end
- for _,l in ipairs(Catalog.languages) do
-  for n=0,Catalog.maxNumber do expected[l..'/'..Catalog.numberFile(n)]=true end
-  for n=0,Catalog.maxTenths do expected[l..'/'..Catalog.secondsFile(n)]=true end
-  for n=1,Catalog.maxPosition do expected[l..'/'..Catalog.positionFile(n)]=true end
- end
+ -- Tous les fichiers attendus, voix féminine du spotter comprise (F/).
+ Catalog.eachFile(function(rel) expected[rel]=true end)
  local extra={}
  for _,f in ipairs(VOX) do if not expected[f] then extra[#extra+1]=f end end
  check(#extra==0,'files not in the catalog: '..table.concat(extra,', '))
@@ -695,5 +893,36 @@ function T.update_offered_in_header()
  for _,lang in ipairs({'FR','EN'}) do app.set('language',lang); H.texts={}; H.space=vec2(760,640); script.SPE__MAIN() end
  check(app.errors.count==before and H.fonts==0 and H.clips==0,'narrow window with an update offered')
  app.toggleMute(); app.set('language','FR'); app.updatePort.ready=false; u.phase='idle'; u.release=nil
+end
+-- 1.3.9 : SuperHUD installé, alertes sonores de son radar actives : le côte à côte lui est laissé ; ses blocs sont
+-- évités par les overlays en position automatique.
+function T.superhud_radar_and_blocks()
+ local pos={}
+ local base=ui.transparentWindow
+ ui.transparentWindow=function(id,p,size,a,b,content) pos[id]={x=p.x,y=p.y,h=size.y}; return base(id,p,size,a,b,content) end
+ local ok,err=pcall(function()
+  race(true,50,true)
+  check(played('36_voiture_gauche'),'without SuperHUD: car left said')
+  local y0=pos['SpotterEnginer_d1_spotter'] and pos['SpotterEnginer_d1_spotter'].y
+  check(y0 and y0<550,'without SuperHUD: automatic position: '..tostring(y0))
+  H.extraFiles={[H.appsDir..'/SuperHUD/manifest.ini']=table.concat({'[ABOUT]','NAME = SuperHUD','VERSION = 1.9.6-fr',''},string.char(10))}
+  H.onStep=function(now) H.store['SuperHUD.state']=string.format('v=1;desk=1;sw=1920;sh=1080;radar=1;stamp=%d;rects=0,250,420,300',math.floor(now)) end
+  pos={}
+  race(true,50,true)
+  check(SPE_TEST.app.has.superhud==true,'SuperHUD detected')
+  check(not played('36_voiture_gauche'),'SuperHUD radar on: side by side left to it')
+  local sp=pos['SpotterEnginer_d1_spotter']
+  check(sp and (sp.y+sp.h<=250 or sp.y>=550),'spotter overlay clear of the SuperHUD block (250 to 550): '..tostring(sp and sp.y))
+  local en=pos['SpotterEnginer_d1_engineer']
+  check(en and sp and en.y>=sp.y+sp.h and (en.y+en.h<=250 or en.y>=550),'engineer overlay below the spotter, clear of the block: '..tostring(en and en.y))
+  local app=SPE_TEST.app
+  for _,pg in ipairs({{'spotter','superhudRadar'},{'overlays','superhudAvoid'}}) do
+   app.view.tab=pg[1]; app.view.section[pg[1]]=pg[2]; H.texts={}; H.logs={}; H.space=vec2(860,640); script.SPE__MAIN()
+   check(#H.logs==0 and H.fonts==0 and H.clips==0,'settings page '..pg[2]..' draws: '..table.concat(H.logs,' | '))
+   check(texted('SuperHUD'),'settings page '..pg[2]..' shows SuperHUD')
+  end
+ end)
+ ui.transparentWindow=base; H.onStep=nil; H.extraFiles=nil
+ if not ok then error(err,0) end
 end
 return T

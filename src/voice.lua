@@ -137,6 +137,8 @@ end
 M.stop=function(v) stopCurrent(v); v.queue={} end
 -- Changement de séance : file vidée et mémoire de la radio oubliée (délais par clé, textes entendus, débuts), le
 -- journal et les réglages gardés.
+-- Délais de toutes les clés oubliés (1.3.9 : retour à la radio du joueur après celle de la voiture regardée).
+function M.forgetAll(v) for k in pairs(v.last) do v.last[k]=nil end end
 function M.reset(v) M.stop(v); v.last={}; v.heard={}; v.started={}; v.done={}; v.infoAt=-1e9; v.endAt=-1e9; v.nextAt=0 end
 -- Une information (priorité 4 ou 5) attend son tour : infoGap s après la précédente, quiet s de silence. Une annonce
 -- reprise après une coupure, et une information du spotter (DRS, appel de phares… : vraies pendant quelques secondes

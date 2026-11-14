@@ -6,6 +6,7 @@ SpotterEnginer is not a standalone app: it works only on top of [AdvancedIA](htt
 
 | SpotterEnginer | AdvancedIA required | Bridge version |
 |---|---|---|
+| Beta 2.0.0 | Beta 2.0.0 or later | v2 |
 | 1.3.8 | Beta 1.46 or later (flying lap call: Beta 1.51; formation lap and rolling start: Beta 1.60; two-stage blue flag and tyre crossover: Beta 1.61) | v1 |
 | 1.3.7 | Beta 1.46 or later (flying lap call: Beta 1.51; formation lap and rolling start: Beta 1.60; two-stage blue flag and tyre crossover: Beta 1.61) | v1 |
 | 1.3.6 | Beta 1.46 or later (flying lap call: Beta 1.51; formation lap and rolling start: Beta 1.60; two-stage blue flag and tyre crossover: Beta 1.61) | v1 |
@@ -19,7 +20,7 @@ SpotterEnginer is not a standalone app: it works only on top of [AdvancedIA](htt
 | 1.1.1 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 | 1.1.0 | Beta 1.46 or later (the "car on a flying lap behind" call needs Beta 1.51) | v1 |
 
-The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0 to 1.3.8).
+The required AdvancedIA version is also written in SpotterEnginer's `manifest.ini` (`REQUIRES_ADVANCEDIA=Beta 1.46` for 1.1.0 to 1.3.8, `Beta 2.0.0` from SpotterEnginer Beta 2.0.0).
 
 **Calls that depend on the AdvancedIA version** (bridge v1 throughout; older versions simply never send them):
 
@@ -60,11 +61,15 @@ SpotterEnginer only reads the bridge (`src/link.lua`); it never writes into Adva
 
 The details of the announcements read by SpotterEnginer are in [docs/PONT_ACADVANCEDIA.md](docs/PONT_ACADVANCEDIA.md). Known limit of format v1: `penaltyKind` is `string(4)`, so "slow" arrives as "slo"; SpotterEnginer treats any value other than "dq" as a throttle cut.
 
+## SetupLab (optional)
+
+SpotterEnginer never needs SetupLab: no install or update check looks for it. From Beta 2.0.0, when SetupLab is installed, the engineer reads its `SetupLab.state` key (contract v1, written by SetupLab 1.5.12 or later) for its trial lap verdicts, the new version ready and the planned fuel consumption. With an older SetupLab or none, nothing changes. See [README.md](README.md#with-setuplab-optional).
+
 ## Game and CSP
 
 - **Assetto Corsa** for PC with **Custom Shaders Patch 0.3.2 or later** and Lua apps working.
 - **Offline sessions only.** In an online race AdvancedIA stands aside (link state **AdvancedIA suspended · online race**), and SpotterEnginer stays silent.
 - **In-app updates** need CSP's network and file functions; without them the UPDATE block says so, and you update by hand.
-- **SuperHUD**: the overlays use the same settings model and avoid SuperHUD's H and G keys; their automatic positions may cover SuperHUD blocks, so move them if needed.
+- **SuperHUD** (optional): the overlays use the same settings model and avoid SuperHUD's H and G keys. From Beta 2.0.0, with SuperHUD 1.9.6 or later, SpotterEnginer reads its `SuperHUD.state` key: the overlays in automatic position avoid its blocks, and the side by side calls are left to its sound radar when its alerts are on. With an older SuperHUD, the automatic positions may cover its blocks, so move the overlays if needed. See [README.md](README.md#with-superhud-optional).
 
 See [README.md](README.md) for the features and [CHANGELOG.md](CHANGELOG.md) for the history.

@@ -11,7 +11,7 @@ M.schema={
  -- Spotter
  {'spotterOn',true},{'spotterVolume',1.0,0,2,0.05},{'raceControl',true},{'sideBySide',true},{'flipSides',false},
  {'stillThere',true},{'gaps',true},{'gapEvery',2,1,5,1},{'gapDecimals',1,0,2,1},{'closingAlert',0.3,0.1,1.5,0.05},
- {'blueFlags',true},{'backmarkers',true},{'fasterBehind',true},{'pitExit',true},{'hazards',true},{'rivalPenalties',true},
+ {'blueFlags',true},{'vscCountdown',true},{'shRadar',true},{'shAvoid',true},{'spectatorRadio',true},{'backmarkers',true},{'fasterBehind',true},{'pitExit',true},{'hazards',true},{'rivalPenalties',true},
  -- 1.3.0 : anticipation, urgences, écarts en direct.
  {'anticipation',true},{'emergencies',true},{'gapEvents',true},
  {'trackLimits',true},{'drsVoice',false},{'deltaVoice',true},{'penaltiesVoice',true},{'flashVoice',true},{'aaiMessages',true},{'sec_penalties',true},{'sec_traffic',true},
@@ -21,6 +21,8 @@ M.schema={
  {'tyres',true},{'tyreCold',15,5,40,1},{'tyreHot',12,4,40,1},{'brakes',true},{'brakeHot',850,400,1200,10},
  {'biasDiff',180,60,400,10},{'damage',true},{'weather',true},{'wind',true},{'windMin',15,5,50,1},{'driving',true},
  {'drivingLoss',0.15,0.05,0.6,0.01},
+ -- SetupLab (1.3.9, app facultative) : verdicts des tours d'essai et nouvelle version prête, hors course.
+ {'setupLab',true},{'setupTrials',true},{'setupReady',true},
  -- Stratégie
  {'strategyOn',true},{'tolerance',2.0,0.5,6,0.1},{'gripFloor',94,85,99,0.5},{'tempSens',0.02,0,0.06,0.005},
  {'trafficCost',1.5,0,5,0.1},{'pitLane',22,8,60,0.5},{'warmup',1.5,0,6,0.1},{'degPrior',0.05,0.0,0.5,0.01},
@@ -29,7 +31,7 @@ M.schema={
  {'overlaysOn',true},{'clickThrough',true},{'hideReplay',true},{'hidePits',false},{'hotkeys',true},
  -- Édition en jeu (1.2.0) : bouton montré quand la souris bouge, position (-1 : en haut au centre), commune aux bureaux.
  {'editButton',true},{'editorX',-1,-1,M.maxX,1},{'editorY',-1,-1,M.maxY,1},
- {'radioLines',4,1,8,1},{'radioSeconds',10,3,30,1},
+ {'radioLines',4,1,8,1},{'followCamera',true},{'radioSeconds',10,3,30,1},
 }
 -- Réglages de chaque overlay (Spotter, Ingénieur, Stratégie), comme chaque bloc de SuperHUD : affiché, verrouillé,
 -- position (-1 : automatique), échelle, fond (opaque, atténué à 38 %, transparent), opacité du fond et du contenu,
@@ -39,15 +41,15 @@ M.overlays={'spotter','engineer','strategy'}
 M.screenDefault={x=1920,y=1080}
 M.overlayKeys={'Show','Locked','X','Y','Scale','Background','Opacity','Content','Accent','Header'}
 for _,o in ipairs(M.overlays) do
- local list={{o..'Show',true},{o..'Locked',true},{o..'X',-1,-1,M.maxX,1},{o..'Y',-1,-1,M.maxY,1},{o..'Scale',1,0.5,2.5,0.05},
+ local list={{o..'Show',true},{o..'Locked',true},{o..'X',-1,-1,M.maxX,1},{o..'Y',-1,-1,M.maxY,1},{o..'Scale',1,0.35,4,0.05},
   {o..'Background','solid',{'solid','ghost','transparent'}},{o..'Opacity',0.88,0,1,0.02},{o..'Content',1,0.3,1,0.05},
-  {o..'Accent',true},{o..'Header',true}}
+  {o..'Accent',false},{o..'Header',true}}
  for _,item in ipairs(list) do M.schema[#M.schema+1]=item end
 end
 -- Bureaux d'applications AC (1 à 4, comme SuperHUD) : chacun garde ses overlays (affichés, positions, tailles, fonds…)
 -- et leurs réglages d'affichage communs ; le reste (spotter, ingénieur, voix) est commun à tous les bureaux.
 M.desktopCount=4
-M.desktopKeys={'overlaysOn','clickThrough','hideReplay','hidePits','radioLines','radioSeconds'}
+M.desktopKeys={'overlaysOn','clickThrough','hideReplay','hidePits','radioLines','radioSeconds','followCamera'}
 for _,o in ipairs(M.overlays) do for _,sfx in ipairs(M.overlayKeys) do M.desktopKeys[#M.desktopKeys+1]=o..sfx end end
 M.index={}
 for k=1,#M.schema do M.index[M.schema[k][1]]=M.schema[k] end
@@ -61,14 +63,18 @@ M.roles={spotter='spotterOn',engineer='engineerOn',strategy='strategyOn'}
 M.sections={
  spotter={
   {'raceControl',{
-   {id='flags',master='raceControl',keys={'blueFlags','aaiMessages'},gate=true},
+   {id='flags',master='raceControl',keys={'blueFlags','vscCountdown','aaiMessages'},gate=true},
    {id='delta',master='deltaVoice',keys={},gate=true},
    {id='drs',master='drsVoice',keys={},gate=true},
    {id='penalties',master='sec_penalties',keys={'penaltiesVoice','trackLimits','rivalPenalties'},gate=true}}},
   {'traffic',{
    {id='sides',master='sideBySide',keys={'stillThere','flipSides'},gate=true},
+   -- Montrée seulement quand SuperHUD est installé (requires : M.shown).
+   {id='superhudRadar',master='shRadar',keys={},gate=true,requires='superhud'},
    {id='trafficCalls',master='sec_traffic',keys={'backmarkers','fasterBehind','hazards','anticipation','flashVoice'},gate=true},
    {id='emergencies',master='emergencies',keys={},gate=true},
+   -- Radio de la voiture regardée (1.3.9, src/spectator.lua) : coupée par défaut.
+   {id='spectator',master='spectatorRadio',keys={},gate=true},
    {id='pitExit',master='pitExit',keys={},gate=true},
    {id='gaps',master='gaps',keys={'gapEvents','gapEvery','gapDecimals','closingAlert'},gate=true}}}},
  engineer={
@@ -83,7 +89,10 @@ M.sections={
    {id='damage',master='damage',keys={},gate=true}}},
   {'conditions',{
    {id='weather',master='weather',keys={},gate=true},
-   {id='wind',master='wind',keys={'windMin'},gate=true}}}},
+   {id='wind',master='wind',keys={'windMin'},gate=true}}},
+  -- Montrée seulement quand SetupLab est installé (requires : M.shown).
+  {'setupGroup',{
+   {id='setuplab',master='setupLab',keys={'setupTrials','setupReady'},gate=true,requires='setuplab'}}}},
  strategy={
   {'stratCalc',{
    {id='plan',keys={},custom='plan'},
@@ -103,8 +112,9 @@ M.sections={
   {'ovAll',{
    {id='desktops',keys={},custom='desktops'},
    {id='editor',master='editButton',keys={'editorX','editorY'},custom='editor'},
-   {id='common',master='overlaysOn',keys={'clickThrough','hideReplay','hidePits','radioLines','radioSeconds'},custom='overlayActions'},
-   {id='hotkeys',master='hotkeys',keys={},custom='hotkeys'}}},
+   {id='common',master='overlaysOn',keys={'clickThrough','hideReplay','hidePits','followCamera','radioLines','radioSeconds'},custom='overlayActions'},
+   {id='hotkeys',master='hotkeys',keys={},custom='hotkeys'},
+   {id='superhudAvoid',master='shAvoid',keys={},gate=true,requires='superhud'}}},
   {'ovEach',{}}},
 }
 -- Une section par overlay : affiché (interrupteur), puis ses autres réglages, propres au bureau courant.
@@ -129,6 +139,13 @@ function M.sectionKeys(sec)
  for _,k in ipairs(sec.keys) do all[#all+1]=k end
  sec.all=all
  return all
+end
+-- Section montrée : sans condition, ou app facultative présente (has : {setuplab=true…}). Sections montrées d'un onglet.
+function M.shown(sec,has) return sec.requires==nil or (has~=nil and has[sec.requires]==true) end
+function M.shownOf(tab,has)
+ local list={}
+ for _,sec in ipairs(M.sectionsOf[tab] or {}) do if M.shown(sec,has) then list[#list+1]=sec end end
+ return list
 end
 function M.sectionOn(cfg,sec) return sec.master==nil or cfg[sec.master]==true end
 -- Vue effective des réglages pour la logique : lecture à travers les réglages (une écriture y va aussi) ; seules les
@@ -175,15 +192,35 @@ function M.emptyDesktop()
  for _,o in ipairs(M.overlays) do t[o..'Show']=false end
  return t
 end
--- Bureaux enregistrés : une table par bureau (1 à 4), valeurs validées ; bureau absent : nil.
-function M.loadDesktops(raw)
+-- Fenêtre de réglages en jeu enregistrée par bureau (1 à 4) : {open, x, y, w, h} ; place et taille gardées seulement
+-- complètes et plausibles.
+function M.loadWindows(raw)
  local out={}
  if type(raw)~='table' then return out end
+ local function n(v,a,b) v=tonumber(v); if v and v==v and v>=a and v<=b then return v end return nil end
+ for d=1,M.desktopCount do
+  local w=raw[d] or raw[tostring(d)]
+  if type(w)=='table' then
+   local t={open=w.open==true}
+   local x,y,ww,h=n(w.x,-10000,10000),n(w.y,-10000,10000),n(w.w,100,8000),n(w.h,100,8000)
+   if x and y and ww and h then t.x,t.y,t.w,t.h=x,y,ww,h end
+   out[d]=t
+  end
+ end
+ return out
+end
+-- Bureaux enregistrés : une table par bureau (1 à 4), valeurs validées ; bureau absent : nil.
+-- schema : version des réglages enregistrés (migration 4 : barre d'accent masquée).
+function M.loadDesktops(raw,schema)
+ local out={}
+ if type(raw)~='table' then return out end
+ local from=tonumber(schema) or 1
  for d=1,M.desktopCount do
   local page=raw[d] or raw[tostring(d)]
   if type(page)=='table' then
    local t=M.emptyDesktop()
    for _,k in ipairs(M.desktopKeys) do if page[k]~=nil then t[k]=M.valid(k,page[k]) end end
+   if from<4 then for _,o in ipairs(M.overlays) do t[o..'Accent']=false end end
    out[d]=t
   end
  end
@@ -193,7 +230,11 @@ end
 --   2 : DRS à la voix coupé par défaut (AdvancedIA a déjà son bip et son panneau).
 --   3 : volume général 170 % et son de la voiture pendant la radio 85 % (réglages du pilote, 05/11/2026) ; seules les
 --       valeurs restées aux anciens défauts (100 %, 40 %) changent : un choix fait à la main est gardé.
-M.version=3
+--   4 : barre d'accent des overlays masquée par défaut (1.3.9, comme SuperHUD ; demande du pilote, 14/11/2026) : une
+--       barre restée à l'ancien défaut (affichée) est masquée, dans les réglages et dans chaque bureau.
+--   5 : radio de la voiture regardée active par défaut (demande du pilote, 14/11/2026 : « que j'ai le spotter et
+--       l'ingénieur de l'IA sélectionnée ») ; un réglage resté à l'ancien défaut (coupé) passe à actif.
+M.version=5
 function M.load(raw)
  local t=M.defaults()
  if type(raw)=='table' then
@@ -204,6 +245,8 @@ function M.load(raw)
    if math.abs(t.volume-1.0)<1e-6 then t.volume=1.7 end
    if math.abs(t.duckLevel-0.4)<1e-6 then t.duckLevel=0.85 end
   end
+  if from<4 then for _,o in ipairs(M.overlays) do t[o..'Accent']=false end end
+  if from<5 then t.spectatorRadio=true end
  end
  t.schema=M.version
  return t

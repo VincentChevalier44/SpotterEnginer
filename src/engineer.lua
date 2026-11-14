@@ -11,6 +11,7 @@ local Voice=require('src/voice')
 local Emergency=require('src/emergency')
 local Link=require('src/link')
 local Side=require('src/side')
+local SetupLab=require('src/setuplab')
 local M={}
 local GAP,PACE=Position.GAP,Position.PACE
 -- Annonce de position : validité dans la file, délai minimal entre deux (s).
@@ -244,7 +245,7 @@ end
 function M.fuelStatus(e,F,cfg)
  local me=F.cars[F.player]; local t=e.strategist
  if not me or not me.valid or F.fuelRate==0 then return nil end
- local fpl=t.data.fuelPerLap or (F.me.fuelPerLapAC>0 and F.me.fuelPerLapAC) or nil
+ local fpl=t.data.fuelPerLap or Strategist.baseFuel(t,F)
  if not fpl or fpl<=0 then return nil end
  local plan=t.plan
  -- Sans plan (stratégie coupée) : tours de la course comptés par le stratège (course au temps, pilote attardé).
@@ -544,6 +545,53 @@ local function driving(e,ctx,lapDone)
  local advice=Coach.lap(e.coach,clean and not (d and d.neutral),cfg.drivingLoss)
  if advice and cfg.driving then M.coachCall(e,ctx,advice) end
 end
+-- SetupLab (1.3.9, app facultative ; ctx.setuplab : src/setuplab.lua). Hors course seulement : à chaque tour d'essai
+-- jugé (hausse de tid), le verdict de SetupLab (jamais le nôtre) : « plus rapide de 0,3 s » / « plus lent » avec le
+-- changement principal (tch : groupe qui porte le plus gros gain prévu, jamais dit comme une cause), « pas de différence
+-- nette » ; rien tant que SetupLab attend (wait), même avec un écart chiffré. Un verdict n'est redit que s'il change
+-- (ou l'écart de SETUP_MOVE s) ; nouvelle version (ver) : tout repart. Nouvelle version prête (hausse de readyN) : dite
+-- une fois. En qualification (raceSessionType 2), gardé jusqu'à l'entrée dans la voie des stands (jamais en tour lancé),
+-- le dernier seulement.
+M.SETUP_MOVE=0.05
+M.SETUP_TTL=20
+local function setupVerdict(e,ctx,v)
+ if not v.ver or v.ver~=e.slVer then e.slVer=v.ver; e.slSaid=nil end
+ local tv=v.tv
+ if tv~='better' and tv~='worse' and tv~='same' then return nil end
+ local gap=tv~='same' and v.tdl and math.abs(v.tdl) or nil
+ if (tv=='better' or tv=='worse') and not gap then return nil end
+ local said=e.slSaid
+ if said and said.tv==tv and (tv=='same' or math.abs(gap-said.gap)<M.SETUP_MOVE) then return nil end
+ e.slSaid={tv=tv,gap=gap or 0}
+ local mark=Say.mark(ctx.say)
+ if tv=='same' then return {'setupSame'},nil end
+ local parts={tv=='better' and 'setupBetter' or 'setupWorse',{n=gap,dec=1,unit='s'}}
+ local text=Say.text(ctx.say,{parts[1]})..' '..U.fixed(gap,2,mark)..' s'
+ local group=v.tch and SetupLab.groups[v.tch]
+ if group then parts[#parts+1]=group; text=text..' · '..Say.text(ctx.say,{group}) end
+ return parts,text
+end
+local function setupLab(e,ctx)
+ local F=ctx.F; local cfg=ctx.cfg; local me=F.cars[F.player]
+ local s=ctx.setuplab
+ local v=cfg.setupLab and SetupLab.get(s) or nil
+ -- Carburant avant toute mesure (src/strategist.lua, baseFuel).
+ e.strategist.setupFpl=v and SetupLab.fuelPerLap(s) or nil
+ local tidUp,readyUp=SetupLab.take(s)
+ if not v or F.isRace then e.slPending=nil; return end
+ if tidUp and cfg.setupTrials then
+  local parts,text=setupVerdict(e,ctx,v)
+  if parts then e.slPending=e.slPending or {}; e.slPending.verdict={parts,text} end
+ end
+ if readyUp and cfg.setupReady then e.slPending=e.slPending or {}; e.slPending.ready=true end
+ local p=e.slPending
+ if not p then return end
+ if F.sessionType==2 and not me.pitlane then return end
+ e.slPending=nil
+ if p.verdict then say(ctx,'setupLab',4,p.verdict[1],{ttl=M.SETUP_TTL,text=p.verdict[2]}) end
+ if p.ready then say(ctx,'setupReady',4,{'setupReady'},{ttl=M.SETUP_TTL}) end
+end
+M.setupLab=setupLab
 function M.step(e,ctx,dt)
  local F=ctx.F; local me=F.cars[F.player]
  if not me or not me.valid then return end
@@ -559,6 +607,7 @@ function M.step(e,ctx,dt)
  -- Ligne d'arrivée passée : plus aucun appel de course (« undercut possible » dit sur la ligne le 10/11/2026), le bilan
  -- seulement.
  if me.finished and F.isRace then debrief(e,ctx); return end
+ setupLab(e,ctx)
  Strategist.step(e.strategist,ctx)
  pace(e,ctx,lapDone)
  fuel(e,ctx,lapDone)

@@ -18,7 +18,11 @@ Le jeu doit être fermé : les clips sont écrits dans le dossier de l'app (vox/
 fichier changé. Chaque clip est écrit à côté (.tmp) puis mis en place d'un seul coup : une interruption ne laisse jamais
 un clip tronqué, qui passerait ensuite pour présent.
 Nécessite une connexion (service de synthèse de Microsoft Edge), Python avec edge-tts et lupa.
+Voix du spotter (1.3.9, choix du pilote) : voix féminine de Catalog.femaleVoices (Denise, Jenny) pour les clips
+du spotter seul (Catalog.spotterOnly, à leur place) et pour la copie féminine des clips communs, nombres, durées et
+positions (vox/<LANGUE>/F/…) ; l'ingénieur garde la voix masculine.
 Usage :  python tools/generer_voix.py            (seulement les clips absents, et le signal s'il manque)
+         python tools/generer_voix.py --feminin  (refaire en voix féminine les clips du spotter seul déjà présents)
          python tools/generer_voix.py --force    (refaire les clips 35 et plus, nombres, durées, positions, signal)
          python tools/generer_voix.py --tout     (tout refaire, clips 01 à 34 compris)
 """
@@ -113,20 +117,36 @@ def catalog(everything=False):
     assert set(languages) == set(VOICES), 'une voix edge-tts par langue du catalogue'
     jobs = []
     order = cat.order
+    female = {str(k): str(v) for k, v in cat.femaleVoices.items()}
+    spotter = {cat.spotterOnly[k] for k in range(1, len(cat.spotterOnly) + 1)}
+    shared = {cat.shared[k] for k in range(1, len(cat.shared) + 1)}
+    fdir = str(cat.femaleDir)
     # Chaque clip : (langue, fichier, texte, refait par --force, débit) ; un clip absent est toujours généré. Les clips
     # d'origine 01 à 34 ne sont refaits que par --tout.
     for lang in languages:
         for k in range(1, len(order) + 1):
             c = cat.clips[order[k]]
             rate, pitch = TONES[c.tone]
-            jobs.append((lang, c[lang], c['text' + lang], everything or not c.shipped, FAST if order[k] in FAST_CLIPS else rate, pitch))
+            rate = FAST if order[k] in FAST_CLIPS else rate
+            # Clip du spotter seul : voix féminine à sa place (refaite par --feminin) ; clip commun : voix masculine à
+            # sa place et féminine dans F/.
+            own = order[k] in spotter
+            jobs.append((lang, c[lang], c['text' + lang], everything or not c.shipped, rate, pitch,
+                         female[lang] if own else VOICES[lang], own))
+            if order[k] in shared:
+                jobs.append((lang, fdir + c[lang], c['text' + lang], True, rate, pitch, female[lang], True))
+        numbers = []
         for n in range(int(cat.maxNumber) + 1):
-            jobs.append((lang, cat.numberFile(n), str(n), True, None, None))
+            numbers.append((cat.numberFile(n), str(n), None))
         for n in range(int(cat.maxTenths) + 1):
-            jobs.append((lang, cat.secondsFile(n), say.secondsText(lang, n / 10, 1 if n % 10 else 0), True, FAST, None))
+            numbers.append((cat.secondsFile(n), say.secondsText(lang, n / 10, 1 if n % 10 else 0), FAST))
         # Positions « Tu es P7 » (écrit « Pé 7 » pour edge-tts en français : « P7 » y est mal prononcé).
         for n in range(1, int(cat.maxPosition) + 1):
-            jobs.append((lang, cat.positionFile(n), cat.positionSpoken(lang, n), True, FAST, None))
+            numbers.append((cat.positionFile(n), cat.positionSpoken(lang, n), FAST))
+        for name, text, rate in numbers:
+            jobs.append((lang, name, text, True, rate, None, VOICES[lang], False))
+        for name, text, rate in numbers:
+            jobs.append((lang, fdir + name, text, True, rate, None, female[lang], True))
     assert len(jobs) == int(cat.fileCount()), 'un travail par fichier attendu'
     return jobs, str(cat.toneFile)
 
@@ -181,9 +201,9 @@ def encode(raw, chain, out, tmp):
     return best is not None
 
 
-async def one(lang, name, text, redo, rate, pitch, force, sem, report):
+async def one(lang, name, text, redo, rate, pitch, voice_name, femaleNow, force, sem, report):
     target = APP / 'vox' / lang / name
-    if target.exists() and not (force and redo):
+    if target.exists() and not (force and redo) and not femaleNow:
         report['skipped'] += 1
         return
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +212,7 @@ async def one(lang, name, text, redo, rate, pitch, force, sem, report):
             try:
                 with tempfile.TemporaryDirectory() as tmp:
                     raw = Path(tmp) / 'raw.mp3'
-                    voice = edge_tts.Communicate(text, VOICES[lang], rate=rate or '+0%', pitch=pitch or '+0Hz')
+                    voice = edge_tts.Communicate(text, voice_name, rate=rate or '+0%', pitch=pitch or '+0Hz')
                     await voice.save(str(raw))
                     if FFMPEG:
                         out = Path(tmp) / 'clip.mp3'
@@ -210,12 +230,15 @@ async def one(lang, name, text, redo, rate, pitch, force, sem, report):
                 await asyncio.sleep(1.5 * (attempt + 1))
 
 
-async def main(force, everything):
+async def main(force, everything, feminin=False):
     jobs, tone = catalog(everything)
+    # --feminin : les clips du spotter seul déjà présents (voix masculine d'avant 1.3.9) sont refaits.
+    jobs = [(l, n, t, r, ra, p, v, own and feminin) for l, n, t, r, ra, p, v, own in jobs]
     radio_tone(tone, force)
     report = {'done': 0, 'skipped': 0, 'failed': []}
     sem = asyncio.Semaphore(4)
-    await asyncio.gather(*(one(lang, name, text, redo, rate, pitch, force, sem, report) for lang, name, text, redo, rate, pitch in jobs))
+    await asyncio.gather(*(one(lang, name, text, redo, rate, pitch, voice, again, force, sem, report)
+                           for lang, name, text, redo, rate, pitch, voice, again in jobs))
     print(f"\n{report['done']} clips générés, {report['skipped']} déjà présents, {len(report['failed'])} en échec")
     for f in report['failed']:
         print('  ÉCHEC', f)
@@ -226,4 +249,4 @@ async def main(force, everything):
 
 if __name__ == '__main__':
     everything = '--tout' in sys.argv
-    sys.exit(asyncio.run(main('--force' in sys.argv or everything, everything)))
+    sys.exit(asyncio.run(main('--force' in sys.argv or everything, everything, '--feminin' in sys.argv)))

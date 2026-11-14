@@ -49,6 +49,7 @@ if recovered and recovered.restart then
  local function restartOnly() if not asked then asked=true; pcall(updatePort.restart) end end
  function script.update() restartOnly() end
  function script.SPE__MAIN() end
+ function script.SPE__GAME() end
  function script.SPE__HUD() end
  return
 end
@@ -63,6 +64,10 @@ local Engineer=require('src/engineer')
 local Emergency=require('src/emergency')
 local Strategist=require('src/strategist')
 local Side=require('src/side')
+local SetupLab=require('src/setuplab')
+local SuperHUD=require('src/superhud')
+local Focus=require('src/focus')
+local Spectator=require('src/spectator')
 local UI=require('src/ui')
 local Overlays=require('src/overlays')
 local Editor=require('src/editor')
@@ -76,9 +81,14 @@ local cfg=Config.load(stored)
 -- Vue effective pour la logique : une section d'annonces coupée y fait taire ses options (src/config.lua).
 local run=Config.effective(cfg)
 -- Overlays propres à chaque bureau d'applications AC (src/config.lua, M.desktopKeys).
-local desktops=Config.loadDesktops(stored.desktops)
+local desktops=Config.loadDesktops(stored.desktops,stored.schema)
 local hadDesktops=type(stored.desktops)=='table'
 local activeDesktop=nil
+-- Fenêtre de réglages en jeu (1.3.9, comme la configuration de SuperHUD) : ouverte ou fermée, place et taille propres
+-- à chaque bureau (une table par bureau, src/config.lua M.loadWindows).
+local gameWins=Config.loadWindows(stored.gameWindows)
+-- Réglages propres au bureau : jamais écrits quand le bureau est illisible (ils iraient dans un autre bureau).
+local DESK_KEY={}; for _,k in ipairs(Config.desktopKeys) do DESK_KEY[k]=true end
 Lang.set(cfg.language)
 local F=Port.newFrame()
 local installed,hasBridge,release=Port.detect()
@@ -122,7 +132,7 @@ voice.onEvent=function(kind,item,again)
  elseif kind=='repeat' then jlog('radio non redite (déjà entendue) : '..tostring(item.key)) end
 end
 local app={cfg=cfg,run=run,link=link,voice=voice,F=F,timing=timing,spotter=spotter,engineer=engineer,fontDir=Port.fontDir(),logo=Port.appFile('icon.png'),
- version=Port.ownVersion(),updater=nil,updatePort=updatePort,updateStopped=false,voicePresent=present,voiceTotal=Catalog.fileCount(),now=0,real=0,errors=errors,bridgeWhy=bridgeWhy}
+ has={setuplab=SetupLab.installed(Port.setupLabManifest()),superhud=SuperHUD.installed(Port.superhudManifest())},superhud=SuperHUD.new(),focus=Focus.new(),spectator=Spectator.new(),version=Port.ownVersion(),updater=nil,updatePort=updatePort,updateStopped=false,voicePresent=present,voiceTotal=Catalog.fileCount(),now=0,real=0,errors=errors,bridgeWhy=bridgeWhy}
 -- Horloge de la radio (app.radioNow, ctx.real, Voice.step) : le temps réel sans les pauses du jeu. En pause, les délais
 -- de la radio (validité, délai par clé, rythme, redite) ne s'écoulent pas ; la phrase en cours finit, et l'essai de la
 -- voix (priorité 1) part quand même.
@@ -262,12 +272,15 @@ local function rememberDesktop()
  local t={}; for _,k in ipairs(Config.desktopKeys) do t[k]=cfg[k] end
  desktops[activeDesktop]=t
 end
-local function syncDesktop()
+-- fromGame : appelé par la fenêtre de réglages en jeu (elle est donc ouverte sur le bureau rejoint).
+local function syncDesktop(fromGame)
  local d=Port.desktop()
  app.desktopAvailable=d~=nil
- -- Bureau illisible (comme SuperHUD) : le bureau actif est gardé ; bureau 1 seulement si aucun ne l'a encore été.
- if not d then if activeDesktop then return end; d=1 end
- if d==activeDesktop then return end
+ -- Bureau illisible (comme SuperHUD) : overlays et réglages d'overlays suspendus, pour ne jamais modifier un autre
+ -- bureau ; le bureau actif est gardé pour le retour.
+ if not d then return false end
+ if d==activeDesktop then return true end
+ local first=activeDesktop==nil
  rememberDesktop()
  local page=desktops[d]
  if not page and (activeDesktop or hadDesktops) then page=Config.emptyDesktop() end
@@ -275,6 +288,31 @@ local function syncDesktop()
  activeDesktop=d; app.desktop=d
  Config.effective(cfg,run)
  rememberDesktop(); dirtyAt=dirtyAt or Port.clock()
+ -- Fenêtre de réglages en jeu du bureau rejoint (comme SuperHUD) : sa place, sa taille et son état ; un bureau jamais
+ -- vu la garde fermée, sauf si c'est elle qui dessine. Au premier bureau lu, seul un état enregistré est remis.
+ local st=gameWins[d]
+ if not st and not first then st={open=fromGame==true}; gameWins[d]=st end
+ if st then
+  if fromGame then st.open=true end
+  Port.applyWindow(st,Port.screen())
+ end
+ return true
+end
+-- Fenêtre de réglages en jeu : état ouvert ou fermé relevé à chaque image (update), place et taille seulement dans
+-- son propre rappel (après un changement de bureau, CSP peut déjà donner celles du bureau rejoint).
+local function captureWindow(geometry)
+ if not activeDesktop or not app.desktopAvailable then return end
+ local now=Port.windowState(geometry)
+ if not now then return end
+ local st=gameWins[activeDesktop] or {}
+ local changed=st.open~=now.open
+ st.open=now.open
+ if geometry and now.x then
+  if st.x~=now.x or st.y~=now.y or st.w~=now.w or st.h~=now.h then changed=true end
+  st.x,st.y,st.w,st.h=now.x,now.y,now.w,now.h
+ end
+ gameWins[activeDesktop]=st
+ if changed then dirtyAt=dirtyAt or Port.clock() end
 end
 app.syncDesktop=syncDesktop
 app.remember=rememberDesktop
@@ -290,9 +328,10 @@ function app.desktopCounts()
  return counts
 end
 -- Copier les overlays de ce bureau vers les autres ; vider ce bureau.
-function app.copyDesktopToAll() rememberDesktop(); for d=1,Config.desktopCount do if d~=activeDesktop then local t={}; for k,v in pairs(desktops[activeDesktop]) do t[k]=v end; desktops[d]=t end end; dirtyAt=Port.clock() end
-function app.clearDesktop() local t=Config.emptyDesktop(); for _,k in ipairs(Config.desktopKeys) do cfg[k]=t[k] end; rememberDesktop(); dirtyAt=Port.clock() end
+function app.copyDesktopToAll() if app.desktopAvailable==false then return end; rememberDesktop(); for d=1,Config.desktopCount do if d~=activeDesktop then local t={}; for k,v in pairs(desktops[activeDesktop]) do t[k]=v end; desktops[d]=t end end; dirtyAt=Port.clock() end
+function app.clearDesktop() if app.desktopAvailable==false then return end; local t=Config.emptyDesktop(); for _,k in ipairs(Config.desktopKeys) do cfg[k]=t[k] end; rememberDesktop(); dirtyAt=Port.clock() end
 function app.set(key,value)
+ if DESK_KEY[key] and app.desktopAvailable==false then return end
  local v=Config.valid(key,value)
  -- Valeur inchangée (glisser d'un overlay, curseur immobile) : rien à appliquer ni à enregistrer.
  if v==nil or cfg[key]==v then return end
@@ -353,10 +392,15 @@ end
 -- à zéro en cours suit un rechargement à chaud dans la même séance (ce qui a été gardé peut être relu).
 -- Clés annexes d'AdvancedIA (1.3.5, src/side.lua : nuance des classes, météo en direct), relues deux fois par seconde.
 local side=Side.new()
-local ctx={side=side,F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
+-- SetupLab (1.3.9, app facultative : src/setuplab.lua), clé relue deux fois par seconde quand SetupLab est installé.
+local setuplab=SetupLab.new()
+local shLogged={}
+local slLogged=nil
+local ctx={side=side,setuplab=setuplab,F=F,link=link,say=sayer,voice=voice,cfg=run,timing=timing,now=0,real=0,clock=Port.clock,sectorName=Port.sectorName,
  trackLateral=Port.trackLateral,strategist=function() return engineer.strategist end,journal=jlog,emergency=emergency,keep=Port.keep,resumed=false}
 -- Journal : état de l'app, tour du joueur, point d'état périodique.
 local lastActive,lapLogged,stateAt=nil,nil,-1e9
+local lastSpectating=false
 local LINK_GRACE=3
 local linkLostAt=nil
 -- Redémarrage de la même séance avant la fin du premier tour (les tours ne reculent pas) : départ donné qui redevient
@@ -385,6 +429,8 @@ local function step(dt)
  local real=Port.clock()
  if not Port.read(F,dt or 0) then return end
  syncDesktop()
+ -- Voiture suivie par la caméra (overlays seulement, src/focus.lua) ; réglage propre au bureau.
+ Focus.step(app.focus,F,cfg.followCamera)
  if Link.step(link,hello,data,real) then
   jlog(string.format('liaison : %s%s%s',link.state,link.reason~='' and ' ('..link.reason..')' or '',link.remoteRelease~='' and ' · AdvancedIA '..link.remoteRelease or ''))
  end
@@ -422,6 +468,10 @@ local function step(dt)
   -- Première remise à zéro après un rechargement à chaud dans la même séance : ce qui a été gardé est relu.
   ctx.resumed=Port.keep.resume(F.session,session==nil)
   session=F.session; lastPlayer=F.player; playerSince=nil; resetAt=real
+  -- SetupLab installé ou retiré entre deux séances : la section des réglages suit (jamais relu à chaque image).
+  app.has.setuplab=SetupLab.installed(Port.setupLabManifest())
+  app.has.superhud=SuperHUD.installed(Port.superhudManifest())
+  app.focus=Focus.new(); app.spectator=Spectator.new()
   Side.reset(side); Timing.reset(timing); Spotter.reset(spotter); Engineer.reset(engineer,ctx.keep); Emergency.reset(emergency); Voice.reset(voice); Port.forgetNames(); carPlayer=nil; carCompound=nil
   if ctx.resumed then Voice.heardLoad(voice,Port.keep.load('heard'),radio) end
   jlog(string.format('séance %s : %s, %d voitures, circuit de %.0f m, joueur voiture %d%s',tostring(F.session),F.isRace and 'course' or 'hors course',F.count or 0,
@@ -434,6 +484,18 @@ local function step(dt)
   if ok and data then engineer.strategist.car=data; carPlayer=F.player; carCompound=F.me.compound
   elseif not ok then errors.count=errors.count+1; errors.last=tostring(data):sub(1,120); carPlayer=F.player; carCompound=F.me.compound end
  end
+ -- SuperHUD (1.3.9, facultatif : src/superhud.lua) : clé relue deux fois par seconde quand il est installé.
+ local shRadar=false
+ if app.has.superhud then
+  SuperHUD.step(app.superhud,Port.recall,real)
+  shRadar=SuperHUD.radar(app.superhud,real)
+  local alive=SuperHUD.get(app.superhud,real)~=nil
+  if alive~=shLogged.alive or shRadar~=shLogged.radar then
+   shLogged.alive=alive; shLogged.radar=shRadar
+   jlog(string.format('SuperHUD : %s, radar sonore %s',alive and 'actif' or 'absent ou arrêté',shRadar and 'actif (côte à côte laissé à SuperHUD si réglé)' or 'inactif'))
+  end
+ end
+ ctx.superhudRadar=shRadar
  local active=cfg.enabled and Link.connected(link) and not F.paused and not F.replay and not F.online
  local finishing=not active and cfg.enabled and F.isRace and link.state=='suspended' and link.reason=='finished'
   and not F.paused and not F.replay and not F.online
@@ -463,11 +525,29 @@ local function step(dt)
   end
   ctx.now=F.clock; ctx.real=radio
   Side.step(side,Port.recall,real)
+  if app.has.setuplab then
+   SetupLab.step(setuplab,Port.recall,real,F.session)
+   -- Journal : chaque texte lu de SetupLab (changé, au plus une fois par seconde), accepté ou non.
+   local seen=setuplab.seen or nil
+   if seen~=slLogged then slLogged=seen; jlog(string.format('SetupLab : %s (%s)',tostring(seen),SetupLab.get(setuplab) and 'acceptée' or 'ignorée')) end
+  end
   -- Spotter.step suit toujours la direction de course (appels de stands de l'ingénieur) ; ses annonces se taisent avec
   -- le rôle Spotter coupé (radio).
-  protected(Spotter.step,spotter,ctx)
-  protected(Emergency.step,emergency,ctx,dt or 0)
-  if cfg.engineerOn then protected(Engineer.step,engineer,ctx,dt or 0) end
+  -- Radio de la voiture regardée (src/spectator.lua) : seulement quand le joueur ne pilote pas ; sa radio ne tourne
+  -- pas alors. Jamais quand il pilote.
+  local sp=app.spectator; sp.cameraTag=Lang.t.ov.camera
+  local target=Spectator.target(sp,F,cfg,real)
+  local okS,spectating=pcall(Spectator.step,sp,ctx,target,spotter)
+  if not okS then protected(error,spectating); spectating=false end
+  if spectating~=lastSpectating then
+   lastSpectating=spectating
+   jlog(spectating and string.format('radio de la voiture regardée : %s',F.cars[target] and F.cars[target].name or '?') or 'radio du joueur')
+  end
+  if not spectating then
+   protected(Spotter.step,spotter,ctx)
+   protected(Emergency.step,emergency,ctx,dt or 0)
+   if cfg.engineerOn then protected(Engineer.step,engineer,ctx,dt or 0) end
+  end
  elseif finishing then
   -- Arrivée : AdvancedIA suspend le pont dès la ligne (garde « finished ») mais publie encore son résultat ; l'arrivée
   -- et le bilan sont dits à la ligne, sans attendre la reconnexion (au retour au stand). Rien d'autre.
@@ -515,11 +595,13 @@ function saveNow()
  dirtyAt=nil; rememberDesktop()
  local out={}; for k,v in pairs(cfg) do out[k]=v end
  out.desktops={}; for d,t in pairs(desktops) do out.desktops[tostring(d)]=t end
+ out.gameWindows={}; for d,t in pairs(gameWins) do out.gameWindows[tostring(d)]=t end
  Port.saveSettings(out)
 end
 function script.update(dt)
  radioClock()
  if protected(step,dt) then bootFrames=bootFrames+1 end
+ protected(captureWindow,false)
  protected(settingsStep)
  protected(radioStep)
  protected(duckFrame,dt)
@@ -535,11 +617,24 @@ local function drawMain(a) UI.draw(view,a) end
 -- Overlays, puis le bouton et le panneau d'édition en jeu (au-dessus).
 -- Un overlay en erreur ne retire ni le bouton ni le panneau d'édition : l'erreur est relancée après eux.
 local function drawHud(a)
+ -- Bureau illisible : rien n'est dessiné (comme SuperHUD).
+ if not a.desktopAvailable then return end
  local ok,err=pcall(Overlays.hud,hud,a)
  Editor.hud(editor,a)
  if not ok then error(err,0) end
 end
-function script.SPE__MAIN() app.voicePresent=present; window(drawMain) end
+-- Bureau relu avant de dessiner (comme SuperHUD) : CSP peut dessiner une fenêtre du nouveau bureau avant update(), un
+-- réglage d'overlay fait aussitôt irait sinon dans le bureau quitté.
+function script.SPE__MAIN() syncDesktop(); app.voicePresent=present; window(drawMain) end
+-- Fenêtre de réglages en jeu (barre des applications, comme SuperHUD) ; la fenêtre principale reste celle des stands
+-- et du menu pause (SETUP), ouverte aussi par AdvancedIA (IMGUI_LUA_SpotterEnginer_main).
+function script.SPE__GAME()
+ syncDesktop(true); app.voicePresent=present
+ app.gameWindow=true; window(drawMain); app.gameWindow=false
+ protected(captureWindow,true)
+end
+-- Croix de la fenêtre de réglages en jeu : fermée sur ce bureau (état relevé à l'image suivante).
+function app.closeGameWindow() Port.closeGameWindow() end
 -- Overlays en jeu (rappel IN_GAME du manifeste), comme SuperHUD et AdvancedIA.
 -- CSP peut dessiner le nouveau bureau avant update() : bureau relu ici aussi (comme SuperHUD).
 function script.SPE__HUD() syncDesktop(); window(drawHud) end

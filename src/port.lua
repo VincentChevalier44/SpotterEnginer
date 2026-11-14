@@ -48,6 +48,69 @@ function M.desktop()
  if ok and type(v)=='number' and v==math.floor(v) and v>=0 and v<4 then return v+1 end
  return nil
 end
+-- Fenêtre de réglages en jeu (NAME de WINDOW_1 dans manifest.ini), retrouvée comme SuperHUD retrouve sa fenêtre de
+-- configuration : ac.getAppWindows puis ac.accessAppWindow, recherche au plus une fois par seconde ; nil sans ces API.
+M.gameTitle='SpotterEnginer - Config'
+local gameWin={w=nil,next=-1e9}
+local function gameWindow()
+ if not (callable(ac.getAppWindows) and callable(ac.accessAppWindow)) then return nil end
+ local ok,w=pcall(function()
+  local w=gameWin.w
+  if w and w:valid() then return w end
+  local now=os.clock()
+  if now<gameWin.next then return nil end
+  gameWin.next=now+1
+  for _,item in ipairs(ac.getAppWindows()) do
+   if item.title==M.gameTitle or item.name==M.gameTitle then
+    w=ac.accessAppWindow(item.name)
+    if w and w:valid() then gameWin.w=w; return w end
+   end
+  end
+  return nil
+ end)
+ return ok and w or nil
+end
+-- Fenêtre retrouvée gardée : oubliée (tests, rechargement).
+function M.forgetGameWindow() gameWin.w=nil; gameWin.next=-1e9 end
+local function finite(v) return type(v)=='number' and v==v and v>-1e6 and v<1e6 end
+-- État de la fenêtre : {open}, et sa place et sa taille avec geometry ; nil si elle est introuvable.
+function M.windowState(geometry)
+ local w=gameWindow()
+ if not w then return nil end
+ local ok,st=pcall(function()
+  local st={open=w:visible()==true}
+  if geometry then
+   local p,s=w:position(),w:size()
+   if finite(p.x) and finite(p.y) and finite(s.x) and finite(s.y) and s.x>0 and s.y>0 then st.x,st.y,st.w,st.h=p.x,p.y,s.x,s.y end
+  end
+  return st
+ end)
+ return ok and st or nil
+end
+-- Remet la fenêtre dans l'état st (place et taille gardées dans l'écran, puis ouverte ou fermée).
+function M.applyWindow(st,screen)
+ local w=gameWindow()
+ if not w or type(st)~='table' then return false end
+ local ok=pcall(function()
+  if st.x and st.y and st.w and st.h then
+   local bw,bh,bx,by=st.w,st.h,st.x,st.y
+   if screen then
+    bw=math.min(bw,math.max(560,screen.x)); bh=math.min(bh,math.max(420,screen.y))
+    bx=math.max(0,math.min(bx,math.max(0,screen.x-bw))); by=math.max(0,math.min(by,math.max(0,screen.y-bh)))
+   end
+   w:move(vec2(bx,by)); w:resize(vec2(bw,bh))
+  end
+  if type(st.open)=='boolean' then w:setVisible(st.open) end
+ end)
+ return ok
+end
+-- Ferme la fenêtre de réglages en jeu (croix de son en-tête, comme SuperHUD) ; sans la fenêtre retrouvée, par
+-- ac.setAppWindowVisible si CSP l'a.
+function M.closeGameWindow()
+ if M.applyWindow({open=false}) then return true end
+ if callable(ac.setAppWindowVisible) then return pcall(ac.setAppWindowVisible,'SpotterEnginer','game',false) end
+ return false
+end
 -- Touche enfoncée (code de touche virtuelle Windows), comme les raccourcis de SuperHUD.
 function M.keyDown(code)
  if not callable(ac.isKeyDown) then return false end
@@ -94,6 +157,21 @@ function M.detect()
   end
  end)
  return installed,hasBridge,release,folder
+end
+-- Manifeste de SetupLab (1.3.9, app facultative : src/setuplab.lua, M.installed), ou nil.
+function M.superhudManifest()
+ local ok,text=pcall(function()
+  local path=M.luaAppsDir()..'/SuperHUD/manifest.ini'
+  return io.fileExists(path) and io.load(path,'') or nil
+ end)
+ return ok and text or nil
+end
+function M.setupLabManifest()
+ local ok,text=pcall(function()
+  local path=M.luaAppsDir()..'/SetupLab/manifest.ini'
+  return io.fileExists(path) and io.load(path,'') or nil
+ end)
+ return ok and type(text)=='string' and text or nil
 end
 -- Structures du pont : constructeur identique à Applier.bridgeOpen d'AdvancedIA (même format, mêmes clés).
 local function item(f)
@@ -366,7 +444,9 @@ local names={}
 local dims={}
 local wetTypes={[0]=true,true,true,true,true,true,true,true,true,true,true,true,true,true,true}
 function M.newFrame()
- local F={cars={},me={tyres={{},{},{},{}},brakes={0,0,0,0},damage={0,0,0,0,0},susp={0,0,0,0},hit=-1},count=0,player=-1,valid=false,clock=0}
+ local F={cars={},me={tyres={{},{},{},{}},brakes={0,0,0,0},damage={0,0,0,0,0},susp={0,0,0,0},hit=-1},count=0,player=-1,valid=false,clock=0,
+  -- Voiture suivie par la caméra (1.3.9, overlays seulement : src/focus.lua) : indice (-1 : aucune autre) et données.
+  focus=-1,view={ok=false,index=-1,fuel=0,maxFuel=100,compound=0,tyres={{core=0},{core=0},{core=0},{core=0}},brakes={0,0,0,0},damage={0,0,0,0,0}}}
  for i=0,Layout.maxCars-1 do F.cars[i]={index=i,valid=false,name='',x=0,z=0,lookX=0,lookZ=1,kmh=0,spline=0,laps=0} end
  return F
 end
@@ -439,6 +519,20 @@ function M.read(F,dt)
   else c.valid=false end
  end
  if F.player<0 and count>0 then F.player=0 end
+ -- Voiture suivie par la caméra (comme SuperHUD : sim.focusedCar entier, voiture valide) : carburant, pneus, freins,
+ -- dégâts, lus seulement quand ce n'est pas le joueur. Jamais utilisée par la radio (overlays seulement).
+ local fc=num(sim.focusedCar,-1)
+ F.focus=(fc==math.floor(fc) and fc>=0 and fc<count and F.cars[fc].valid) and fc or -1
+ local v=F.view; v.ok=false
+ if F.focus>=0 and F.focus~=F.player then
+  local okV,vc=pcall(ac.getCar,F.focus)
+  if okV and vc then
+   v.ok=true; v.index=F.focus
+   v.fuel=num(vc.fuel); v.maxFuel=num(vc.maxFuel,100); v.compound=num(vc.compoundIndex)
+   if not pcall(readDamage,v,vc) then for k=1,5 do v.damage[k]=0 end end
+   if not pcall(readWheels,v,vc) then for k=1,4 do v.tyres[k].core=0 end end
+  end
+ end
  -- Voiture du joueur : pneus, freins, carburant, dégâts, aides.
  local okMe,car=pcall(ac.getCar,math.max(0,F.player))
  local me=F.me

@@ -32,7 +32,9 @@ function W.colors()
    -- Beta 1.38 : violet du meilleur tour ; voile d'une section décochée (fond du panneau, contenu grisé à 42 %).
    best=hex('#B26CFF'),veil=hex('#111318',0.58),
    -- Nom de l'app dans l'en-tête : l'accent pervenche.
-   brand=hex('#A09BFF')}
+   brand=hex('#A09BFF'),
+   -- Record (meilleur tour), comme le violet de course de SuperHUD.
+   record=hex('#B26CFF')}
  end
  return W.current or palette
 end

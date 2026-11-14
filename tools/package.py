@@ -33,7 +33,7 @@ def runtime():
 
 def collect():
     files = [APP / name for name in ['SpotterEnginer.lua', 'manifest.ini', 'icon.png', *NOTICES]]
-    for folder, patterns in [('src', ['*.lua']), ('sounds', ['*.wav']), ('vox', ['*/*.wav', '*/*/*.wav']), ('fonts', ['*/*.ttf', '*/OFL.txt'])]:
+    for folder, patterns in [('src', ['*.lua']), ('sounds', ['*.wav']), ('vox', ['*/*.wav', '*/*/*.wav', '*/*/*/*.wav']), ('fonts', ['*/*.ttf', '*/OFL.txt'])]:
         for pattern in patterns:
             files.extend((APP / folder).glob(pattern))
     missing = [p.name for p in files if not p.exists()]

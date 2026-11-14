@@ -52,6 +52,18 @@ function M.step(k,hello,data,now)
  return state~=before
 end
 function M.connected(k) return k.state=='connected' end
+-- Version d'AdvancedIA publiée dans le hello (« Beta 1.63 ») au moins major.minor.
+local function releaseAtLeast(rel,major,minor)
+ local a,b=tostring(rel or ''):match('(%d+)%.(%d+)')
+ a=tonumber(a); b=tonumber(b)
+ return a~=nil and b~=nil and (a>major or a==major and b>=minor)
+end
+-- AdvancedIA Beta 1.63 (règle F1 : un arrêt sous VSC, FCY ou voiture de sécurité compte avant l'ouverture de la
+-- fenêtre) : en fenêtre « pending », pitDue dit si l'arrêt obligatoire est encore dû (1) ou déjà compté (0). Avant la
+-- 1.63, pitDue vaut toujours 0 en « pending » : l'arrêt reste dû.
+function M.pendingDue(k) return k~=nil and releaseAtLeast(k.remoteRelease,1,63) end
+-- Arrêt obligatoire encore dû avant l'ouverture de la fenêtre (d : données du pont, ou leur copie).
+function M.owedBeforeWindow(k,d) return not M.pendingDue(k) or (tonumber(d and d.pitDue) or 0)>0 end
 -- Course neutralisée ou arrêtée (VSC, FCY, SC, drapeau rouge) d'après les données du pont (d : nil sans pont).
 function M.neutralised(d) return d~=nil and (d.neutral or d.red) or false end
 -- Données d'une voiture (indice d'AC), ou nil.
