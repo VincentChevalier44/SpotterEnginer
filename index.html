@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpotterEnginer — illustrated guide (1.3.9)</title>
+<meta name="description" content="The complete guide to SpotterEnginer, Vincent Chevalier’s voice spotter and race engineer for Assetto Corsa, built on AdvancedIA: 10 illustrated chapters.">
+<meta name="theme-color" content="#0A0B0E">
+<link rel="icon" type="image/png" href="img/icon-64.png">
+<link rel="preload" href="fonts/barlow-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/barlowc-800i.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:Barlow;src:url(fonts/barlow-400.woff2) format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:Barlow;src:url(fonts/barlow-600.woff2) format('woff2');font-weight:600;font-display:swap}
+@font-face{font-family:'Barlow Condensed';src:url(fonts/barlowc-700.woff2) format('woff2');font-weight:700;font-display:swap}
+@font-face{font-family:'Barlow Condensed';src:url(fonts/barlowc-800i.woff2) format('woff2');font-weight:800;font-style:italic;font-display:swap}
+@font-face{font-family:'JetBrains Mono';src:url(fonts/jbmono-500.woff2) format('woff2');font-weight:500;font-display:swap}
+:root{--bg:#0A0B0E;--bg2:#0d0f13;--panel:#111318;--panel2:#17191E;--line:#23272E;--line2:#3A404C;--bl:#A09BFF;--ink:#100C2E;--cy:#A09BFF;--cy2:#C4C1FF;--cyd:#37327A;
+--tx:#EEF0F3;--tx2:#C9CDD3;--mut:#8D94A0;--dim:#5C626C;--or:#FFC23D;--gr:#2EE07F;--rd:#FF5A4E;--yl:#FFC23D;--vi:#B26CFF;
+--r:14px;--r2:10px;--head:64px;--ease:cubic-bezier(.2,.7,.2,1);--sh:0 10px 30px -12px rgba(0,0,0,.6)}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--head) + 16px);-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+body{margin:0;overflow-anchor:none;background:var(--bg);color:var(--tx);font:400 17px/1.6 Barlow,system-ui,sans-serif;overflow-x:hidden}
+img,video{display:block;max-width:100%}
+a{color:var(--cy);text-decoration:none}a:hover{color:var(--cy2)}
+code{font:500 .86em/1.4 'JetBrains Mono',ui-monospace,monospace;color:var(--cy2);background:#16143A;border:1px solid #37327A;border-radius:6px;padding:.05em .38em;overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--cy);outline-offset:3px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.h{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;letter-spacing:.01em;text-transform:uppercase;line-height:1}
+.chip{display:inline-flex;align-items:center;gap:.4em;font:500 13px/1 'JetBrains Mono',monospace;color:var(--cy);border:1px solid var(--cyd);border-radius:999px;padding:.45em .8em;white-space:nowrap}
+
+/* en-tête */
+.top{position:sticky;top:0;z-index:20;height:var(--head);background:rgba(10,11,14,.86);backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+.top-in{height:100%;max-width:1480px;margin:0 auto;padding:0 clamp(14px,3vw,28px);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:clamp(10px,2vw,24px)}
+.brand{display:grid;grid-template-columns:40px auto;align-items:center;gap:10px;color:var(--tx)}
+.brand img{width:40px;height:40px}
+.brand b{font-size:24px;display:block}.brand b i{font-style:inherit;color:var(--cy)}.brand small{display:block;font:600 11px/1 Barlow;color:var(--mut);letter-spacing:.12em;text-transform:uppercase;margin-top:3px}
+.search{position:relative;max-width:520px;width:100%;justify-self:center}
+.search input{width:100%;height:42px;border-radius:12px;border:1px solid var(--line2);background:var(--panel);color:var(--tx);font:400 16px Barlow;padding:0 72px 0 42px;transition:border-color .2s,box-shadow .2s}
+.search input::placeholder{color:var(--dim)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.search input:focus{outline:none;border-color:var(--cy);box-shadow:0 0 0 4px rgba(160,155,255,.15)}
+.search svg{position:absolute;left:13px;top:50%;translate:0 -50%;width:18px;height:18px;color:var(--mut);pointer-events:none}
+.search kbd{position:absolute;right:10px;top:50%;translate:0 -50%;font:500 12px 'JetBrains Mono';color:var(--mut);border:1px solid var(--line2);border-radius:6px;padding:2px 7px;pointer-events:none}
+.search .count{position:absolute;right:12px;top:50%;translate:0 -50%;font:500 12px 'JetBrains Mono';color:var(--cy)}
+.tools{display:flex;align-items:center;gap:14px}
+.lang{display:inline-grid;grid-auto-flow:column;border:1px solid var(--line2);border-radius:10px;padding:3px;background:var(--panel)}
+.lang button{all:unset;cursor:pointer;font:700 15px/1 'Barlow Condensed';letter-spacing:.08em;color:var(--mut);padding:7px 10px;border-radius:7px;transition:background .2s,color .2s}
+.lang button:hover{color:#fff}
+.lang button:focus-visible{outline:2px solid var(--cy);outline-offset:1px}
+.lang button[aria-pressed=true]{background:var(--bl);color:var(--ink);clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)}
+.root[hidden]{display:none!important}
+.top .gh{display:inline-flex;align-items:center;gap:8px;color:var(--tx2);font-weight:600;font-size:15px}
+.top .gh svg{width:20px;height:20px}
+@media (max-width:760px){.brand small,.top .chip.ver,.top .gh span{display:none}.search kbd{display:none}.brand b{font-size:20px}}
+.tools .gh{display:inline-flex}
+@media (max-width:560px){.top .gh{display:none}.brand span{display:none}.brand{grid-template-columns:40px}.search input{padding-right:12px}.search .count{display:none}}
+
+/* mise en page */
+.layout{max-width:1480px;margin:0 auto;padding:0 clamp(14px,3vw,28px);display:grid;grid-template-columns:250px minmax(0,1fr);gap:clamp(20px,3vw,40px)}
+.toc{position:sticky;top:calc(var(--head) + 20px);align-self:start;max-height:calc(100dvh - var(--head) - 40px);overflow:auto;padding:4px 4px 24px;scrollbar-width:thin}
+.toc p{margin:0 0 10px;font:700 13px/1 'Barlow Condensed';letter-spacing:.14em;color:var(--mut)}
+.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.toc a{display:grid;grid-template-columns:30px minmax(0,1fr);gap:6px;align-items:baseline;padding:8px 10px;border-radius:10px;color:var(--tx2);font-weight:600;font-size:15px;line-height:1.25;transition:background .2s,color .2s}
+.toc a span{font:800 italic 16px 'Barlow Condensed';color:var(--dim)}
+.toc a:hover{background:var(--panel)}
+.toc a.on{background:linear-gradient(90deg,rgba(160,155,255,.16),rgba(160,155,255,.02));color:#fff;box-shadow:inset 3px 0 0 var(--cy)}
+.toc a.on span{color:var(--cy)}
+.toc a.dim{opacity:.35}
+@media (max-width:1100px){
+ .layout{grid-template-columns:minmax(0,1fr)}
+ .toc{position:sticky;top:var(--head);z-index:15;max-height:none;margin:0 calc(-1*clamp(14px,3vw,28px));padding:10px clamp(14px,3vw,28px);background:rgba(10,11,14,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);overflow-x:auto;overscroll-behavior-x:contain}
+ .toc p{display:none}.toc ol{grid-auto-flow:column;grid-auto-columns:max-content;gap:6px}
+ .toc a{grid-template-columns:auto auto;padding:7px 12px;border:1px solid var(--line);border-radius:999px;white-space:nowrap;font-size:14px}
+ html{scroll-padding-top:calc(var(--head) + 72px)}}
+main{min-width:0;padding-bottom:80px}
+
+/* héros */
+.hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:clamp(20px,3vw,40px);align-items:center;padding:clamp(28px,5vw,64px) 0 clamp(20px,3vw,36px)}
+.hero h1{font-size:clamp(40px,4.9vw,76px);margin:.2em 0 .25em}
+.hero h1 em{font-style:inherit;color:var(--bl)}
+.hero .lead{font-size:clamp(17px,1.6vw,20px);color:var(--tx2);max-width:60ch;margin:0 0 22px}
+.hero .stats{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 26px}
+.hero .stats .chip{font-size:14px;color:var(--tx);border-color:var(--line2);background:var(--panel)}
+.hero .stats .chip b{color:var(--cy);font-weight:500}
+.cta{display:flex;flex-wrap:wrap;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 30px;border-radius:0;clip-path:polygon(12px 0,100% 0,calc(100% - 12px) 100%,0 100%);font-style:italic;font:700 18px 'Barlow Condensed';letter-spacing:.06em;text-transform:uppercase;transition:transform .2s var(--ease),box-shadow .2s,background .2s}
+.btn.pri{background:var(--bl);color:var(--ink);box-shadow:0 10px 30px -10px rgba(160,155,255,.7)}
+.btn.pri:hover{transform:translateY(-2px);color:var(--ink)}
+.btn.sec{color:var(--tx);background:var(--panel2);box-shadow:inset 0 0 0 1px var(--line2)}
+.btn.sec:hover{border-color:var(--cy);color:#fff}
+.hero figure{margin:0;border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--sh);aspect-ratio:1983/793;background:var(--panel)}
+.hero figure img{width:100%;height:100%;object-fit:cover}
+@media (max-width:900px){.hero{grid-template-columns:minmax(0,1fr)}.hero figure{order:-1}}
+
+/* démarrage rapide */
+.sec-t{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:clamp(28px,4vw,48px) 0 16px;flex-wrap:wrap}
+.sec-t h2{font-size:clamp(28px,3vw,40px);margin:0}
+.sec-t p{margin:0;color:var(--mut)}
+.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;counter-reset:q}
+.quick li{list-style:none;position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px 18px 18px 64px;counter-increment:q}
+.quick li::before{content:counter(q);position:absolute;left:16px;top:16px;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--cyd);color:#fff;font:800 italic 20px 'Barlow Condensed'}
+.quick b{display:block;font:700 20px/1.1 'Barlow Condensed';letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+.quick span{color:var(--tx2);font-size:15.5px;line-height:1.45}
+@media (max-width:1200px){.quick{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.quick{grid-template-columns:minmax(0,1fr)}}
+.quick{padding:0;margin:0}
+
+/* grille des chapitres */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:16px;padding:0;margin:0}
+.card{list-style:none}
+.card a{display:grid;grid-template-rows:auto 1fr;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;color:var(--tx);transition:transform .25s var(--ease),border-color .25s,box-shadow .25s}
+.card a:hover{transform:translateY(-3px);border-color:var(--cyd);box-shadow:var(--sh);color:var(--tx)}
+.card .th{position:relative;aspect-ratio:16/9;background:#0d0f13}
+.card .th img{width:100%;height:100%;object-fit:cover}
+.card .th .chip{position:absolute;right:10px;bottom:10px;background:rgba(10,11,14,.85);color:#fff;border-color:transparent}
+.card .bd{padding:14px 16px 16px;display:grid;gap:6px;align-content:start}
+.card .n{font:800 italic 15px 'Barlow Condensed';color:var(--cy);letter-spacing:.08em}
+.card h3{margin:0;font:700 22px/1.1 'Barlow Condensed';text-transform:uppercase;letter-spacing:.02em}
+.card p{margin:0;color:var(--mut);font-size:15px;line-height:1.45}
+
+/* chapitre */
+.chapter{padding-top:clamp(36px,5vw,64px);margin-top:clamp(36px,5vw,64px);border-top:1px solid var(--line)}
+.ch-h{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 20px;align-items:end;margin-bottom:22px}
+.ch-h .num{font:800 italic clamp(56px,7vw,96px)/.8 'Barlow Condensed';color:transparent;-webkit-text-stroke:2px var(--bl);grid-row:span 2}
+.ch-h h2{margin:0;font-size:clamp(30px,3.6vw,52px)}
+.ch-h p{margin:0;color:var(--tx2);grid-column:2}
+.ch-h .chip{grid-row:1;grid-column:3;align-self:center}
+.ch-h p:only-of-type{grid-column:2}
+@media (max-width:640px){.ch-h{grid-template-columns:auto minmax(0,1fr)}.ch-h .chip{grid-column:2;grid-row:auto;justify-self:start}.ch-h p{grid-column:1/-1}}
+.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:16px}
+.shots figure{margin:0;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+.shots a{display:block;aspect-ratio:16/9;background:#0d0f13;cursor:zoom-in}
+.shots img{width:100%;height:100%;object-fit:cover;transition:transform .35s var(--ease)}
+.shots a:hover img{transform:scale(1.015)}
+.shots figcaption{padding:10px 14px;font-size:14.5px;color:var(--mut);border-top:1px solid var(--line)}
+/* rubriques de la notice */
+.notice{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));gap:14px;margin-top:22px}
+.topic{background:var(--panel);border:1px solid var(--line);border-radius:var(--r) 0 var(--r) var(--r);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%);padding:18px 20px 16px;min-width:0;transition:border-color .2s}
+.topic:hover{border-color:var(--line2)}
+.topic{position:relative}.topic::after{content:'';position:absolute;top:-1px;right:-1px;width:17px;height:17px;pointer-events:none;background:linear-gradient(to top right,transparent calc(50% - 1px),var(--line) calc(50% - .5px),var(--line) calc(50% + .5px),transparent calc(50% + 1px))}
+.topic:hover::after{background:linear-gradient(to top right,transparent calc(50% - 1px),var(--line2) calc(50% - .5px),var(--line2) calc(50% + .5px),transparent calc(50% + 1px))}
+.topic.new::after{background:linear-gradient(to top right,transparent calc(50% - 1px),#37327A calc(50% - .5px),#37327A calc(50% + .5px),transparent calc(50% + 1px))}
+.topic h3{margin:0 0 4px;font:700 22px/1.15 'Barlow Condensed';text-transform:uppercase;letter-spacing:.02em;display:flex;gap:10px;align-items:baseline}
+.topic h3 .t{font:500 12px 'JetBrains Mono';color:var(--cy);letter-spacing:0;text-transform:none;background:#16143A;border:1px solid #37327A;border-radius:6px;padding:2px 7px;cursor:pointer;white-space:nowrap}
+.topic h3 .t:hover{background:#0a2c3a}
+.topic .path{margin:0 0 10px;font:500 13px/1.45 'JetBrains Mono';color:var(--mut);overflow-wrap:anywhere}
+.topic ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.topic li{position:relative;padding-left:20px;color:var(--tx2);font-size:16px;line-height:1.5}
+.topic li::before{content:'';position:absolute;left:3px;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--cy);rotate:45deg}
+.topic dl{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.topic dl div{background:#2E2410;border:1px solid #5a4517;border-radius:9px;padding:6px 10px;font-size:14px;line-height:1.35}
+.topic dt{display:inline;color:var(--or);font-weight:600}.topic dt::after{content:' · '}
+.topic dd{display:inline;margin:0;color:#E6C98A}
+.topic.more{background:linear-gradient(180deg,#0f1216,var(--panel));border-style:dashed}
+.topic h3 .tag{flex:none;font:700 12px/1 'Barlow Condensed';letter-spacing:.14em;color:#031820;background:var(--or);border-radius:6px;padding:4px 7px;align-self:center}
+.topic.new{border:1px solid #37327A;border-style:solid;background:linear-gradient(180deg,#16143A,var(--panel));box-shadow:inset 3px 0 0 var(--cy)}
+.topic.new h3 .tag{background:var(--bl);color:var(--ink)}
+.topic.wide{grid-column:1/-1}
+.tbl{overflow-x:auto;margin-top:6px;border-radius:10px;border:1px solid var(--line)}
+.tbl table{width:100%;border-collapse:collapse;font-size:15px;min-width:420px}
+.tbl th{font:700 14px 'Barlow Condensed';letter-spacing:.08em;text-transform:uppercase;color:var(--cy);background:#16143A;text-align:left;padding:9px 12px}
+.tbl td{padding:9px 12px;border-top:1px solid var(--line);color:var(--tx2);vertical-align:top}
+.tbl td:first-child{color:#fff;font-weight:600}
+mark{background:rgba(255,194,61,.28);color:#fff;border-radius:3px;padding:0 1px}
+.hidden{display:none!important}
+.empty{display:none;margin:40px 0;padding:28px;border:1px dashed var(--line2);border-radius:var(--r);text-align:center;color:var(--mut)}
+.empty.show{display:block}
+
+/* pied de page */
+.guard{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;padding:0;margin:0}
+.guard li{list-style:none;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--gr);border-radius:var(--r2);padding:12px 14px;color:var(--tx2);font-size:15.5px;line-height:1.45}
+.guard li b{color:#fff;display:block;font:700 18px 'Barlow Condensed';letter-spacing:.03em;text-transform:uppercase}
+footer.site{margin-top:56px;padding:28px 0 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 24px;color:var(--mut);font-size:14.5px}
+footer.site p{margin:0}
+@media (max-width:640px){footer.site{grid-template-columns:minmax(0,1fr)}}
+.totop{position:fixed;right:18px;bottom:18px;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:var(--panel2);border:1px solid var(--line2);color:var(--tx);opacity:0;pointer-events:none;translate:0 10px;transition:opacity .25s,translate .25s var(--ease);z-index:30}
+.totop.show{opacity:1;pointer-events:auto;translate:0 0}
+.totop svg{width:20px;height:20px}
+.zoom{position:fixed;inset:0;z-index:50;background:rgba(5,6,8,.92);display:grid;place-items:center;padding:clamp(10px,3vw,40px);cursor:zoom-out;opacity:0;pointer-events:none;transition:opacity .2s}
+.zoom.on{opacity:1;pointer-events:auto}.zoom img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+</style>
+</head>
+<body><div class="root" data-l="fr" lang="fr" data-title="SpotterEnginer — notice illustrée (1.3.9)" data-words="rubrique|rubriques" hidden>
+<a class="sr" href="#contenu">Aller au contenu</a>
+<header class="top"><div class="top-in">
+ <a class="brand" href="#haut" aria-label="SpotterEnginer"><img src="img/icon-64.png" width="40" height="40" alt=""><span><b class="h">Spotter<i>Enginer</i></b><small>Notice illustrée</small></span></a>
+ <div class="search" role="search"><label class="sr" for="q">Rechercher dans la notice</label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Rechercher : box, côte à côte, overlay…" autocomplete="off" spellcheck="false"><kbd>/</kbd><span class="count" id="qcount" aria-live="polite"></span></div>
+ <div class="tools"><div class="lang" role="group" aria-label="Langue"><button type="button" data-set="fr" lang="fr" aria-pressed="false" title="Français">FR</button><button type="button" data-set="en" lang="en" aria-pressed="false" title="English">EN</button></div><span class="chip ver">1.3.9</span><a class="gh" href="https://github.com/VincentChevalier44/SpotterEnginer" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.4-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg><span>GitHub</span></a></div>
+</div></header>
+<div class="layout" id="haut">
+<nav class="toc" aria-label="Chapitres"><p>CHAPITRES</p><ol>
+<li><a href="#c01"><span>01</span>Découvrir SpotterEnginer</a></li>
+<li><a href="#c02"><span>02</span>Avec AdvancedIA</a></li>
+<li><a href="#c03"><span>03</span>La fenêtre de réglages</a></li>
+<li><a href="#c04"><span>04</span>Le spotter</a></li>
+<li><a href="#c05"><span>05</span>L’ingénieur</a></li>
+<li><a href="#c06"><span>06</span>La stratégie d’arrêt</a></li>
+<li><a href="#c07"><span>07</span>Radio et voix</a></li>
+<li><a href="#c08"><span>08</span>Overlays et bureaux</a></li>
+<li><a href="#c09"><span>09</span>Mise à jour et réglages</a></li>
+<li><a href="#c10"><span>10</span>Limites et dépannage</a></li>
+</ol></nav><main id="contenu">
+<section class="hero hide-on-search">
+ <div><span class="chip">Assetto Corsa · Custom Shaders Patch</span>
+ <h1 class="h">Votre équipe <em>à la radio</em>,<br>à chaque tour.</h1>
+ <p class="lead">SpotterEnginer est un spotter et un ingénieur de course à la voix, en français ou en anglais, branchés sur AdvancedIA : direction de course, trafic, écarts, carburant, pneus, freins, météo et stratégie d’arrêt. Cette notice montre, chapitre par chapitre, ce que fait l’app et où le régler.</p>
+ <div class="stats"><span class="chip"><b>10</b> chapitres</span><span class="chip"><b>40</b> rubriques</span><span class="chip"><b>15</b> illustrations</span><span class="chip">Version <b>1.3.9</b></span></div>
+ <div class="cta"><a class="btn pri" href="#c01">Commencer la visite</a><a class="btn sec" href="https://github.com/VincentChevalier44/SpotterEnginer/releases/latest" target="_blank" rel="noopener">Télécharger l’app</a></div></div>
+ <figure><img src="img/banner.webp" width="1600" height="791" alt="Bannière SpotterEnginer" fetchpriority="high"></figure>
+</section>
+<div class="sec-t hide-on-search"><h2 class="h">Démarrage rapide</h2><p>Quatre étapes pour une première course.</p></div><ol class="quick hide-on-search">
+<li><b>Installer AdvancedIA</b><span>AdvancedIA Beta 2.0.0 ou plus récent, installé et actif : SpotterEnginer ne fonctionne qu’avec lui.</span></li>
+<li><b>Installer l’app</b><span>Jeu fermé, glisser le zip sur Content Manager : il crée <code>assettocorsa/apps/lua/SpotterEnginer/</code>.</span></li>
+<li><b>Lancer une séance</b><span>Séance hors ligne avec AdvancedIA : la pastille de l’en-tête passe à « Connecté à AdvancedIA ».</span></li>
+<li><b>Choisir la langue</b><span>Badge FR / EN de l’en-tête (voix et interface), puis Tester la voix sur l’onglet Accueil.</span></li>
+</ol>
+<div class="sec-t hide-on-search"><h2 class="h">Les chapitres</h2><p>Chaque chapitre a ses illustrations et sa notice écrite juste en dessous.</p></div><ul class="cards hide-on-search">
+<li class="card"><a href="#c01"><div class="th"><img src="img/fr/home.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 01</span><h3>Découvrir SpotterEnginer</h3><p>Ce que fait l’app, ce qu’il lui faut, comment l’installer et la lancer.</p></div></a></li>
+<li class="card"><a href="#c02"><div class="th"><img src="img/fr/bridge.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 02</span><h3>Avec AdvancedIA</h3><p>Le pont de données, ses états, et les apps compagnes facultatives.</p></div></a></li>
+<li class="card"><a href="#c03"><div class="th"><img src="img/fr/window.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 03</span><h3>La fenêtre de réglages</h3><p>Sept onglets, des rôles, des sections : tout se règle au même endroit.</p></div></a></li>
+<li class="card"><a href="#c04"><div class="th"><img src="img/fr/sides.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 04</span><h3>Le spotter</h3><p>Direction de course, côte à côte, écarts, trafic et urgences.</p></div></a></li>
+<li class="card"><a href="#c05"><div class="th"><img src="img/fr/pace.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 05</span><h3>L’ingénieur</h3><p>Rythme, position, carburant, pneus, freins, dégâts, conditions et bilan.</p></div></a></li>
+<li class="card"><a href="#c06"><div class="th"><img src="img/fr/plan.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 06</span><h3>La stratégie d’arrêt</h3><p>Un plan recalculé à chaque tour, et une seule référence pour le « box ».</p></div></a></li>
+<li class="card"><a href="#c07"><div class="th"><img src="img/fr/voice.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 07</span><h3>Radio et voix</h3><p>Deux voix, des priorités, et jamais de harcèlement.</p></div></a></li>
+<li class="card"><a href="#c08"><div class="th"><img src="img/fr/editor.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 08</span><h3>Overlays et bureaux</h3><p>Trois overlays à placer en jeu, et un jeu de réglages par bureau.</p></div></a></li>
+<li class="card"><a href="#c09"><div class="th"><img src="img/fr/update.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 09</span><h3>Mise à jour et réglages</h3><p>Mettre à jour en un clic, revenir en arrière, réinitialiser ou désinstaller.</p></div></a></li>
+<li class="card"><a href="#c10"><div class="th"><img src="img/fr/log.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPITRE 10</span><h3>Limites et dépannage</h3><p>Ce que l’app ne peut pas savoir, et quoi vérifier quand elle se tait.</p></div></a></li>
+</ul>
+<article class="chapter" id="c01" aria-labelledby="t01"><header class="ch-h"><span class="num" aria-hidden="true">01</span><h2 class="h" id="t01">Découvrir SpotterEnginer</h2><span class="chip">5 rubriques</span><p>Ce que fait l’app, ce qu’il lui faut, comment l’installer et la lancer.</p></header>
+<div class="shots">
+<figure><a href="img/fr/home.webp" aria-label="Agrandir l’illustration"><img src="img/fr/home.webp" width="1600" height="900" loading="lazy" decoding="async" alt="L’onglet Accueil : lien avec AdvancedIA, tuiles des rôles, overlays, clips et volumes."></a><figcaption>L’onglet Accueil : lien avec AdvancedIA, tuiles des rôles, overlays, clips et volumes.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Ce que fait SpotterEnginer</span></h3><ul><li>Il vous parle à la radio, en français ou en anglais, avec deux rôles séparés : le spotter (direction de course, trafic, voitures autour de vous) et l’ingénieur (rythme, carburant, pneus, freins, conditions, conseils de pilotage, stratégie d’arrêt).</li><li>Il dessine en jeu trois overlays : Spotter, Ingénieur et Stratégie.</li><li>Il lit l’état de la course décidé par AdvancedIA (drapeaux, neutralisations, delta, pénalités, fenêtre d’arrêt, sanctions et arrêts des IA) : ce n’est pas une app autonome.</li></ul></section>
+<section class="topic"><h3><span>Ce qu’il faut</span></h3><ul><li>Assetto Corsa sur PC, avec Custom Shaders Patch 0.3.2 ou plus récent (apps Lua actives).</li><li>AdvancedIA Beta 2.0.0 ou plus récent (pont v2), installé dans <code>assettocorsa/apps/lua/AdvancedIA/</code> et en marche : <a href="https://github.com/VincentChevalier44/AdvancedIA" target="_blank" rel="noopener">github.com/VincentChevalier44/AdvancedIA</a></li><li>Séances hors ligne seulement : AdvancedIA ne fait rien en ligne, SpotterEnginer y reste donc silencieux.</li></ul></section>
+<section class="topic"><h3><span>Installation</span></h3><p class="path">assettocorsa/apps/lua/SpotterEnginer</p><ul><li>Avec Content Manager : jeu fermé, télécharger SpotterEnginer-&lt;version&gt;.zip sur la page Releases (un fichier .sha256 l’accompagne pour vérifier le téléchargement) et le glisser sur la fenêtre de Content Manager.</li><li>À la main : copier le dossier dans <code>assettocorsa/apps/lua/</code> et le nommer exactement SpotterEnginer. Chemin final : <code>assettocorsa/apps/lua/SpotterEnginer/manifest.ini</code>.</li><li>Le nom compte : AdvancedIA n’ouvre son pont de données que si <code>apps/lua/SpotterEnginer/manifest.ini</code> existe, et CSP range les réglages sous ce nom.</li></ul></section>
+<section class="topic"><h3><span>Premier lancement</span></h3><ul><li>Activer l’app parmi les apps Lua de CSP, puis lancer une séance hors ligne avec AdvancedIA actif.</li><li>Ouvrir SpotterEnginer depuis la barre des apps : la pastille de l’en-tête doit indiquer « Connecté à AdvancedIA ».</li><li>Voix et interface sont en français à la première installation ; le badge FR / EN de l’en-tête (ou Radio et voix › Voix et langue) passe tout en anglais.</li><li>Onglet Accueil : les tuiles Spotter, Ingénieur, Stratégie et Overlays allument ou coupent chaque rôle ; les boutons Tester la voix sont à côté des volumes.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Deux voix</span></h3><ul><li>Le spotter parle avec une voix féminine, l’ingénieur garde sa voix masculine : on sait tout de suite qui parle.</li><li>Si un fichier de la voix féminine manque, la voix masculine le remplace, jamais le silence.</li></ul></section>
+</div></article>
+<article class="chapter" id="c02" aria-labelledby="t02"><header class="ch-h"><span class="num" aria-hidden="true">02</span><h2 class="h" id="t02">Avec AdvancedIA</h2><span class="chip">5 rubriques</span><p>Le pont de données, ses états, et les apps compagnes facultatives.</p></header>
+<div class="shots">
+<figure><a href="img/fr/bridge.webp" aria-label="Agrandir l’illustration"><img src="img/fr/bridge.webp" width="1600" height="900" loading="lazy" decoding="async" alt="L’onglet Diagnostic : état du lien, version d’AdvancedIA, pont et radio."></a><figcaption>L’onglet Diagnostic : état du lien, version d’AdvancedIA, pont et radio.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Le pont de données</span></h3><ul><li>SpotterEnginer lit l’état décidé par le moteur d’AdvancedIA par un pont entre apps Lua : drapeaux et panneau du pilote, neutralisations (SC, VSC, FCY), relances et départs arrêtés, delta à respecter, vos pénalités, fenêtre d’arrêt et arrêts obligatoires, sanctions et plans d’arrêt des IA.</li><li>Les drapeaux natifs d’Assetto Corsa ne sont jamais utilisés : AdvancedIA impose les siens.</li><li>Une décision d’AdvancedIA est lue, et son annonce démarre, dans la même image du jeu.</li></ul></section>
+<section class="topic"><h3><span>Version et dossier</span></h3><ul><li>La 1.3.9 utilise le pont v2 d’AdvancedIA Beta 2.0.0 : une version plus ancienne d’AdvancedIA est refusée par la mise à jour, qui demande de mettre AdvancedIA à jour d’abord.</li><li>AdvancedIA est cherché dans <code>apps/lua/AdvancedIA</code>, puis dans l’ancien dossier <code>apps/lua/ACAdvancedIA</code> ; seul le <code>manifest.ini</code> compte.</li><li>Tant qu’AdvancedIA n’est pas connecté et en marche, SpotterEnginer ne dit rien : il montre seulement l’état du lien dans l’en-tête et sur l’Accueil.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>AdvancedIA Beta 2.0.0</span></h3><ul><li>Pont v2 : la 1.3.9 demande AdvancedIA Beta 2.0.0 ou plus récent.</li><li>Nouvelles annonces : jaune d’avertissement (voiture lente au bord de la piste, dépassement autorisé) et départ interrompu (« un tour de plus »), puis nouveau départ arrêté ou lancé.</li><li>Un arrêt obligatoire levé est annoncé avec sa raison : course sous la pluie, course trop courte ou course sprint.</li><li>Quand la caméra regarde une IA abandonnée, l’overlay Stratégie indique ABANDON, avec sa dernière pénalité et sa raison.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Avec SetupLab et SuperHUD (facultatifs)</span></h3><ul><li>SetupLab (<a href="https://github.com/VincentChevalier44/SetupLab" target="_blank" rel="noopener">github.com/VincentChevalier44/SetupLab</a>) installé : l’ingénieur donne, en essai et en qualification, le verdict de SetupLab sur ses tours d’essai (plus rapide, plus lent ou pas de différence nette, avec le réglage principal changé) et annonce une nouvelle version prête à essayer au stand. Jamais en course ; en qualification, seulement à l’entrée des stands.</li><li>Avant sa première mesure de carburant, l’ingénieur part de la consommation prévue par SetupLab pour un setup de course.</li><li>SuperHUD installé : tant que les alertes sonores de son radar sont actives, le spotter lui laisse les annonces de côte à côte ; les overlays en position automatique évitent ses blocs sur le même bureau.</li><li>Sans ces apps, rien de tout cela n’apparaît, pas même leurs réglages.</li></ul></section>
+<section class="topic more"><h3><span class="tag">Bon à savoir</span><span>États du lien</span></h3><div class="tbl"><table><thead><tr><th scope="col">État</th><th scope="col">Ce que ça veut dire</th></tr></thead><tbody><tr><td>Connecté à AdvancedIA</td><td>Le spotter et l’ingénieur travaillent avec l’état décidé par AdvancedIA.</td></tr><tr><td>AdvancedIA suspendu · raison</td><td>AdvancedIA est en pause, en rediffusion, en ligne, désactivé… : SpotterEnginer attend.</td></tr><tr><td>En attente d’AdvancedIA</td><td>Installé mais pas en marche : activez-le dans les apps Lua de CSP, ou attendez son démarrage.</td></tr><tr><td>AdvancedIA arrêté</td><td>AdvancedIA vient d’être déchargé.</td></tr><tr><td>AdvancedIA sans pont</td><td>Cette version d’AdvancedIA ne publie pas le pont : installez la version qui l’inclut.</td></tr><tr><td>Version du pont différente</td><td>AdvancedIA publie une autre version du pont : mettez les deux apps à jour.</td></tr><tr><td>AdvancedIA absent</td><td>Pas de <code>manifest.ini</code> dans <code>apps/lua/AdvancedIA</code> ni dans <code>apps/lua/ACAdvancedIA</code>.</td></tr></tbody></table></div></section>
+</div></article>
+<article class="chapter" id="c03" aria-labelledby="t03"><header class="ch-h"><span class="num" aria-hidden="true">03</span><h2 class="h" id="t03">La fenêtre de réglages</h2><span class="chip">3 rubriques</span><p>Sept onglets, des rôles, des sections : tout se règle au même endroit.</p></header>
+<div class="shots">
+<figure><a href="img/fr/window.webp" aria-label="Agrandir l’illustration"><img src="img/fr/window.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Une page de réglages : onglets, rôle, sections et réglages."></a><figcaption>Une page de réglages : onglets, rôle, sections et réglages.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>L’organisation</span></h3><ul><li>En-tête : logo, nom, version, bureau en cours, état du lien, pastille Radio coupée, langue et interrupteur général SpotterEnginer actif.</li><li>Onglets : Accueil, Spotter, Ingénieur, Stratégie, Radio et voix, Overlays, Diagnostic. Un point orange signale un rôle coupé.</li><li>Colonne de gauche : l’interrupteur du rôle et le nombre de sections actives, puis les sections par groupes, chacune avec son interrupteur et le nombre de ses réglages modifiés.</li><li>Volet de droite : la section choisie, son titre, sa pastille ON ou OFF, sa description, Réinitialiser quand un réglage y est modifié, puis ses réglages.</li></ul></section>
+<section class="topic"><h3><span>Les réglages</span></h3><ul><li>Chaque réglage a une marque de valeur par défaut et une infobulle ; un clic droit lui rend sa valeur par défaut.</li><li>Une section coupée ne dit plus rien de ce qu’elle couvre, mais ses choix sont gardés : ses réglages restent visibles, atténués et modifiables.</li><li>Les sections toujours actives n’ont rien à couper : elles règlent un calcul, des volumes ou la langue, ou montrent un état.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Fenêtre de réglages en jeu</span></h3><ul><li>Les réglages sont aussi dans la barre des apps de CSP en roulant, dans la fenêtre SpotterEnginer - Config ; la fenêtre SpotterEnginer reste au stand et dans le menu pause.</li><li>Chaque bureau garde l’état de cette fenêtre (ouverte ou fermée, position, taille) ; une petite croix à côté de l’interrupteur général la ferme.</li></ul></section>
+</div></article>
+<article class="chapter" id="c04" aria-labelledby="t04"><header class="ch-h"><span class="num" aria-hidden="true">04</span><h2 class="h" id="t04">Le spotter</h2><span class="chip">5 rubriques</span><p>Direction de course, côte à côte, écarts, trafic et urgences.</p></header>
+<div class="shots">
+<figure><a href="img/fr/sides.webp" aria-label="Agrandir l’illustration"><img src="img/fr/sides.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Spotter › Côte à côte, et la radio de la voiture regardée."></a><figcaption>Spotter › Côte à côte, et la radio de la voiture regardée.</figcaption></figure>
+<figure><a href="img/fr/ov_spotter.webp" aria-label="Agrandir l’illustration"><img src="img/fr/ov_spotter.webp" width="1600" height="900" loading="lazy" decoding="async" alt="L’overlay Spotter : côtés, voitures devant et derrière, écarts."></a><figcaption>L’overlay Spotter : côtés, voitures devant et derrière, écarts.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Direction de course</span></h3><p class="path">Spotter › Drapeaux et neutralisations</p><ul><li>Drapeaux décidés par AdvancedIA : vert, jaune et double jaune (avec la distance à la zone), rouge, blanc, piste glissante, bleu, noir et blanc, noir à disque orange, noir, damier.</li><li>Safety Car appelée puis déployée, VSC, FCY, fin de VSC dans 10 s, SC qui rentre ce tour, relances et reprise de séance.</li><li>Départ arrêté, tour de formation, départ des stands, feux, « Go, go, go! », faux départ, dernier tour avec votre position et un conseil.</li><li>Delta négatif ou positif sous neutralisation et double jaune (le bip du delta reste celui d’AdvancedIA), pénalités par motif, place à rendre, pénalités de vos adversaires directs.</li><li>DRS à la voix : coupé par défaut, AdvancedIA a déjà son bip et son panneau.</li></ul></section>
+<section class="topic"><h3><span>Côte à côte et écarts</span></h3><ul><li>Voiture à gauche, à droite, trois de front, toujours là, dégagé. Une voiture compte à côté dès 1,3 m de décalage latéral et 0,25 s de recouvrement ; « dégagé » après 0,6 s de voie libre.</li><li>Le côté est vérifié par la position sur la piste donnée par CSP ; gauche et droite sont inversés tout seuls après des désaccords répétés (réglage Inverser gauche et droite en secours).</li><li>Écarts devant et derrière tous les N tours, avec « tu reviens », « il revient », « il s’échappe » ou « écart stable » ; en direct, « tu es dans la seconde » ou « il est dans ta seconde ».</li></ul></section>
+<section class="topic"><h3><span>Trafic et urgences</span></h3><ul><li>Retardataire devant, trafic plus rapide derrière, voiture en tour lancé derrière vous en essai et qualification, sortie des stands libre ou trafic à la ressortie.</li><li>Dangers devant, annoncés tôt à haute vitesse (jusqu’à 900 m) : voiture arrêtée, en tête-à-queue ou à contresens, avec son côté et où passer ; accrochage entre deux voitures devant.</li><li>Vos urgences : contact, tête-à-queue avec reprise guidée (« voiture qui arrive, attends », puis « c’est libre, vas-y »), arrêt ou contresens sur la piste, retour en piste avec une voiture proche.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Décompte de fin de VSC</span></h3><ul><li>Après « fin de VSC dans 10 secondes », le spotter compte les dernières secondes, « 3, 2, 1 », puis dit « Go, go, go! » à la relance. Réglage Décompte de fin de VSC (actif).</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Radio de la voiture regardée</span></h3><ul><li>Quand vous ne pilotez pas (abandon, IA au volant, voiture garée au stand plus de 10 s) et que la caméra suit une autre voiture depuis 2 s, vous entendez sa radio : son spotter et son ingénieur.</li><li>Jamais en roulant ; rien sur votre voiture n’y est dit. Chaque ligne écrite commence par le nom de la voiture et CAMÉRA. Réglage Radio de la voiture regardée (coupé par défaut).</li></ul></section>
+</div></article>
+<article class="chapter" id="c05" aria-labelledby="t05"><header class="ch-h"><span class="num" aria-hidden="true">05</span><h2 class="h" id="t05">L’ingénieur</h2><span class="chip">3 rubriques</span><p>Rythme, position, carburant, pneus, freins, dégâts, conditions et bilan.</p></header>
+<div class="shots">
+<figure><a href="img/fr/pace.webp" aria-label="Agrandir l’illustration"><img src="img/fr/pace.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Ingénieur › Rythme et consignes."></a><figcaption>Ingénieur › Rythme et consignes.</figcaption></figure>
+<figure><a href="img/fr/ov_engineer.webp" aria-label="Agrandir l’illustration"><img src="img/fr/ov_engineer.webp" width="1600" height="900" loading="lazy" decoding="async" alt="L’overlay Ingénieur : carburant, pneus, freins, tours."></a><figcaption>L’overlay Ingénieur : carburant, pneus, freins, tours.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Rythme et position</span></h3><p class="path">Ingénieur › Rythme et consignes</p><ul><li>Écart au tour cible du modèle de stratégie, comparaison avec la voiture que vous chassez ; seuls les tours propres comptent (ni voie des stands, ni neutralisation).</li><li>Consignes : attaque, défense ou garde la position, mode dépassement si la voiture a ERS, P2P ou DRS, cartographie économie quand le carburant manque.</li><li>« Tu es P5. » à la ligne quand votre place a changé, jamais à chaque tour ; en direct, une place gagnée ou perdue en piste est dite tout de suite, une fois tenue 2,5 s.</li></ul></section>
+<section class="topic"><h3><span>La voiture</span></h3><ul><li>Carburant : consommation mesurée, tours de carburant face au besoin (jusqu’à l’arrêt prévu ou l’arrivée), lift and coast, cible plus ou moins N tours.</li><li>Pneus : mise en température, surchauffe du cœur ou de la surface, usure anormale (méplat, cloques, grains, crevaison) ; freins très chauds et conseil de répartition.</li><li>Dégâts : après un contact ou un gros choc, bilan 3,5 s plus tard, de « pas de dégâts » à « gros dégâts, box, box ».</li></ul></section>
+<section class="topic"><h3><span>Conditions, pilotage et bilan</span></h3><ul><li>Pluie attendue dans N minutes, pluie qui s’intensifie, adhérence qui baisse ou remonte ; vent arrière ou de face au début d’un gros freinage.</li><li>Conseils de pilotage sur 40 mini-secteurs, après une perte répétée sur trois tours propres : freinage trop tôt, vitesse en courbe trop basse ou secteur où vous perdez du temps.</li><li>Bilan de fin de course : places gagnées ou perdues depuis le départ, dépassements en piste, meilleur tour de la course s’il est à vous, et un verdict.</li></ul></section>
+</div></article>
+<article class="chapter" id="c06" aria-labelledby="t06"><header class="ch-h"><span class="num" aria-hidden="true">06</span><h2 class="h" id="t06">La stratégie d’arrêt</h2><span class="chip">4 rubriques</span><p>Un plan recalculé à chaque tour, et une seule référence pour le « box ».</p></header>
+<div class="shots">
+<figure><a href="img/fr/plan.webp" aria-label="Agrandir l’illustration"><img src="img/fr/plan.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Stratégie › Plan en cours."></a><figcaption>Stratégie › Plan en cours.</figcaption></figure>
+<figure><a href="img/fr/ov_strategy.webp" aria-label="Agrandir l’illustration"><img src="img/fr/ov_strategy.webp" width="1600" height="900" loading="lazy" decoding="async" alt="L’overlay Stratégie : fenêtre, frise, dégradation, ressortie, duels et coût par tour d’arrêt."></a><figcaption>L’overlay Stratégie : fenêtre, frise, dégradation, ressortie, duels et coût par tour d’arrêt.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Le calcul</span></h3><ul><li>Le plan est recalculé à chaque tour, à chaque arrêt et au début d’une neutralisation.</li><li>Usure réelle mesurée en course, perte de temps apprise sur vos tours propres, carburant, perte dans la voie des stands mesurée sur vos arrêts et ceux des IA, règles d’AdvancedIA et trafic à la ressortie.</li><li>Affiché : fenêtre d’arrêt (tours à moins de 2 s de l’optimum, réglable), tour optimal, nombre d’arrêts, dégradation et adhérence, position à la ressortie, undercut, overcut et menace d’undercut, coût par tour d’arrêt.</li></ul></section>
+<section class="topic"><h3><span>Les annonces</span></h3><p class="path">Stratégie › Annonces de stratégie</p><ul><li>« Fenêtre d’arrêt du tour X au tour Y. Tour optimal : Z. », puis « Box au prochain tour. » et « Box, box, ce tour-ci. » seulement au tour du plan.</li><li>Une fois dit, le tour du box ne change plus jusqu’à l’arrêt ; pas de « box » quand la voie des stands est fermée.</li><li>Stratégie commentée : l’ingénieur décide seul et dit pourquoi (undercut tenté, overcut, couverture d’une menace, arrêt sous neutralisation, plus d’arrêt).</li></ul></section>
+<section class="topic"><h3><span>Les premiers tours</span></h3><ul><li>Le plan est calculé et affiché dès le départ (« Modèle estimé »), mais l’ingénieur n’en annonce rien tant qu’il repose sur des estimations : il attend deux tours propres mesurés.</li><li>Seule exception : un arrêt qui ne peut pas attendre (carburant mesuré pour deux tours ou moins). Un arrêt obligatoire n’est jamais oublié : le rappel réglementaire reste.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Arrêts et règlement</span></h3><ul><li>Un arrêt obligatoire fait sous VSC, FCY ou Safety Car avant l’ouverture de la fenêtre compte : l’ingénieur le retire tout de suite de son plan et de ses rappels.</li><li>L’overlay Stratégie montre une frise de course : tours faits, fenêtre, tour d’arrêt prévu et tour en cours.</li></ul></section>
+</div></article>
+<article class="chapter" id="c07" aria-labelledby="t07"><header class="ch-h"><span class="num" aria-hidden="true">07</span><h2 class="h" id="t07">Radio et voix</h2><span class="chip">4 rubriques</span><p>Deux voix, des priorités, et jamais de harcèlement.</p></header>
+<div class="shots">
+<figure><a href="img/fr/voice.webp" aria-label="Agrandir l’illustration"><img src="img/fr/voice.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio et voix › Voix et langue."></a><figcaption>Radio et voix › Voix et langue.</figcaption></figure>
+<figure><a href="img/fr/pacing.webp" aria-label="Agrandir l’illustration"><img src="img/fr/pacing.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio et voix › Rythme des messages."></a><figcaption>Radio et voix › Rythme des messages.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Les voix</span></h3><p class="path">Radio et voix › Voix et langue</p><ul><li>Voix et interface en français ou en anglais (réglage Langue). Chaque voix passe par un effet radio léger, réglé pour rester claire à pleine vitesse.</li><li>Signal radio : un court bip avant chaque transmission, jamais avant une annonce urgente (côte à côte, drapeau rouge, voiture arrêtée devant), qui part tout de suite.</li><li>Formulations variées : les annonces fréquentes ont deux à quatre formulations et un ton adapté (calme, urgent, motivant, déçu), jamais la même deux fois de suite.</li><li>Un clip manquant ne bloque rien : l’annonce est alors écrite sur la radio de l’overlay Spotter.</li></ul></section>
+<section class="topic"><h3><span>Priorités</span></h3><ul><li>Une annonce urgente (côte à côte, SC, drapeau rouge, double jaune, delta négatif, pénalité, « Go », box ce tour-ci) coupe toute annonce moins urgente ; l’annonce coupée est redite juste après si elle est encore vraie.</li><li>Une annonce sur un instant (côte à côte, dégagé, feux, delta) n’est jamais redite : elle serait fausse après coup.</li><li>À la fin d’une neutralisation, le delta et les annonces qui n’ont plus lieu d’être sont retirés ; le vert part tout de suite.</li></ul></section>
+<section class="topic"><h3><span>Rythme des messages</span></h3><p class="path">Radio et voix › Rythme des messages</p><ul><li>Les informations (écarts, rythme, carburant, météo, conseils) attendent au moins 12 s après la précédente et 2 s de silence ; trop vieilles, elles sont abandonnées.</li><li>Le même message de l’ingénieur n’est pas redit avant 180 s ; une situation qui dure (carburant court, pneus froids, freins chauds) n’est dite qu’à son apparition.</li><li>Jamais retardés : côte à côte, drapeaux, neutralisations, pénalités, box et écarts (dits dans les 3 s qui suivent la ligne, sinon pas du tout).</li></ul></section>
+<section class="topic"><h3><span>Volumes et son de la voiture</span></h3><ul><li>Volume général à 170 %, spotter et ingénieur à 100 %, de 0 à 200 % ; au-dessus de 100 %, le son peut saturer.</li><li>Pendant chaque message, moteur, transmission, pneus et vent de votre voiture baissent (85 % par défaut), puis reviennent exactement à leur niveau ; rien n’est enregistré par CSP.</li><li>Couper la radio : bouton de Radio et voix ou Ctrl+Alt+M, pour la séance.</li></ul></section>
+</div></article>
+<article class="chapter" id="c08" aria-labelledby="t08"><header class="ch-h"><span class="num" aria-hidden="true">08</span><h2 class="h" id="t08">Overlays et bureaux</h2><span class="chip">4 rubriques</span><p>Trois overlays à placer en jeu, et un jeu de réglages par bureau.</p></header>
+<div class="shots">
+<figure><a href="img/fr/editor.webp" aria-label="Agrandir l’illustration"><img src="img/fr/editor.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Overlays › Édition en jeu."></a><figcaption>Overlays › Édition en jeu.</figcaption></figure>
+<figure><a href="img/fr/desktops.webp" aria-label="Agrandir l’illustration"><img src="img/fr/desktops.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Overlays › Bureaux d’applications AC."></a><figcaption>Overlays › Bureaux d’applications AC.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Chaque overlay</span></h3><p class="path">Overlays › Chaque overlay</p><ul><li>Afficher l’overlay, Verrouillé, position X et Y en pixels ou AUTO, Échelle de 0,35 à 4.</li><li>Fond Opaque, Atténué (38 % de l’opacité) ou Transparent, opacité du fond et du contenu, Bande décorative (barre d’accent, masquée par défaut), en-tête ; boutons Recentrer et Réinitialiser.</li><li>Verrouillé, un overlay ne s’affiche que lorsqu’AdvancedIA est connecté ; déverrouillé, il reste visible pour être placé.</li></ul></section>
+<section class="topic"><h3><span>Édition en jeu</span></h3><ul><li>En roulant, bougez la souris : un petit bouton OVERLAYS apparaît 3 s en haut au centre (déplaçable). Un clic ouvre le panneau d’édition et déverrouille les overlays affichés.</li><li>Glissez un overlay pour le déplacer, tirez son coin bas droit pour la taille ; le panneau règle celui que vous touchez.</li><li>Terminer (ou Ctrl+Alt+K) ferme le panneau et verrouille tout ; après un plantage, tout est verrouillé.</li></ul></section>
+<section class="topic"><h3><span>Bureaux et raccourcis</span></h3><ul><li>Chacun des 4 bureaux d’applications de CSP garde ses overlays : affichés, positions, tailles, fonds, opacités, clics traversants, masquage, radio de l’overlay. Le spotter, l’ingénieur, la stratégie et les voix sont communs.</li><li>Changez de bureau avec la commande du jeu « Next desktop », puis réglez-le dans Overlays › Bureaux d’applications AC ; Copier ce bureau vers les autres et Vider ce bureau sont sur la même page.</li><li>Ctrl+Alt+J : afficher ou masquer les overlays du bureau · Ctrl+Alt+K : édition en jeu · Ctrl+Alt+M : couper la radio.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">Nouveau en 1.3.9</span><span>Overlays redessinés</span></h3><ul><li>Ingénieur et Stratégie suivent la caméra (réglage Suivre la caméra, actif, gardé par bureau) : le nom de la voiture regardée et CAMÉRA en tête. La radio reste toujours celle de votre voiture.</li><li>Ingénieur : cartes des pneus (cœur, surfaces intérieure, centrale et extérieure, vie, kilomètres, défauts), âge des pneus, dégâts, moyenne des trois derniers tours et meilleur tour.</li><li>Taille de 0,35 à 4 ; poignées de taille fixe à l’écran, taille en pixels affichée pendant le redimensionnement ; barre d’accent masquée par défaut.</li><li>Accueil : un bouton verrouille ou déverrouille tous les overlays, avec leur état à côté.</li></ul></section>
+</div></article>
+<article class="chapter" id="c09" aria-labelledby="t09"><header class="ch-h"><span class="num" aria-hidden="true">09</span><h2 class="h" id="t09">Mise à jour et réglages</h2><span class="chip">4 rubriques</span><p>Mettre à jour en un clic, revenir en arrière, réinitialiser ou désinstaller.</p></header>
+<div class="shots">
+<figure><a href="img/fr/update.webp" aria-label="Agrandir l’illustration"><img src="img/fr/update.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Les étapes de la mise à jour depuis l’app, et ses filets de sécurité."></a><figcaption>Les étapes de la mise à jour depuis l’app, et ses filets de sécurité.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Mise à jour depuis l’app</span></h3><p class="path">Diagnostic › MISE À JOUR</p><ul><li>Une fois par lancement, environ dix secondes après le chargement, l’app lit sur GitHub la dernière version publiée (réglage Vérifier les mises à jour au lancement).</li><li>Quand une version plus récente existe, un bouton Mettre à jour apparaît dans l’en-tête. Il ne s’active qu’à l’arrêt : au stand voiture immobile, ou jeu en pause.</li><li>Le paquet est vérifié (taille, empreinte SHA-256, contenu, version, compatibilité avec l’AdvancedIA installé), puis les fichiers sont remplacés un par un et l’app redémarre.</li><li>Filets de sécurité : copie ratée, version d’avant remise ; installation coupée, terminée ou annulée au lancement suivant ; Revenir à la … remet la version précédente.</li></ul></section>
+<section class="topic"><h3><span>Ce qui est gardé</span></h3><ul><li>Vos réglages sont dans le stockage de CSP (<code>Documents/Assetto Corsa/cfg/extension/state/lua/app/SpotterEnginer.ini</code>), pas dans le dossier de l’app : une mise à jour les garde.</li><li>Quand une valeur par défaut change, les réglages encore sur l’ancienne valeur suivent la nouvelle ; une valeur choisie par vous est gardée.</li></ul></section>
+<section class="topic"><h3><span>Désinstaller ou couper</span></h3><ul><li>Désinstaller : jeu fermé, supprimer <code>assettocorsa/apps/lua/SpotterEnginer</code> ; au besoin, supprimer aussi ses réglages, ses journaux et son dossier de mise à jour dans Documents.</li><li>Sans désinstaller : interrupteur SpotterEnginer actif de l’en-tête, tuiles des rôles sur l’Accueil, interrupteur de chaque section, ou radio coupée (Ctrl+Alt+M).</li></ul></section>
+<section class="topic more wide"><h3><span class="tag">Bon à savoir</span><span>Réinitialiser les réglages</span></h3><div class="tbl"><table><thead><tr><th scope="col">Quoi</th><th scope="col">Où</th><th scope="col">Ce qui est gardé</th></tr></thead><tbody><tr><td>Un réglage</td><td>Clic droit sur le réglage</td><td>Rien : retour à la valeur par défaut</td></tr><tr><td>Une section</td><td>Réinitialiser, dans l’en-tête de la section</td><td>Les autres sections</td></tr><tr><td>Tout</td><td>Diagnostic › Réinitialiser tous les réglages (overlays : ce bureau), confirmé par un second clic</td><td>La langue, et les overlays des autres bureaux</td></tr><tr><td>Retour usine</td><td>Jeu fermé, supprimer <code>SpotterEnginer.ini</code></td><td>Rien</td></tr></tbody></table></div></section>
+</div></article>
+<article class="chapter" id="c10" aria-labelledby="t10"><header class="ch-h"><span class="num" aria-hidden="true">10</span><h2 class="h" id="t10">Limites et dépannage</h2><span class="chip">3 rubriques</span><p>Ce que l’app ne peut pas savoir, et quoi vérifier quand elle se tait.</p></header>
+<div class="shots">
+<figure><a href="img/fr/log.webp" aria-label="Agrandir l’illustration"><img src="img/fr/log.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio et voix › Journal de la radio."></a><figcaption>Radio et voix › Journal de la radio.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Journal de séance</span></h3><p class="path">Documents/Assetto Corsa/logs/SpotterEnginer.log</p><ul><li>Un fichier par lancement du jeu, les trois précédents gardés, 2 Mo au plus ; les lignes sont en français.</li><li>Il note le lancement, le lien avec AdvancedIA, chaque tour, chaque annonce (dite, seulement écrite, coupée ou expirée), chaque annonce reçue d’AdvancedIA, les erreurs et les étapes de la mise à jour.</li><li>Radio et voix › Journal de la radio montre les derniers messages : prononcés (point vert) ou seulement écrits.</li></ul></section>
+<section class="topic more"><h3><span class="tag">Bon à savoir</span><span>Limites honnêtes</span></h3><div class="tbl"><table><thead><tr><th scope="col">Sujet</th><th scope="col">Limite</th></tr></thead><tbody><tr><td>Trajectoire</td><td>Pas de trajectoire mesurée : les conseils portent sur le point de freinage, la vitesse minimale et le temps par mini-secteur.</td></tr><tr><td>Dégâts aéro</td><td>AC donne des chocs par zone, pas l’appui perdu : l’annonce suit un choc, pas une mesure aérodynamique.</td></tr><tr><td>Vent</td><td>Vent de CSP projeté sur l’axe de la voiture au début du freinage ; l’effet réel dépend de la voiture.</td></tr><tr><td>Pluie attendue</td><td>Estimée d’après la transition météo de CSP vers la pluie.</td></tr><tr><td>Contacts et dégâts</td><td>AC ne donne pas les vrais dégâts : le bilan suit la hausse des chocs mesurés ; AC ne simule aucun débris, aucun n’est donc annoncé.</td></tr><tr><td>Ton de la voix</td><td>Formulation et diction (vitesse, hauteur) seulement : les voix utilisées n’ont pas de styles émotionnels.</td></tr></tbody></table></div></section>
+<section class="topic more"><h3><span class="tag">Bon à savoir</span><span>Questions fréquentes</span></h3><ul><li>SpotterEnginer ne dit rien : la pastille de l’en-tête doit indiquer « Connecté à AdvancedIA » ; vérifier aussi SpotterEnginer actif, le rôle et la section concernés, et que la radio n’est pas coupée (pastille Radio coupée, Ctrl+Alt+M).</li><li>Les overlays n’apparaissent pas : un overlay verrouillé ne s’affiche qu’avec AdvancedIA connecté ; vérifier Overlays affichés et Afficher l’overlay sur le bureau en cours (un bureau jamais réglé est vide), et Ctrl+Alt+J.</li><li>Les voix sont couvertes par le moteur : monter le Volume général (jusqu’à 200 %), baisser le Son de la voiture pendant la radio vers 40 à 60 %, ou baisser le moteur dans les réglages audio d’AC.</li><li>Gauche et droite sont inversés : cocher Inverser gauche et droite (section Côte à côte).</li><li>La mise à jour est refusée : lire le message du bloc MISE À JOUR (onglet Diagnostic) ; « Mettez d’abord AdvancedIA à jour » veut dire que la nouvelle version demande un AdvancedIA plus récent.</li><li>Ne mettez pas l’app à jour à la main en pleine course : CSP la recharge et les états en cours sont annoncés de nouveau.</li></ul></section>
+</div></article>
+<div class="empty" id="empty">Aucune rubrique ne correspond à cette recherche.</div>
+<div class="sec-t hide-on-search"><h2 class="h">Ce que SpotterEnginer ne fait jamais</h2><p>Les garde-fous de l’app.</p></div><ul class="guard hide-on-search">
+<li><b>Le réseau</b>Une seule lecture par lancement de la dernière version sur GitHub (décochable) ; la mise à jour ne se télécharge que sur votre clic.</li>
+<li><b>Le jeu</b>Ne touche ni à la physique, ni aux réglages d’AdvancedIA : il lit son pont, il n’y écrit jamais.</li>
+<li><b>Le son</b>Le son de la voiture baissé pendant la radio n’est jamais enregistré : tout est normal au lancement suivant.</li>
+<li><b>Ce qu’il ne sait pas</b>N’annonce pas ce que rien ne prouve : ni débris, ni compte des limites de piste, ni drapeau natif d’AC.</li>
+<li><b>Le replay et le réseau</b>Silencieux en rediffusion et en ligne, comme AdvancedIA.</li>
+</ul>
+<footer class="site"><p>Notice illustrée de <b>SpotterEnginer 1.3.9</b>, écrite d’après le code et la documentation de l’app. Les écrans des illustrations sont dessinés par le code de l’app pendant une course simulée, hors du jeu.</p><p>SpotterEnginer © Vincent Chevalier / LHK Informatique · licence MIT · <a href="https://github.com/VincentChevalier44/SpotterEnginer" target="_blank" rel="noopener">dépôt GitHub</a> · Assetto Corsa est une marque de Kunos Simulazioni ; SpotterEnginer est un projet indépendant.</p><p>Polices Barlow et JetBrains Mono (licence SIL OFL). Mise à jour : 14/11/2026.</p></footer>
+</main></div><a class="totop" href="#haut" aria-label="Revenir en haut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></a></div><div class="root" data-l="en" lang="en" data-title="SpotterEnginer — illustrated guide (1.3.9)" data-words="topic|topics">
+<a class="sr" href="#en-contenu">Skip to content</a>
+<header class="top"><div class="top-in">
+ <a class="brand" href="#en-haut" aria-label="SpotterEnginer"><img src="img/icon-64.png" width="40" height="40" alt=""><span><b class="h">Spotter<i>Enginer</i></b><small>Illustrated guide</small></span></a>
+ <div class="search" role="search"><label class="sr" for="en-q">Search the guide</label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="en-q" type="search" placeholder="Search: box, side by side, overlay…" autocomplete="off" spellcheck="false"><kbd>/</kbd><span class="count" id="en-qcount" aria-live="polite"></span></div>
+ <div class="tools"><div class="lang" role="group" aria-label="Language"><button type="button" data-set="fr" lang="fr" aria-pressed="false" title="Français">FR</button><button type="button" data-set="en" lang="en" aria-pressed="false" title="English">EN</button></div><span class="chip ver">1.3.9</span><a class="gh" href="https://github.com/VincentChevalier44/SpotterEnginer" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.4-5.27 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg><span>GitHub</span></a></div>
+</div></header>
+<div class="layout" id="en-haut">
+<nav class="toc" aria-label="Chapters"><p>CHAPTERS</p><ol>
+<li><a href="#en-c01"><span>01</span>Discovering SpotterEnginer</a></li>
+<li><a href="#en-c02"><span>02</span>Working with AdvancedIA</a></li>
+<li><a href="#en-c03"><span>03</span>The settings window</a></li>
+<li><a href="#en-c04"><span>04</span>The spotter</a></li>
+<li><a href="#en-c05"><span>05</span>The engineer</a></li>
+<li><a href="#en-c06"><span>06</span>Pit strategy</a></li>
+<li><a href="#en-c07"><span>07</span>Radio and voices</a></li>
+<li><a href="#en-c08"><span>08</span>Overlays and desktops</a></li>
+<li><a href="#en-c09"><span>09</span>Updates and settings</a></li>
+<li><a href="#en-c10"><span>10</span>Limits and troubleshooting</a></li>
+</ol></nav><main id="en-contenu">
+<section class="hero hide-on-search">
+ <div><span class="chip">Assetto Corsa · Custom Shaders Patch</span>
+ <h1 class="h">Your crew <em>on the radio</em>,<br>every lap.</h1>
+ <p class="lead">SpotterEnginer is a voice spotter and race engineer, in French or English, built on AdvancedIA: race control, traffic, gaps, fuel, tyres, brakes, weather and pit strategy. This guide shows, chapter by chapter, what the app does and where to set it up.</p>
+ <div class="stats"><span class="chip"><b>10</b> chapters</span><span class="chip"><b>40</b> topics</span><span class="chip"><b>15</b> illustrations</span><span class="chip">Version <b>1.3.9</b></span></div>
+ <div class="cta"><a class="btn pri" href="#en-c01">Start the tour</a><a class="btn sec" href="https://github.com/VincentChevalier44/SpotterEnginer/releases/latest" target="_blank" rel="noopener">Download the app</a></div></div>
+ <figure><img src="img/banner.webp" width="1600" height="791" alt="SpotterEnginer banner" fetchpriority="high"></figure>
+</section>
+<div class="sec-t hide-on-search"><h2 class="h">Quick start</h2><p>Four steps to a first race.</p></div><ol class="quick hide-on-search">
+<li><b>Install AdvancedIA</b><span>AdvancedIA Beta 2.0.0 or later, installed and running: SpotterEnginer only works with it.</span></li>
+<li><b>Install the app</b><span>With the game closed, drag the zip onto Content Manager: it creates <code>assettocorsa/apps/lua/SpotterEnginer/</code>.</span></li>
+<li><b>Start a session</b><span>Offline session with AdvancedIA: the header chip turns to “Connected to AdvancedIA”.</span></li>
+<li><b>Pick the language</b><span>FR / EN badge in the header (voice and interface), then Test the voice on the Home tab.</span></li>
+</ol>
+<div class="sec-t hide-on-search"><h2 class="h">The chapters</h2><p>Each chapter has its illustrations and its written guide right below.</p></div><ul class="cards hide-on-search">
+<li class="card"><a href="#en-c01"><div class="th"><img src="img/en/home.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 01</span><h3>Discovering SpotterEnginer</h3><p>What the app does, what it needs, how to install and start it.</p></div></a></li>
+<li class="card"><a href="#en-c02"><div class="th"><img src="img/en/bridge.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 02</span><h3>Working with AdvancedIA</h3><p>The data bridge, its states, and the optional companion apps.</p></div></a></li>
+<li class="card"><a href="#en-c03"><div class="th"><img src="img/en/window.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 03</span><h3>The settings window</h3><p>Seven tabs, roles and sections: everything is set in one place.</p></div></a></li>
+<li class="card"><a href="#en-c04"><div class="th"><img src="img/en/sides.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 04</span><h3>The spotter</h3><p>Race control, side by side, gaps, traffic and emergencies.</p></div></a></li>
+<li class="card"><a href="#en-c05"><div class="th"><img src="img/en/pace.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 05</span><h3>The engineer</h3><p>Pace, position, fuel, tyres, brakes, damage, conditions and debrief.</p></div></a></li>
+<li class="card"><a href="#en-c06"><div class="th"><img src="img/en/plan.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 06</span><h3>Pit strategy</h3><p>A plan solved again every lap, and a single reference for the “box”.</p></div></a></li>
+<li class="card"><a href="#en-c07"><div class="th"><img src="img/en/voice.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 07</span><h3>Radio and voices</h3><p>Two voices, priorities, and never a flood of messages.</p></div></a></li>
+<li class="card"><a href="#en-c08"><div class="th"><img src="img/en/editor.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 08</span><h3>Overlays and desktops</h3><p>Three overlays to place in game, and one set of settings per desktop.</p></div></a></li>
+<li class="card"><a href="#en-c09"><div class="th"><img src="img/en/update.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 09</span><h3>Updates and settings</h3><p>Update in one click, roll back, reset or uninstall.</p></div></a></li>
+<li class="card"><a href="#en-c10"><div class="th"><img src="img/en/log.webp" width="1600" height="900" loading="lazy" decoding="async" alt=""></div><div class="bd"><span class="n">CHAPTER 10</span><h3>Limits and troubleshooting</h3><p>What the app cannot know, and what to check when it goes quiet.</p></div></a></li>
+</ul>
+<article class="chapter" id="en-c01" aria-labelledby="en-t01"><header class="ch-h"><span class="num" aria-hidden="true">01</span><h2 class="h" id="en-t01">Discovering SpotterEnginer</h2><span class="chip">5 topics</span><p>What the app does, what it needs, how to install and start it.</p></header>
+<div class="shots">
+<figure><a href="img/en/home.webp" aria-label="Enlarge the illustration"><img src="img/en/home.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The Home tab: link with AdvancedIA, role tiles, overlays, clips and volumes."></a><figcaption>The Home tab: link with AdvancedIA, role tiles, overlays, clips and volumes.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>What SpotterEnginer does</span></h3><ul><li>It talks to you on the radio, in French or English, with two separate roles: the spotter (race control, traffic, cars around you) and the engineer (pace, fuel, tyres, brakes, conditions, driving advice, pit strategy).</li><li>It draws three in-game overlays: Spotter, Engineer and Strategy.</li><li>It reads the race state decided by AdvancedIA (flags, neutralisations, delta, penalties, pit window, AI sanctions and stops): it is not a standalone app.</li></ul></section>
+<section class="topic"><h3><span>Requirements</span></h3><ul><li>Assetto Corsa for PC, with Custom Shaders Patch 0.3.2 or later (Lua apps working).</li><li>AdvancedIA Beta 2.0.0 or later (bridge v2), installed in <code>assettocorsa/apps/lua/AdvancedIA/</code> and running: <a href="https://github.com/VincentChevalier44/AdvancedIA" target="_blank" rel="noopener">github.com/VincentChevalier44/AdvancedIA</a></li><li>Offline sessions only: AdvancedIA does nothing online, so SpotterEnginer stays silent there too.</li></ul></section>
+<section class="topic"><h3><span>Installation</span></h3><p class="path">assettocorsa/apps/lua/SpotterEnginer</p><ul><li>With Content Manager: with the game closed, download SpotterEnginer-&lt;version&gt;.zip from the Releases page (a .sha256 file comes with it to check the download) and drag it onto the Content Manager window.</li><li>By hand: copy the folder into <code>assettocorsa/apps/lua/</code> and name it exactly SpotterEnginer. Final path: <code>assettocorsa/apps/lua/SpotterEnginer/manifest.ini</code>.</li><li>The name matters: AdvancedIA only opens its data bridge when <code>apps/lua/SpotterEnginer/manifest.ini</code> exists, and CSP stores the settings under that name.</li></ul></section>
+<section class="topic"><h3><span>First launch</span></h3><ul><li>Enable the app among the CSP Lua apps, then start an offline session with AdvancedIA enabled.</li><li>Open SpotterEnginer from the apps bar: the header chip must read “Connected to AdvancedIA”.</li><li>Voices and interface are in French on a first installation; the FR / EN badge in the header (or Radio &amp; voice › Voice and language) switches everything to English.</li><li>Home tab: the Spotter, Engineer, Strategy and Overlays tiles switch each role on or off; the Test the voice buttons sit next to the volumes.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>Two voices</span></h3><ul><li>The spotter speaks with a female voice and the engineer keeps his male voice: you know at once who is talking.</li><li>If a female-voice file is missing, the male one is played, never silence.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c02" aria-labelledby="en-t02"><header class="ch-h"><span class="num" aria-hidden="true">02</span><h2 class="h" id="en-t02">Working with AdvancedIA</h2><span class="chip">5 topics</span><p>The data bridge, its states, and the optional companion apps.</p></header>
+<div class="shots">
+<figure><a href="img/en/bridge.webp" aria-label="Enlarge the illustration"><img src="img/en/bridge.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The Diagnostics tab: link state, AdvancedIA version, bridge and radio."></a><figcaption>The Diagnostics tab: link state, AdvancedIA version, bridge and radio.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>The data bridge</span></h3><ul><li>SpotterEnginer reads the state decided by AdvancedIA’s engine through a bridge between Lua apps: flags and the driver’s panel, neutralisations (SC, VSC, FCY), restarts and standing starts, the delta to keep, your penalties, the pit window and mandatory stops, AI sanctions and pit plans.</li><li>Assetto Corsa’s native flags are never used: AdvancedIA imposes its own.</li><li>An AdvancedIA decision is read, and its call starts, in the same game frame.</li></ul></section>
+<section class="topic"><h3><span>Version and folder</span></h3><ul><li>1.3.9 uses the bridge v2 of AdvancedIA Beta 2.0.0: an older AdvancedIA is refused by the update, which asks to update AdvancedIA first.</li><li>AdvancedIA is looked for in <code>apps/lua/AdvancedIA</code>, then in the old <code>apps/lua/ACAdvancedIA</code> folder; only the <code>manifest.ini</code> counts.</li><li>Until AdvancedIA is connected and running, SpotterEnginer says nothing: it only shows the state of the link in the header and on Home.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>AdvancedIA Beta 2.0.0</span></h3><ul><li>Bridge v2: 1.3.9 needs AdvancedIA Beta 2.0.0 or later.</li><li>New calls: warning yellow (slow car on the edge of the track, overtaking allowed) and aborted start (“one more lap”), then a new standing or rolling start.</li><li>A lifted mandatory stop is called with its reason: wet race, race too short or sprint race.</li><li>When the camera watches a retired AI car, the Strategy overlay shows RETIRED, with its last penalty and its reason.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>With SetupLab and SuperHUD (optional)</span></h3><ul><li>With SetupLab (<a href="https://github.com/VincentChevalier44/SetupLab" target="_blank" rel="noopener">github.com/VincentChevalier44/SetupLab</a>) installed, the engineer gives, in practice and qualifying, SetupLab’s verdict on its trial laps (faster, slower or no clear difference, with the main setting changed) and announces a new version ready to try in the pits. Never in a race; in qualifying, only at the pit entry.</li><li>Before its first fuel measurement, the engineer starts from SetupLab’s planned consumption for a race setup.</li><li>With SuperHUD installed: while its radar sound alerts are on, the spotter leaves the side by side calls to it; overlays in automatic position avoid its blocks on the same desktop.</li><li>Without these apps, none of this appears, not even their settings.</li></ul></section>
+<section class="topic more"><h3><span class="tag">Good to know</span><span>Link states</span></h3><div class="tbl"><table><thead><tr><th scope="col">State</th><th scope="col">Meaning</th></tr></thead><tbody><tr><td>Connected to AdvancedIA</td><td>The spotter and the engineer work with the state decided by AdvancedIA.</td></tr><tr><td>AdvancedIA suspended · reason</td><td>AdvancedIA is paused, in a replay, online, disabled…: SpotterEnginer waits.</td></tr><tr><td>Waiting for AdvancedIA</td><td>Installed but not running: enable it in the CSP Lua apps, or wait for it to start.</td></tr><tr><td>AdvancedIA stopped</td><td>AdvancedIA was just unloaded.</td></tr><tr><td>AdvancedIA without bridge</td><td>This AdvancedIA version does not publish the bridge: install the version that includes it.</td></tr><tr><td>Different bridge version</td><td>AdvancedIA publishes another bridge version: update both apps.</td></tr><tr><td>AdvancedIA missing</td><td>No <code>manifest.ini</code> in <code>apps/lua/AdvancedIA</code> nor in <code>apps/lua/ACAdvancedIA</code>.</td></tr></tbody></table></div></section>
+</div></article>
+<article class="chapter" id="en-c03" aria-labelledby="en-t03"><header class="ch-h"><span class="num" aria-hidden="true">03</span><h2 class="h" id="en-t03">The settings window</h2><span class="chip">3 topics</span><p>Seven tabs, roles and sections: everything is set in one place.</p></header>
+<div class="shots">
+<figure><a href="img/en/window.webp" aria-label="Enlarge the illustration"><img src="img/en/window.webp" width="1600" height="900" loading="lazy" decoding="async" alt="A settings page: tabs, role, sections and settings."></a><figcaption>A settings page: tabs, role, sections and settings.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>The layout</span></h3><ul><li>Header: logo, name, version, current desktop, link state, Radio muted chip, language and the master switch SpotterEnginer on.</li><li>Tabs: Home, Spotter, Engineer, Strategy, Radio &amp; voice, Overlays, Diagnostics. An orange dot marks a role that is switched off.</li><li>Left column: the role switch and the number of active sections, then the sections in groups, each with its switch and the number of its changed settings.</li><li>Right pane: the chosen section, its title, its ON or OFF chip, its description, Reset when a setting there is changed, then its settings.</li></ul></section>
+<section class="topic"><h3><span>Settings</span></h3><ul><li>Each setting has a default-value mark and a tooltip; a right-click restores its default.</li><li>A section switched off says nothing of what it covers, but its choices are kept: its settings stay visible, dimmed and editable.</li><li>The sections that are always on have nothing to switch off: they set a calculation, volumes or the language, or show a state.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>Settings window in game</span></h3><ul><li>The settings are also in the CSP apps taskbar while driving, in the SpotterEnginer - Config window; the SpotterEnginer window stays in the pits and pause menu.</li><li>Each desktop keeps that window’s state (open or closed, position, size); a small cross next to the master switch closes it.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c04" aria-labelledby="en-t04"><header class="ch-h"><span class="num" aria-hidden="true">04</span><h2 class="h" id="en-t04">The spotter</h2><span class="chip">5 topics</span><p>Race control, side by side, gaps, traffic and emergencies.</p></header>
+<div class="shots">
+<figure><a href="img/en/sides.webp" aria-label="Enlarge the illustration"><img src="img/en/sides.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Spotter › Side by side, and the radio of the watched car."></a><figcaption>Spotter › Side by side, and the radio of the watched car.</figcaption></figure>
+<figure><a href="img/en/ov_spotter.webp" aria-label="Enlarge the illustration"><img src="img/en/ov_spotter.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The Spotter overlay: sides, cars ahead and behind, gaps."></a><figcaption>The Spotter overlay: sides, cars ahead and behind, gaps.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Race control</span></h3><p class="path">Spotter › Flags and neutralisations</p><ul><li>Flags decided by AdvancedIA: green, yellow and double yellow (with the distance to the zone), red, white, slippery track, blue, black and white, black with orange disc, black, chequered.</li><li>Safety Car called then deployed, VSC, FCY, VSC ending in 10 s, SC in this lap, restarts and session resuming.</li><li>Standing start, formation lap, pit lane start, lights, “Go, go, go!”, jump start, last lap with your position and a piece of advice.</li><li>Negative or positive delta under neutralisation and double yellow (the delta beep stays AdvancedIA’s), penalties by reason, place to give back, your direct rivals’ penalties.</li><li>DRS by voice: off by default, AdvancedIA already has its beep and its panel.</li></ul></section>
+<section class="topic"><h3><span>Side by side and gaps</span></h3><ul><li>Car left, car right, three wide, still there, clear. A car counts as alongside from 1.3 m of lateral offset and 0.25 s of overlap; “clear” after 0.6 s of free lane.</li><li>The side is checked against CSP’s lateral track position; left and right are swapped automatically after repeated disagreement (setting Swap left and right as a fallback).</li><li>Gaps ahead and behind every N laps, with “you’re closing”, “he’s closing on you”, “he’s pulling away” or “gap is stable”; live, “you’re within a second” or “he’s within a second behind”.</li></ul></section>
+<section class="topic"><h3><span>Traffic and emergencies</span></h3><ul><li>Backmarker ahead, faster traffic behind, a car on a flying lap behind you in practice and qualifying, pit exit clear or traffic when rejoining.</li><li>Hazards ahead, called early at high speed (up to 900 m): stopped car, spinning car or car going the wrong way, with its side and where to go; contact between two cars ahead.</li><li>Your emergencies: contact, spin with guided rejoin (“car coming, wait”, then “it’s clear, go now”), stopped or facing the wrong way on track, rejoining with a car close by.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>VSC end countdown</span></h3><ul><li>After “VSC ending in 10 seconds”, the spotter counts down the last seconds, “3, 2, 1”, then says “Go, go, go!” at the restart. Setting VSC end countdown (on).</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>Radio of the watched car</span></h3><ul><li>When you are not driving (retired, AI at the wheel, car parked in the pit box for more than 10 s) and the camera has followed another car for 2 s, you hear that car’s radio: its spotter and its engineer.</li><li>Never while you drive; nothing about your car is said on it. Each written line starts with the car’s name and CAMERA. Setting Radio of the watched car (off by default).</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c05" aria-labelledby="en-t05"><header class="ch-h"><span class="num" aria-hidden="true">05</span><h2 class="h" id="en-t05">The engineer</h2><span class="chip">3 topics</span><p>Pace, position, fuel, tyres, brakes, damage, conditions and debrief.</p></header>
+<div class="shots">
+<figure><a href="img/en/pace.webp" aria-label="Enlarge the illustration"><img src="img/en/pace.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Engineer › Pace and calls."></a><figcaption>Engineer › Pace and calls.</figcaption></figure>
+<figure><a href="img/en/ov_engineer.webp" aria-label="Enlarge the illustration"><img src="img/en/ov_engineer.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The Engineer overlay: fuel, tyres, brakes, laps."></a><figcaption>The Engineer overlay: fuel, tyres, brakes, laps.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Pace and position</span></h3><p class="path">Engineer › Pace and calls</p><ul><li>Delta to the strategy model’s target lap, comparison with the car you are chasing; only clean laps count (no pit lane, no neutralisation).</li><li>Calls: push, defend or hold position, overtake mode when the car has ERS, P2P or DRS, fuel-saving engine map when fuel is short.</li><li>“You’re P5.” at the line when your place has changed, never every lap; live, a place gained or lost on track is said at once, once held for 2.5 s.</li></ul></section>
+<section class="topic"><h3><span>The car</span></h3><ul><li>Fuel: measured consumption, laps of fuel against the need (up to the planned stop or the finish), lift and coast, target plus or minus N laps.</li><li>Tyres: warm-up, core or surface overheating, abnormal wear (flat spot, blisters, graining, puncture); very hot brakes and bias advice.</li><li>Damage: after a contact or a big hit, a report 3.5 s later, from “no damage” to “heavy damage, box, box”.</li></ul></section>
+<section class="topic"><h3><span>Conditions, driving and debrief</span></h3><ul><li>Rain expected in N minutes, rain getting heavier, grip dropping or rising; tailwind or headwind at the start of a big braking zone.</li><li>Driving advice over 40 mini sectors, after a repeated loss over three clean laps: braking too early, corner speed too low or the sector where you lose time.</li><li>End-of-race debrief: places gained or lost since the start, overtakes on track, the fastest lap of the race if it is yours, and a verdict.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c06" aria-labelledby="en-t06"><header class="ch-h"><span class="num" aria-hidden="true">06</span><h2 class="h" id="en-t06">Pit strategy</h2><span class="chip">4 topics</span><p>A plan solved again every lap, and a single reference for the “box”.</p></header>
+<div class="shots">
+<figure><a href="img/en/plan.webp" aria-label="Enlarge the illustration"><img src="img/en/plan.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Strategy › Current plan."></a><figcaption>Strategy › Current plan.</figcaption></figure>
+<figure><a href="img/en/ov_strategy.webp" aria-label="Enlarge the illustration"><img src="img/en/ov_strategy.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The Strategy overlay: window, timeline, degradation, rejoin, duels and cost by stop lap."></a><figcaption>The Strategy overlay: window, timeline, degradation, rejoin, duels and cost by stop lap.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>The model</span></h3><ul><li>The plan is solved again every lap, at every stop and at the start of a neutralisation.</li><li>Real wear measured in the race, lap-time loss learnt from your clean laps, fuel, pit lane loss measured on your stops and the AI’s, AdvancedIA’s rules and traffic when rejoining.</li><li>Shown: pit window (laps within 2 s of the optimum, adjustable), optimal lap, number of stops, degradation and grip, expected position when rejoining, undercut, overcut and undercut threat, cost by stop lap.</li></ul></section>
+<section class="topic"><h3><span>The calls</span></h3><p class="path">Strategy › Strategy calls</p><ul><li>“Pit window from lap X to lap Y. Optimal lap: Z.”, then “Box next lap.” and “Box, box, this lap.” only on the lap of the plan.</li><li>Once said, the box lap no longer changes until the stop; no “box” while the pit lane is closed.</li><li>Strategy explained: the engineer decides alone and says why (undercut taken, overcut, covering a threat, stop under neutralisation, no more stops).</li></ul></section>
+<section class="topic"><h3><span>The first laps</span></h3><ul><li>The plan is computed and shown from the start (“Estimated model”), but the engineer calls nothing from it while it rests on estimates: it waits for two measured clean laps.</li><li>The only exception is a stop that cannot wait (measured fuel for two laps or less). A mandatory stop is never forgotten: the regulatory reminder stays.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>Stops and rules</span></h3><ul><li>A mandatory stop made under a VSC, an FCY or a Safety Car before the window opens counts: the engineer drops it from its plan and its reminders at once.</li><li>The Strategy overlay shows a race timeline: laps done, window, planned stop lap and current lap.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c07" aria-labelledby="en-t07"><header class="ch-h"><span class="num" aria-hidden="true">07</span><h2 class="h" id="en-t07">Radio and voices</h2><span class="chip">4 topics</span><p>Two voices, priorities, and never a flood of messages.</p></header>
+<div class="shots">
+<figure><a href="img/en/voice.webp" aria-label="Enlarge the illustration"><img src="img/en/voice.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio &amp; voice › Voice and language."></a><figcaption>Radio &amp; voice › Voice and language.</figcaption></figure>
+<figure><a href="img/en/pacing.webp" aria-label="Enlarge the illustration"><img src="img/en/pacing.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio &amp; voice › Message pacing."></a><figcaption>Radio &amp; voice › Message pacing.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>The voices</span></h3><p class="path">Radio &amp; voice › Voice and language</p><ul><li>Voice and interface in French or English (setting Language). Every voice goes through a light radio effect, tuned to stay clear at full speed.</li><li>Radio tone: a short tone before each transmission, never before an urgent call (side by side, red flag, stopped car ahead), which starts at once.</li><li>Varied wording: the frequent calls have two to four wordings and a tone that fits (calm, urgent, motivating, disappointed), never the same one twice in a row.</li><li>A missing clip blocks nothing: the call is then written on the Spotter overlay radio.</li></ul></section>
+<section class="topic"><h3><span>Priorities</span></h3><ul><li>An urgent call (side by side, SC, red flag, double yellow, negative delta, penalty, “Go”, box this lap) cuts off any less urgent call; the call cut off is said again right after if it is still true.</li><li>A call about an instant (side by side, clear, lights, delta) is never said again: it would be wrong afterwards.</li><li>At the end of a neutralisation, the delta and the calls that no longer apply are withdrawn; the green goes out at once.</li></ul></section>
+<section class="topic"><h3><span>Message pacing</span></h3><p class="path">Radio &amp; voice › Message pacing</p><ul><li>Information calls (gaps, pace, fuel, weather, advice) wait at least 12 s after the previous one and 2 s of silence; once too old, they are dropped.</li><li>The same engineer message is not said again within 180 s; a lasting situation (fuel short, cold tyres, hot brakes) is only said when it appears.</li><li>Never delayed: side by side, flags, neutralisations, penalties, box and gaps (said within 3 s of the line, otherwise not at all).</li></ul></section>
+<section class="topic"><h3><span>Volumes and car sound</span></h3><ul><li>Master volume at 170 %, spotter and engineer at 100 %, from 0 to 200 %; above 100 % the sound may distort.</li><li>During each message, your car’s engine, transmission, tyres and wind are lowered (85 % by default), then come back exactly to their level; nothing is saved by CSP.</li><li>Mute the radio: button in Radio &amp; voice or Ctrl+Alt+M, for the session.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c08" aria-labelledby="en-t08"><header class="ch-h"><span class="num" aria-hidden="true">08</span><h2 class="h" id="en-t08">Overlays and desktops</h2><span class="chip">4 topics</span><p>Three overlays to place in game, and one set of settings per desktop.</p></header>
+<div class="shots">
+<figure><a href="img/en/editor.webp" aria-label="Enlarge the illustration"><img src="img/en/editor.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Overlays › In-game editing."></a><figcaption>Overlays › In-game editing.</figcaption></figure>
+<figure><a href="img/en/desktops.webp" aria-label="Enlarge the illustration"><img src="img/en/desktops.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Overlays › AC app desktops."></a><figcaption>Overlays › AC app desktops.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Each overlay</span></h3><p class="path">Overlays › Each overlay</p><ul><li>Show the overlay, Locked, X and Y position in pixels or AUTO, Scale from 0.35 to 4.</li><li>Background Solid, Ghost (38 % of the opacity) or Transparent, background and content opacity, Decorative band (accent bar, hidden by default), header; Recenter and Reset buttons.</li><li>Locked, an overlay only shows while AdvancedIA is connected; unlocked, it stays visible so it can be placed.</li></ul></section>
+<section class="topic"><h3><span>In-game editing</span></h3><ul><li>While driving, move the mouse: a small OVERLAYS button shows for 3 s at the top centre (it can be moved). A click opens the edit panel and unlocks the overlays shown.</li><li>Drag an overlay to move it, pull its bottom-right corner for the size; the panel sets the one you touch.</li><li>Done (or Ctrl+Alt+K) closes the panel and locks everything; after a crash, everything is locked.</li></ul></section>
+<section class="topic"><h3><span>Desktops and shortcuts</span></h3><ul><li>Each of CSP’s 4 app desktops keeps its own overlays: shown, positions, sizes, backgrounds, opacities, click-through, hiding, overlay radio. Spotter, engineer, strategy and voices are shared.</li><li>Switch desktop with the game command “Next desktop”, then set it up in Overlays › AC app desktops; Copy this desktop to the others and Clear this desktop are on the same page.</li><li>Ctrl+Alt+J: show or hide this desktop’s overlays · Ctrl+Alt+K: in-game editing · Ctrl+Alt+M: mute the radio.</li></ul></section>
+<section class="topic more new"><h3><span class="tag">New in 1.3.9</span><span>Overlays redrawn</span></h3><ul><li>Engineer and Strategy follow the camera (setting Follow the camera, on, kept per desktop): the watched car’s name and CAMERA at the top. The radio always stays about your car.</li><li>Engineer: tyre cards (core, inner, middle and outer surface, life, kilometres, defects), tyre age, damage, average of the last three laps and best lap.</li><li>Size from 0.35 to 4; handles of a fixed size on screen, size in pixels shown while resizing; accent bar hidden by default.</li><li>Home: one button locks or unlocks all overlays, with their state next to it.</li></ul></section>
+</div></article>
+<article class="chapter" id="en-c09" aria-labelledby="en-t09"><header class="ch-h"><span class="num" aria-hidden="true">09</span><h2 class="h" id="en-t09">Updates and settings</h2><span class="chip">4 topics</span><p>Update in one click, roll back, reset or uninstall.</p></header>
+<div class="shots">
+<figure><a href="img/en/update.webp" aria-label="Enlarge the illustration"><img src="img/en/update.webp" width="1600" height="900" loading="lazy" decoding="async" alt="The steps of the in-app update, and its safety nets."></a><figcaption>The steps of the in-app update, and its safety nets.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Updating from the app</span></h3><p class="path">Diagnostics › UPDATE</p><ul><li>Once per launch, about ten seconds after loading, the app reads the latest published release on GitHub (setting Check for updates at launch).</li><li>When a newer version exists, an Update button shows in the header. It is only active when stopped: at your pit box at a standstill, or with the game paused.</li><li>The package is checked (size, SHA-256 digest, content, version, compatibility with the installed AdvancedIA), then the files are replaced one by one and the app restarts.</li><li>Safety nets: failed copy, previous version put back; interrupted install, finished or undone at the next launch; Roll back to… puts the previous version back.</li></ul></section>
+<section class="topic"><h3><span>What is kept</span></h3><ul><li>Your settings live in CSP’s storage (<code>Documents/Assetto Corsa/cfg/extension/state/lua/app/SpotterEnginer.ini</code>), not in the app folder: an update keeps them.</li><li>When a default changes, values still on the old default follow the new one; a value you set yourself is kept.</li></ul></section>
+<section class="topic"><h3><span>Uninstall or switch off</span></h3><ul><li>Uninstall: with the game closed, delete <code>assettocorsa/apps/lua/SpotterEnginer</code>; if you like, also delete its settings, its logs and its update folder in Documents.</li><li>Without uninstalling: the SpotterEnginer on switch in the header, the role tiles on Home, each section’s switch, or the radio muted (Ctrl+Alt+M).</li></ul></section>
+<section class="topic more wide"><h3><span class="tag">Good to know</span><span>Resetting the settings</span></h3><div class="tbl"><table><thead><tr><th scope="col">What</th><th scope="col">Where</th><th scope="col">What is kept</th></tr></thead><tbody><tr><td>One setting</td><td>Right-click the setting</td><td>Nothing: back to its default</td></tr><tr><td>One section</td><td>Reset, in the section header</td><td>The other sections</td></tr><tr><td>Everything</td><td>Diagnostics › Reset all settings (overlays: this desktop), confirmed by a second click</td><td>The language, and the overlays of the other desktops</td></tr><tr><td>Factory reset</td><td>Game closed, delete <code>SpotterEnginer.ini</code></td><td>Nothing</td></tr></tbody></table></div></section>
+</div></article>
+<article class="chapter" id="en-c10" aria-labelledby="en-t10"><header class="ch-h"><span class="num" aria-hidden="true">10</span><h2 class="h" id="en-t10">Limits and troubleshooting</h2><span class="chip">3 topics</span><p>What the app cannot know, and what to check when it goes quiet.</p></header>
+<div class="shots">
+<figure><a href="img/en/log.webp" aria-label="Enlarge the illustration"><img src="img/en/log.webp" width="1600" height="900" loading="lazy" decoding="async" alt="Radio &amp; voice › Radio log."></a><figcaption>Radio &amp; voice › Radio log.</figcaption></figure>
+</div><div class="notice">
+<section class="topic"><h3><span>Session log</span></h3><p class="path">Documents/Assetto Corsa/logs/SpotterEnginer.log</p><ul><li>One file per game launch, the three previous ones kept, 2 MB at most; the lines are written in French.</li><li>It records the launch, the link with AdvancedIA, every lap, every call (spoken, only written, cut off or expired), every announcement received from AdvancedIA, errors and the updater’s steps.</li><li>Radio &amp; voice › Radio log shows the latest messages: spoken (green dot) or only written.</li></ul></section>
+<section class="topic more"><h3><span class="tag">Good to know</span><span>Honest limitations</span></h3><div class="tbl"><table><thead><tr><th scope="col">Feature</th><th scope="col">Limit</th></tr></thead><tbody><tr><td>Racing line</td><td>No measured racing line: the advice covers the braking point, the minimum speed and the time per mini sector.</td></tr><tr><td>Aero damage</td><td>AC gives hits per zone, not the downforce lost: the call follows a hit, not an aerodynamic measurement.</td></tr><tr><td>Wind</td><td>CSP’s wind projected onto the car’s axis at the start of braking; the real effect depends on the car.</td></tr><tr><td>Rain expected</td><td>Estimated from CSP’s weather transition towards rain.</td></tr><tr><td>Contacts and damage</td><td>AC does not give the real damage: the report follows the rise of the measured hits; AC simulates no debris, so none is ever announced.</td></tr><tr><td>Tone of the voice</td><td>Wording and delivery (speed, pitch) only: the voices used have no emotional styles.</td></tr></tbody></table></div></section>
+<section class="topic more"><h3><span class="tag">Good to know</span><span>FAQ</span></h3><ul><li>SpotterEnginer says nothing: the header chip must read “Connected to AdvancedIA”; also check SpotterEnginer on, the role and section concerned, and that the radio is not muted (Radio muted chip, Ctrl+Alt+M).</li><li>The overlays do not appear: a locked overlay only shows while AdvancedIA is connected; check Overlays shown and Show the overlay on the current desktop (a desktop never set up is empty), and Ctrl+Alt+J.</li><li>The voices are covered by the engine: raise Master volume (up to 200 %), lower Car sound during the radio towards 40 to 60 %, or lower the engine in AC’s audio settings.</li><li>Left and right are swapped: tick Swap left and right (section Side by side).</li><li>The update is refused: read the message in the UPDATE block (Diagnostics tab); “Update AdvancedIA first” means the new version needs a newer AdvancedIA.</li><li>Do not update the app by hand in the middle of a race: CSP reloads it, and the states in progress are announced again.</li></ul></section>
+</div></article>
+<div class="empty" id="en-empty">No topic matches this search.</div>
+<div class="sec-t hide-on-search"><h2 class="h">What SpotterEnginer never does</h2><p>The app’s safeguards.</p></div><ul class="guard hide-on-search">
+<li><b>The network</b>A single read per launch of the latest version on GitHub (can be unticked); the update is only downloaded on your click.</li>
+<li><b>The game</b>Touches neither the physics nor AdvancedIA’s settings: it reads its bridge and never writes into it.</li>
+<li><b>Sound</b>The car sound lowered during the radio is never saved: everything is normal at the next launch.</li>
+<li><b>What it cannot know</b>Never calls what nothing proves: no debris, no track-limit count, no native AC flag.</li>
+<li><b>Replays and online</b>Silent in replays and online, like AdvancedIA.</li>
+</ul>
+<footer class="site"><p>Illustrated guide to <b>SpotterEnginer 1.3.9</b>, written from the app’s code and documentation. The screens in the illustrations are drawn by the app’s own code during a simulated race, outside the game.</p><p>SpotterEnginer © Vincent Chevalier / LHK Informatique · MIT licence · <a href="https://github.com/VincentChevalier44/SpotterEnginer" target="_blank" rel="noopener">GitHub repository</a> · Assetto Corsa is a trademark of Kunos Simulazioni; SpotterEnginer is an independent project.</p><p>Barlow and JetBrains Mono fonts (SIL OFL licence). Updated: 14/11/2026.</p></footer>
+</main></div><a class="totop" href="#en-haut" aria-label="Back to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg></a></div><script>
+(()=>{
+const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
+const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const roots=$$('.root');
+function init(root){
+  const W=root.dataset.words.split('|');
+  // sommaire : chapitre visible
+  const links=new Map($$('.toc a',root).map(a=>[a.getAttribute('href').slice(1),a]));
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){links.forEach(a=>a.classList.remove('on'));const a=links.get(e.target.id);if(a){a.classList.add('on');
+    const t=a.closest('.toc');if(t&&t.scrollWidth>t.clientWidth)t.scrollTo({left:a.offsetLeft-t.clientWidth/2+a.offsetWidth/2,behavior:'smooth'})}}})},{rootMargin:'-35% 0px -60% 0px'});
+  $$('.chapter',root).forEach(c=>io.observe(c));
+  // recherche (sans accents, insensible à la casse)
+  const inp=$('.search input',root),cnt=$('.search .count',root),kbd=$('.search kbd',root),empty=$('.empty',root);
+  const topics=$$('.topic',root);topics.forEach(t=>{t._html=t.innerHTML;t._txt=norm(t.textContent)});
+  let timer;
+  const run=()=>{const q=norm(inp.value.trim()),ws=q.split(/\s+/).filter(Boolean);let n=0;
+    topics.forEach(t=>{t.innerHTML=t._html;const hit=!q||ws.every(w=>t._txt.includes(w));t.classList.toggle('hidden',!hit);if(hit&&q){n++;mark(t,ws)}});
+    $$('.chapter',root).forEach(c=>{const any=$$('.topic:not(.hidden)',c).length>0;c.classList.toggle('hidden',!!q&&!any);const a=links.get(c.id);if(a)a.classList.toggle('dim',!!q&&!any)});
+    $$('.hide-on-search',root).forEach(e=>e.classList.toggle('hidden',!!q));
+    cnt.textContent=q?`${n} ${n>1?W[1]:W[0]}`:'';kbd.style.display=q?'none':'';empty.classList.toggle('show',!!q&&!n)};
+  inp.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(run,120)});
+  inp.addEventListener('keydown',e=>{if(e.key==='Escape'){inp.value='';run();inp.blur()}});
+}
+function mark(root,words){const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(w.nextNode())nodes.push(w.currentNode);
+  nodes.forEach(nd=>{const raw=nd.nodeValue,nm=norm(raw);let r=[];words.forEach(x=>{let i=0;while((i=nm.indexOf(x,i))>-1){r.push([i,i+x.length]);i+=x.length}});
+    if(!r.length)return;r.sort((a,b)=>a[0]-b[0]);const f=document.createDocumentFragment();let p=0;
+    r.forEach(([a,b])=>{if(a<p)return;f.append(raw.slice(p,a));const m=document.createElement('mark');m.textContent=raw.slice(a,b);f.append(m);p=b});f.append(raw.slice(p));nd.replaceWith(f)})}
+roots.forEach(init);
+// agrandir une illustration (Échap ou clic pour fermer)
+const zoom=document.createElement('div');zoom.className='zoom';zoom.setAttribute('role','dialog');zoom.setAttribute('aria-modal','true');const zimg=document.createElement('img');zoom.append(zimg);document.body.append(zoom);
+const shut=()=>{zoom.classList.remove('on');zimg.removeAttribute('src')};
+document.addEventListener('click',e=>{const a=e.target.closest('.shots a');if(a){e.preventDefault();zimg.src=a.href;zimg.alt=a.querySelector('img').alt;zoom.classList.add('on')}else if(e.target.closest('.zoom'))shut()});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&zoom.classList.contains('on'))shut()});
+// langue : choix mémorisé, sinon langue du navigateur ; on garde le chapitre affiché
+const cur=()=>roots.find(r=>!r.hidden);
+function setLang(l,keep){const from=cur();if(from&&from.dataset.l===l&&!keep)return;
+  let anchor=null;if(from){const vis=$$('.chapter',from).filter(c=>c.getBoundingClientRect().top<innerHeight*.4).pop();anchor=vis?vis.id.replace(/^en-/,''):null;
+}
+  roots.forEach(r=>{r.hidden=r.dataset.l!==l});document.documentElement.lang=l;
+  $$('.lang button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.set===l?'true':'false'));
+  document.title=cur().dataset.title;
+  try{localStorage.setItem('spotterenginer-guide-lang',l)}catch(e){}
+  if(anchor&&!keep){const t=document.getElementById((l==='en'?'en-':'')+anchor);if(t){const go=()=>t.scrollIntoView({behavior:'instant'});go();requestAnimationFrame(go);setTimeout(go,80)}}}
+$$('.lang button').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.set)));
+let pref=null;try{pref=localStorage.getItem('spotterenginer-guide-lang')}catch(e){}
+const h=location.hash.slice(1);
+const q=new URLSearchParams(location.search).get('lang');      // ?lang=fr|en (anciens liens notice.fr.html / notice.html)
+const start=h.startsWith('en-')?'en':(q==='fr'||q==='en')?q:(pref==='fr'?'fr':'en');   // anglais par défaut ; le choix mémorisé l'emporte
+setLang(start,true);
+if(h){const id=start==='en'&&!h.startsWith('en-')?'en-'+h:h,t=document.getElementById(id);if(t)setTimeout(()=>t.scrollIntoView(),50)}
+addEventListener('keydown',e=>{const inp=$('.search input',cur());if(e.key==='/'&&document.activeElement!==inp&&!/input|textarea/i.test(document.activeElement.tagName)){e.preventDefault();inp.focus()}});
+addEventListener('scroll',()=>$$('.totop').forEach(t=>t.classList.toggle('show',scrollY>900)),{passive:true});
+})();
+</script></body></html>
